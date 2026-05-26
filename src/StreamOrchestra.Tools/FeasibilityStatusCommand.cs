@@ -388,11 +388,12 @@ public static class FeasibilityStatusCommand
             return WriteHandoffValidationResult(validationLines, output, parseResult.OutputPath, exitCode: 1);
         }
 
+        var manifestText = File.ReadAllText(manifestPath);
         HandoffManifest? manifest;
         try
         {
             manifest = JsonSerializer.Deserialize<HandoffManifest>(
-                File.ReadAllText(manifestPath),
+                manifestText,
                 HandoffJsonOptions);
         }
         catch (JsonException ex)
@@ -415,6 +416,7 @@ public static class FeasibilityStatusCommand
         validationLines.Add(
             $"Plan audit: pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}");
         validationLines.Add($"Outstanding gates: {manifest.OutstandingGateCount}");
+        isValid &= ValidateHandoffManifestText(manifestText, manifest, validationLines);
         isValid &= ValidateHandoffManifestProfileGroups(manifest, validationLines);
 
         var artifactDetails = manifest.ArtifactDetails?.ToArray() ?? Array.Empty<HandoffArtifactMetadata>();
@@ -689,6 +691,22 @@ public static class FeasibilityStatusCommand
         }
 
         return isValid;
+    }
+
+    private static bool ValidateHandoffManifestText(
+        string actualText,
+        HandoffManifest manifest,
+        List<string> validationLines)
+    {
+        var expectedText = JsonSerializer.Serialize(manifest, HandoffJsonOptions) + Environment.NewLine;
+        if (actualText == expectedText)
+        {
+            validationLines.Add($"- [pass] {HandoffManifestFileName} canonical content.");
+            return true;
+        }
+
+        validationLines.Add($"- [fail] {HandoffManifestFileName} canonical content mismatch.");
+        return false;
     }
 
     private static bool ValidateHandoffManifestProfileGroups(

@@ -444,6 +444,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Stream Orchestra Phase 0 Handoff Validation", text);
         Assert.Contains($"Input folder: {handoffFolder}", text);
         Assert.Contains("Plan verification: pending", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json canonical content.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json profile groups: A, B, C, D", text);
         Assert.Contains("- [pass] handoff folder contains only standard artifacts.", text);
         Assert.Contains("- [pass] phase0-results.json:", text);
@@ -478,6 +479,38 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report account label conflict: False", text);
         Assert.Contains("- [pass] diagnostic report suggested records:", text);
         Assert.Contains("Validation: pass", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsNonCanonicalManifestContent()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-noncanonical-manifest");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        manifest["extraHiddenField"] = JsonValue.Create("tampered");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-handoff-manifest.json canonical content mismatch.", text);
+        Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
     }
