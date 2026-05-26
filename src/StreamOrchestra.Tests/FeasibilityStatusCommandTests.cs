@@ -387,6 +387,32 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_VerifyWithSuggestedOrderResults_ReturnsSuccessAndPassedGate()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        foreach (var result in CreateSuggestedOrderPlanResults())
+        {
+            storage.AppendResult(result);
+        }
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Results recorded: 5", text);
+        Assert.Contains("continue_webview2_mvp", text);
+        Assert.Contains("Plan audit: pass=11, pending=0, fail=0", text);
+        Assert.Contains("Verification: pass", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_VerifyWithPartialNinePlusResult_PrintsOutstandingGateDetails()
     {
         var storage = new FeasibilityResultStorageService(_dataFolder);
@@ -1017,12 +1043,52 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         ];
     }
 
+    private static IReadOnlyList<FeasibilityTestResult> CreateSuggestedOrderPlanResults()
+    {
+        return
+        [
+            CreatePassingScenarioResult(
+                "result_group_a",
+                4,
+                "group_a_first_slots",
+                "Group A only (4 slot(s))",
+                new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero)),
+            CreatePassingScenarioResult(
+                "result_8",
+                8,
+                "groups_a_b_8_slots",
+                "Groups A/B split, 8 slots",
+                new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero)),
+            CreatePassingScenarioResult(
+                "result_12",
+                12,
+                "groups_a_b_c_12_slots",
+                "Groups A/B/C, 12 slots",
+                new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero),
+                "partial"),
+            CreatePassingScenarioResult(
+                "result_16",
+                16,
+                "groups_a_b_c_d_16_slots",
+                "Groups A/B/C/D, 16 slots",
+                new DateTimeOffset(2026, 5, 26, 12, 45, 0, TimeSpan.Zero),
+                "partial"),
+            CreatePassingScenarioResult(
+                "result_9",
+                9,
+                "groups_a_b_c_9_slot_threshold",
+                "Groups A/B/C, 9-slot success threshold",
+                new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero))
+        ];
+    }
+
     private static FeasibilityTestResult CreatePassingScenarioResult(
         string id,
         int playbackCount,
         string scenarioId,
         string scenarioName,
-        DateTimeOffset capturedAt)
+        DateTimeOffset capturedAt,
+        string? outcome = null)
     {
         return new FeasibilityTestResult
         {
@@ -1031,7 +1097,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
             PlaybackCount = playbackCount,
             ScenarioId = scenarioId,
             ScenarioName = scenarioName,
-            Outcome = playbackCount >= 9 ? "success" : "partial",
+            Outcome = outcome ?? (playbackCount >= 9 ? "success" : "partial"),
             Diagnostics = new RuntimeDiagnosticsSnapshot(
                 capturedAt,
                 WebViewProcessCount: playbackCount,
