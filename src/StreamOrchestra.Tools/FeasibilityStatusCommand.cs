@@ -262,6 +262,8 @@ public static class FeasibilityStatusCommand
             output.WriteLine($"  CLI: record --group {groupId} --outcome <partial|failure> --account --profile-groups {groupId} --account-label <label>");
         }
 
+        output.WriteLine("Use `partial` when the requested slots visibly play but success-only evidence is incomplete.");
+        output.WriteLine("Use `failure` when the requested playback count or isolated group does not work.");
         output.WriteLine("Record `success` only when the 9+ playback, required profile-group account, restart, resource, CPU, GPU, and memory evidence is complete.");
         return 0;
     }

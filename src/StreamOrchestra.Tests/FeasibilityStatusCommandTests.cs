@@ -162,6 +162,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("record --group A --outcome <partial|failure> --account --profile-groups A", text);
         Assert.DoesNotContain("record --count 8 --outcome <success|partial|failure>", text);
         Assert.DoesNotContain("record --count 9 --outcome <success|partial|failure>", text);
+        Assert.Contains("Use `partial` when the requested slots visibly play but success-only evidence is incomplete.", text);
+        Assert.Contains("Use `failure` when the requested playback count or isolated group does not work.", text);
         Assert.Contains("Record `success` only when the 9+ playback", text);
         Assert.Equal("", error.ToString());
     }
