@@ -187,6 +187,60 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_NormalizesHandEditedTextFieldsToSingleLine()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": " result\r\none ",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": " Groups A/B/C,\r\n9-slot\tthreshold ",
+                "outcome": " partial ",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": " main\r\nsoop ",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "notes": " manual\r\nSOOP\tresult "
+              },
+              {
+                "id": " result\r\ntwo ",
+                "capturedAt": "2026-05-26T12:05:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "decisionCode": " continue_webview2_experiments ",
+                "decisionTitle": " WebView2\r\n추가\t실험 ",
+                "decisionDetail": " detail\r\nline ",
+                "decisionNextAction": " next\r\nline ",
+                "notes": " manual\r\nSOOP\tresult "
+              }
+            ]
+            """);
+
+        var results = service.LoadResults();
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("result one", results[0].Id);
+        Assert.Equal("Groups A/B/C, 9-slot threshold", results[0].ScenarioName);
+        Assert.Equal("main soop", results[0].AccountLabel);
+        Assert.Equal("manual SOOP result", results[0].Notes);
+        Assert.Equal("", results[0].DecisionCode);
+        Assert.Equal("result two", results[1].Id);
+        Assert.Equal("WebView2 추가 실험", results[1].DecisionTitle);
+        Assert.Equal("detail line", results[1].DecisionDetail);
+        Assert.Equal("next line", results[1].DecisionNextAction);
+        Assert.Equal("manual SOOP result", results[1].Notes);
+    }
+
+    [Fact]
     public void LoadResults_NormalizesMalformedRuntimeDiagnostics()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using StreamOrchestra.App.Models;
 
@@ -113,20 +114,20 @@ public sealed class FeasibilityResultStorageService
         }
 
         var diagnostics = NormalizeDiagnostics(result.Diagnostics, result.CapturedAt);
-        var rawOutcome = result.Outcome?.Trim() ?? "";
+        var rawOutcome = NormalizeSingleLine(result.Outcome);
         var canonicalOutcome = NormalizeKnownOutcome(rawOutcome);
         var normalizedScenarioId = string.IsNullOrWhiteSpace(result.ScenarioId)
             ? "unspecified"
-            : result.ScenarioId.Trim();
+            : NormalizeSingleLine(result.ScenarioId);
         var normalizedScenarioName = string.IsNullOrWhiteSpace(result.ScenarioName)
             ? "Unspecified"
-            : result.ScenarioName.Trim();
+            : NormalizeSingleLine(result.ScenarioName);
         var normalizedGroups = FeasibilityProfileGroupEvidenceService.GetScenarioConsistentGroups(
             result.PlaybackCount,
             normalizedScenarioId,
             result.VerifiedProfileGroups);
         var normalizedAccountLabel = result.IsSameAccountSessionMaintained
-            ? result.AccountLabel?.Trim() ?? ""
+            ? NormalizeSingleLine(result.AccountLabel)
             : "";
         var hasSameAccountEvidence = result.IsSameAccountSessionMaintained &&
             !string.IsNullOrWhiteSpace(normalizedAccountLabel) &&
@@ -158,15 +159,17 @@ public sealed class FeasibilityResultStorageService
             normalizedOutcome,
             normalizedScenarioId,
             normalizedGroups,
+            normalizedAccountLabel,
             hasSameAccountEvidence,
             normalizedRestartSession,
             normalizedResourceUsageAcceptable,
             normalizedObservedCpuPercent,
             normalizedObservedGpuPercent,
             normalizedObservedMemoryMegabytes);
-        var resultId = string.IsNullOrWhiteSpace(result.Id)
+        var rawResultId = NormalizeSingleLine(result.Id);
+        var resultId = string.IsNullOrWhiteSpace(rawResultId)
             ? CreateResultId(result.CapturedAt, result.PlaybackCount, normalizedOutcome)
-            : result.Id.Trim();
+            : rawResultId;
 
         return new FeasibilityTestResult
         {
@@ -185,11 +188,11 @@ public sealed class FeasibilityResultStorageService
             ObservedCpuPercent = normalizedObservedCpuPercent,
             ObservedGpuPercent = normalizedObservedGpuPercent,
             ObservedMemoryMegabytes = normalizedObservedMemoryMegabytes,
-            DecisionCode = shouldClearDecisionSnapshot ? "" : result.DecisionCode?.Trim() ?? "",
-            DecisionTitle = shouldClearDecisionSnapshot ? "" : result.DecisionTitle?.Trim() ?? "",
-            DecisionDetail = shouldClearDecisionSnapshot ? "" : result.DecisionDetail?.Trim() ?? "",
-            DecisionNextAction = shouldClearDecisionSnapshot ? "" : result.DecisionNextAction?.Trim() ?? "",
-            Notes = result.Notes?.Trim() ?? ""
+            DecisionCode = shouldClearDecisionSnapshot ? "" : NormalizeSingleLine(result.DecisionCode),
+            DecisionTitle = shouldClearDecisionSnapshot ? "" : NormalizeSingleLine(result.DecisionTitle),
+            DecisionDetail = shouldClearDecisionSnapshot ? "" : NormalizeSingleLine(result.DecisionDetail),
+            DecisionNextAction = shouldClearDecisionSnapshot ? "" : NormalizeSingleLine(result.DecisionNextAction),
+            Notes = NormalizeSingleLine(result.Notes)
         };
     }
 
@@ -258,6 +261,7 @@ public sealed class FeasibilityResultStorageService
         string normalizedOutcome,
         string normalizedScenarioId,
         IReadOnlyList<string> normalizedGroups,
+        string normalizedAccountLabel,
         bool hasSameAccountEvidence,
         bool normalizedRestartSession,
         bool normalizedResourceUsageAcceptable,
@@ -271,6 +275,13 @@ public sealed class FeasibilityResultStorageService
         }
 
         if (!string.Equals(canonicalOutcome, normalizedOutcome, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rawScenarioId = result.ScenarioId?.Trim() ?? "";
+        if (!string.IsNullOrWhiteSpace(rawScenarioId) &&
+            !string.Equals(rawScenarioId, normalizedScenarioId, StringComparison.Ordinal))
         {
             return true;
         }
@@ -297,9 +308,44 @@ public sealed class FeasibilityResultStorageService
         var rawHasSameAccountEvidence = result.IsSameAccountSessionMaintained &&
             !string.IsNullOrWhiteSpace(result.AccountLabel) &&
             rawGroups.Count > 0;
+        if (rawHasSameAccountEvidence &&
+            !string.Equals(result.AccountLabel?.Trim() ?? "", normalizedAccountLabel, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         return rawHasSameAccountEvidence != hasSameAccountEvidence ||
             result.IsRestartSessionMaintained != normalizedRestartSession ||
             result.IsResourceUsageAcceptable != normalizedResourceUsageAcceptable;
+    }
+
+    private static string NormalizeSingleLine(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        var builder = new StringBuilder(value.Length);
+        var previousWasWhitespace = false;
+        foreach (var character in value.Trim())
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                if (!previousWasWhitespace)
+                {
+                    builder.Append(' ');
+                    previousWasWhitespace = true;
+                }
+
+                continue;
+            }
+
+            builder.Append(character);
+            previousWasWhitespace = false;
+        }
+
+        return builder.ToString();
     }
 
     private static bool NullableDoubleEquals(double? left, double? right)
