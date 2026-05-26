@@ -483,6 +483,39 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_VerifyWithSuccessfulResultAndOutput_WritesPassedVerificationTextFile()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        foreach (var result in CreateCompletePlanResults())
+        {
+            storage.AppendResult(result);
+        }
+
+        var verificationOutputPath = Path.Combine(_dataFolder, "phase0-verification-pass.txt");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder, "--output", verificationOutputPath],
+            output,
+            error);
+
+        var fileText = File.ReadAllText(verificationOutputPath);
+        Assert.Equal(0, exitCode);
+        Assert.Contains($"Verification saved: {verificationOutputPath}", output.ToString());
+        Assert.Contains("Stream Orchestra Plan Verification", fileText);
+        Assert.Contains("Results recorded: 5", fileText);
+        Assert.Contains("continue_webview2_mvp", fileText);
+        Assert.Contains("Plan audit: pass=11, pending=0, fail=0", fileText);
+        Assert.Contains("Plan verification: [pass]", fileText);
+        Assert.Contains("Success gate: [pass]", fileText);
+        Assert.Contains("Verification: pass", fileText);
+        Assert.DoesNotContain("Outstanding gates:", fileText);
+        Assert.DoesNotContain("Suggested record shapes:", fileText);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_VerifyWithSuggestedOrderResults_ReturnsSuccessAndPassedGate()
     {
         var storage = new FeasibilityResultStorageService(_dataFolder);
