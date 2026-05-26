@@ -445,6 +445,11 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Input folder: {handoffFolder}", text);
         Assert.Contains("Plan verification: pending", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json canonical content.", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json generatedAt:", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json data folder path:", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json results file path:", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json profile root path:", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json results file belongs to data folder.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json artifactFiles standard order.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json artifactDetails standard order.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json profile groups: A, B, C, D", text);
@@ -481,6 +486,44 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report account label conflict: False", text);
         Assert.Contains("- [pass] diagnostic report suggested records:", text);
         Assert.Contains("Validation: pass", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsManifestContextMismatches()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-context-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        manifest["generatedAt"] = JsonValue.Create("0001-01-01T00:00:00+00:00");
+        manifest["dataFolder"] = JsonValue.Create("relative-data");
+        manifest["resultsFilePath"] = JsonValue.Create(Path.Combine(_dataFolder, "wrong-results.json"));
+        File.WriteAllText(
+            manifestPath,
+            manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + Environment.NewLine);
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-handoff-manifest.json generatedAt is missing or default.", text);
+        Assert.Contains("phase0-handoff-manifest.json data folder path is missing or not fully qualified: relative-data.", text);
+        Assert.Contains("phase0-handoff-manifest.json results file path mismatch", text);
+        Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
     }

@@ -417,6 +417,7 @@ public static class FeasibilityStatusCommand
             $"Plan audit: pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}");
         validationLines.Add($"Outstanding gates: {manifest.OutstandingGateCount}");
         isValid &= ValidateHandoffManifestText(manifestText, manifest, validationLines);
+        isValid &= ValidateHandoffManifestContext(manifest, DateTimeOffset.Now, validationLines);
         isValid &= ValidateHandoffManifestProfileGroups(manifest, validationLines);
 
         var artifactDetails = manifest.ArtifactDetails?.ToArray() ?? Array.Empty<HandoffArtifactMetadata>();
@@ -755,6 +756,73 @@ public static class FeasibilityStatusCommand
     private static string FormatArtifactOrder(IEnumerable<string?> fileNames)
     {
         return string.Join(", ", fileNames.Select(fileName => string.IsNullOrWhiteSpace(fileName) ? "<blank>" : fileName));
+    }
+
+    private static bool ValidateHandoffManifestContext(
+        HandoffManifest manifest,
+        DateTimeOffset now,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        if (manifest.GeneratedAt == default)
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {HandoffManifestFileName} generatedAt is missing or default.");
+        }
+        else if (manifest.GeneratedAt > now.AddDays(1))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffManifestFileName} generatedAt is in the future, expected no later than {now.AddDays(1):O}, actual {manifest.GeneratedAt:O}.");
+        }
+        else
+        {
+            validationLines.Add($"- [pass] {HandoffManifestFileName} generatedAt: {manifest.GeneratedAt:O}");
+        }
+
+        isValid &= ValidateManifestFullPath("data folder", manifest.DataFolder, validationLines);
+        isValid &= ValidateManifestFullPath("results file", manifest.ResultsFilePath, validationLines);
+        isValid &= ValidateManifestFullPath("profile root", manifest.ProfileRootFolder, validationLines);
+
+        if (!string.IsNullOrWhiteSpace(manifest.DataFolder) && !string.IsNullOrWhiteSpace(manifest.ResultsFilePath))
+        {
+            var expectedResultsFilePath = Path.Combine(manifest.DataFolder.Trim(), "feasibility-results.json");
+            if (AreEquivalentPaths(manifest.ResultsFilePath, expectedResultsFilePath))
+            {
+                validationLines.Add(
+                    $"- [pass] {HandoffManifestFileName} results file belongs to data folder.");
+            }
+            else
+            {
+                isValid = false;
+                validationLines.Add(
+                    $"- [fail] {HandoffManifestFileName} results file path mismatch, expected {FormatPathForValidation(expectedResultsFilePath)}, actual {FormatPathForValidation(manifest.ResultsFilePath)}.");
+            }
+        }
+
+        return isValid;
+    }
+
+    private static bool ValidateManifestFullPath(
+        string fieldName,
+        string? path,
+        List<string> validationLines)
+    {
+        if (!IsFullyQualifiedPath(path))
+        {
+            validationLines.Add(
+                $"- [fail] {HandoffManifestFileName} {fieldName} path is missing or not fully qualified: {FormatPathForValidation(path)}.");
+            return false;
+        }
+
+        validationLines.Add(
+            $"- [pass] {HandoffManifestFileName} {fieldName} path: {FormatPathForValidation(path)}");
+        return true;
+    }
+
+    private static bool IsFullyQualifiedPath(string? path)
+    {
+        return !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path.Trim());
     }
 
     private static bool ValidateHandoffManifestProfileGroups(
