@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 444 passing tests.
+Current automated test coverage: 447 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -69,7 +69,7 @@ Current automated test coverage: 444 passing tests.
 | App-local favorites | Implemented | `FavoriteStorageService`, `favorites.json`; favorites are shown by most recent use, then by name; blank favorite names fall back to URL-derived names and stable `favorite` IDs with collision suffixes; malformed hand-edited favorite lists ignore blank URLs, trim text fields, de-duplicate IDs, and saves go through the shared temporary-file JSON writer |
 | Selected slot insertion | Implemented | Explorer and favorite insertion into selected slot |
 | MVP drag insertion deferral | Implemented | Explorer/favorite insertion remains button-based; `ExplorerPanelLayoutTests` verifies drag/drop registration is not exposed for MVP favorite insertion |
-| Visible selected slot guard | Implemented | `SlotSelectionService` keeps restored/layout-changed selections on visible slots before explorer or favorite insertion and tolerates null saved layout slot collections/entries |
+| Visible selected slot guard | Implemented | `SlotSelectionService` keeps restored/layout-changed selections on visible slots before explorer or favorite insertion and tolerates null saved layout slot collections/entries plus out-of-range layout slot IDs |
 | Slot mute state persists | Implemented | `WorkspaceSlot.Muted`, `AppState.LastSession` |
 | Slot profile group persists | Implemented | Profile group is slot-derived and stays with slot |
 | Malformed workspace resilience | Implemented | `WorkspacePresetNormalizationService` normalizes slot range, URLs, duplicate slots, missing/null slots, blank-slot names, and profile groups; diagnostic reports and external-browser fallback planning also tolerate null last-session slot lists and entries |

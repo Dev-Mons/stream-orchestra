@@ -38,6 +38,7 @@ public sealed class SlotSelectionService
         IEnumerable<LayoutSlot?> sourceSlots = layout.Slots ?? [];
         return sourceSlots
             .OfType<LayoutSlot>()
+            .Where(slot => slot.SlotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount)
             .Select(slot => slot.SlotId);
     }
 }

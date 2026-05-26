@@ -78,6 +78,17 @@ public sealed class SlotSelectionServiceTests
         Assert.Equal(4, slotId);
     }
 
+    [Fact]
+    public void ResolveVisibleSlotId_IgnoresOutOfRangeLayoutSlotEntries()
+    {
+        var service = new SlotSelectionService();
+        var layout = CreateLayout([0, 17, 4]);
+
+        var slotId = service.ResolveVisibleSlotId(layout, 16);
+
+        Assert.Equal(4, slotId);
+    }
+
     [Theory]
     [InlineData(9, true)]
     [InlineData(10, false)]
@@ -105,6 +116,19 @@ public sealed class SlotSelectionServiceTests
         };
 
         var isVisible = service.IsSlotVisible(layout, 1);
+
+        Assert.False(isVisible);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(17)]
+    public void IsSlotVisible_ReturnsFalseForOutOfRangeLayoutSlotEntries(int slotId)
+    {
+        var service = new SlotSelectionService();
+        var layout = CreateLayout([0, 17]);
+
+        var isVisible = service.IsSlotVisible(layout, slotId);
 
         Assert.False(isVisible);
     }
