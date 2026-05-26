@@ -110,8 +110,12 @@ public sealed class FeasibilityResultStorageService
         var hasSameAccountEvidence = result.IsSameAccountSessionMaintained &&
             !string.IsNullOrWhiteSpace(normalizedAccountLabel) &&
             normalizedGroups.Count > 0;
-        var normalizedRestartSession = result.IsRestartSessionMaintained && hasSameAccountEvidence;
+        var isFailureOutcome = FeasibilityOutcomeService.IsFailure(rawOutcome);
+        var normalizedRestartSession = result.IsRestartSessionMaintained &&
+            hasSameAccountEvidence &&
+            !isFailureOutcome;
         var normalizedResourceUsageAcceptable = result.IsResourceUsageAcceptable &&
+            !isFailureOutcome &&
             FeasibilityResourceObservationService.HasCompleteValidObservation(result);
         var normalizedOutcome = NormalizeOutcome(
             rawOutcome,

@@ -434,6 +434,46 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_DropsRestartAndResourceFlagsFromFailureOutcome()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "failed_attempt_with_criteria_flags",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": " failure ",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": true,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000
+              }
+            ]
+            """);
+
+        var result = Assert.Single(service.LoadResults());
+
+        Assert.Equal("failure", result.Outcome);
+        Assert.True(result.IsSameAccountSessionMaintained);
+        Assert.Equal("main_soop", result.AccountLabel);
+        Assert.Equal(["A", "B", "C"], result.VerifiedProfileGroups);
+        Assert.False(result.IsRestartSessionMaintained);
+        Assert.False(result.IsResourceUsageAcceptable);
+        Assert.Equal(45.5, result.ObservedCpuPercent);
+        Assert.Equal(60, result.ObservedGpuPercent);
+        Assert.Equal(12000, result.ObservedMemoryMegabytes);
+    }
+
+    [Fact]
     public void LoadResults_DowngradesSuccessOutcomeWhenSuccessEvidenceIsIncomplete()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);
