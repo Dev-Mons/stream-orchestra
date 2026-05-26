@@ -220,18 +220,13 @@ public sealed class ExternalBrowserLaunchPlanService
     private static bool TryNormalizeLaunchableStreamUrl(string? streamUrl, out string normalizedUrl)
     {
         normalizedUrl = "";
-        if (string.IsNullOrWhiteSpace(streamUrl))
+        var normalizedStreamUrl = NavigationService.NormalizeUrl(streamUrl ?? "");
+        if (normalizedStreamUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        var trimmedUrl = streamUrl.Trim();
-        if (trimmedUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (!Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var uri))
+        if (!Uri.TryCreate(normalizedStreamUrl, UriKind.Absolute, out var uri))
         {
             return false;
         }
@@ -241,7 +236,7 @@ public sealed class ExternalBrowserLaunchPlanService
             return false;
         }
 
-        normalizedUrl = uri.ToString();
+        normalizedUrl = normalizedStreamUrl;
         return true;
     }
 }

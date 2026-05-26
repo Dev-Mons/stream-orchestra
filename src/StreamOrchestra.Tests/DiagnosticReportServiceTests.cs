@@ -366,6 +366,53 @@ public sealed class DiagnosticReportServiceTests : IDisposable
     }
 
     [Fact]
+    public void CreateReport_CountsBareDomainLastSessionUrlAsActive()
+    {
+        var profileService = new WebViewProfileService(_profileFolder);
+        var presetStorage = new PresetStorageService(_dataFolder);
+        var favoriteStorage = new FavoriteStorageService(_dataFolder);
+        var feasibilityStorage = new FeasibilityResultStorageService(_dataFolder);
+        presetStorage.SaveAppState(new AppState
+        {
+            LastSession = new WorkspacePreset
+            {
+                Id = "last_session",
+                Name = "Last Session",
+                LayoutId = LayoutPresetIds.Default,
+                Slots =
+                [
+                    new WorkspaceSlot
+                    {
+                        SlotId = 1,
+                        StreamName = "Bare Domain",
+                        StreamUrl = "example.com/live",
+                        ProfileGroupId = "A"
+                    },
+                    new WorkspaceSlot
+                    {
+                        SlotId = 2,
+                        StreamName = "Malformed",
+                        StreamUrl = "not a url",
+                        ProfileGroupId = "A"
+                    }
+                ]
+            }
+        });
+        var service = new DiagnosticReportService();
+
+        var report = service.CreateReport(
+            profileService,
+            presetStorage,
+            favoriteStorage,
+            feasibilityStorage,
+            new FeasibilityDecision("pending", "Pending", "Pending"));
+
+        Assert.True(report.WorkspaceDiagnostics.HasLastSession);
+        Assert.Equal(2, report.WorkspaceDiagnostics.LastSessionSlotCount);
+        Assert.Equal(1, report.WorkspaceDiagnostics.LastSessionActiveStreamCount);
+    }
+
+    [Fact]
     public void CreateReport_TreatsNullLastSessionSlotsAsEmpty()
     {
         var profileService = new WebViewProfileService(_profileFolder);

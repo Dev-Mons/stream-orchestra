@@ -6,6 +6,8 @@ namespace StreamOrchestra.App.Services;
 
 public sealed class DiagnosticReportService
 {
+    private static readonly StreamNavigationService NavigationService = new();
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -131,12 +133,13 @@ public sealed class DiagnosticReportService
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(slot.StreamUrl))
+        var normalizedUrl = NavigationService.NormalizeUrl(slot.StreamUrl ?? "");
+        if (normalizedUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        if (!Uri.TryCreate(slot.StreamUrl.Trim(), UriKind.Absolute, out var uri))
+        if (!Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var uri))
         {
             return false;
         }

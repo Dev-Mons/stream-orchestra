@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 465 passing tests.
+Current automated test coverage: 467 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -56,7 +56,7 @@ Current automated test coverage: 465 passing tests.
 | 4x4 tournament layout | Implemented | `data/layouts.json` / `layout_4x4`, and tests lock the plan's 1-16 row-major 4x4 geometry |
 | Layout validation | Implemented | `LayoutPresetService` rejects null layout/slot entries, missing/duplicate IDs, invalid grid sizes, duplicate/out-of-range slots, missing slot collections, out-of-bounds coordinates, and overlapping slot cells |
 | Slot URL storage | Implemented | `WorkspacePreset`, `AppState.LastSession` |
-| Slot URL normalization | Implemented | `StreamNavigationService` keeps valid `http`/`https` URLs and `about:blank`, infers `https://` for bare web domains, and blanks malformed HTTP inputs or non-web schemes before workspace/favorite/swap persistence |
+| Slot URL normalization | Implemented | `StreamNavigationService` keeps valid `http`/`https` URLs and `about:blank`, infers `https://` for bare web domains, and blanks malformed HTTP inputs or non-web schemes before workspace/favorite/swap persistence; diagnostic active-stream counts and external-browser fallback planning use the same URL normalization |
 | Slot URL sync after WebView navigation | Implemented | `StreamSlotView` listens to WebView2 source changes before saving presets/session state |
 | Slot display names from page title | Implemented | `StreamSlotView` uses WebView2 document titles when no explicit stream name was supplied |
 | Slot stream name display/storage | Implemented | `WorkspaceSlot.StreamName`, `StreamSlotView` control bar |

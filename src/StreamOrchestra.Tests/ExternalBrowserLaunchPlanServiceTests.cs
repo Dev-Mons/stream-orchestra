@@ -147,6 +147,36 @@ public sealed class ExternalBrowserLaunchPlanServiceTests
     }
 
     [Fact]
+    public void CreatePlan_NormalizesBareDomainWorkspaceSlotUrls()
+    {
+        var service = new ExternalBrowserLaunchPlanService();
+        var workspace = new WorkspacePreset
+        {
+            Id = "workspace_bare_domain",
+            Name = "Bare Domain",
+            Slots =
+            [
+                new WorkspaceSlot
+                {
+                    SlotId = 2,
+                    StreamName = " ",
+                    StreamUrl = " example.com/live ",
+                    ProfileGroupId = "A"
+                }
+            ]
+        };
+
+        var plan = service.CreatePlan(workspace, [CreateBrowser("edge", "Edge")], "C:\\Data");
+
+        Assert.True(plan.CanLaunch);
+        var slot = Assert.Single(plan.Slots);
+        Assert.Equal(2, slot.SlotId);
+        Assert.Equal("live", slot.StreamName);
+        Assert.Equal("https://example.com/live", slot.StreamUrl);
+        Assert.Contains("https://example.com/live", slot.Arguments);
+    }
+
+    [Fact]
     public void CreatePlan_IgnoresOutOfRangeWorkspaceSlots()
     {
         var service = new ExternalBrowserLaunchPlanService();
