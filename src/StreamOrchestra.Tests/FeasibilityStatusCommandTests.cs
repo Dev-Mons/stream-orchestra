@@ -448,6 +448,37 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_ValidateHandoffWithOutput_WritesValidationTextFile()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-validation-output");
+        var validationOutputPath = Path.Combine(_dataFolder, "phase0-handoff-validation.txt");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder, "--output", validationOutputPath],
+            output,
+            error);
+
+        var text = output.ToString();
+        var fileText = File.ReadAllText(validationOutputPath);
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(0, exitCode);
+        Assert.Contains($"Handoff validation saved: {validationOutputPath}", text);
+        Assert.Contains("Stream Orchestra Phase 0 Handoff Validation", fileText);
+        Assert.Contains("Validation: pass", fileText);
+        Assert.DoesNotContain("Handoff validation saved:", fileText);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_ValidateHandoff_DetectsTamperedArtifact()
     {
         var handoffFolder = Path.Combine(_dataFolder, "handoff-tampered");
@@ -1392,6 +1423,19 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
 
         Assert.Equal(2, exitCode);
         Assert.Contains("validate-handoff requires --input-folder.", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoffOutputValidationErrors_ReturnUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["validate-handoff", "--input-folder", _dataFolder, "--output"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--output requires a value.", error.ToString());
         Assert.Contains("Usage:", error.ToString());
     }
 

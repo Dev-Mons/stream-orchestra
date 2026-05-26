@@ -337,7 +337,7 @@ public static class FeasibilityStatusCommand
 
     private static int ValidateHandoff(ParseResult parseResult, TextWriter output)
     {
-        var inputFolder = parseResult.OutputPath ?? "";
+        var inputFolder = parseResult.DataFolder ?? "";
         var manifestPath = Path.Combine(inputFolder, "phase0-handoff-manifest.json");
         var validationLines = new List<string>
         {
@@ -351,16 +351,14 @@ public static class FeasibilityStatusCommand
         {
             validationLines.Add("Validation: fail");
             validationLines.Add("- [fail] Input folder does not exist.");
-            WriteLines(validationLines, output);
-            return 1;
+            return WriteHandoffValidationResult(validationLines, output, parseResult.OutputPath, exitCode: 1);
         }
 
         if (!File.Exists(manifestPath))
         {
             validationLines.Add("Validation: fail");
             validationLines.Add("- [fail] phase0-handoff-manifest.json is missing.");
-            WriteLines(validationLines, output);
-            return 1;
+            return WriteHandoffValidationResult(validationLines, output, parseResult.OutputPath, exitCode: 1);
         }
 
         HandoffManifest? manifest;
@@ -374,16 +372,14 @@ public static class FeasibilityStatusCommand
         {
             validationLines.Add("Validation: fail");
             validationLines.Add($"- [fail] Manifest JSON is invalid: {ex.Message}");
-            WriteLines(validationLines, output);
-            return 1;
+            return WriteHandoffValidationResult(validationLines, output, parseResult.OutputPath, exitCode: 1);
         }
 
         if (manifest is null)
         {
             validationLines.Add("Validation: fail");
             validationLines.Add("- [fail] Manifest JSON is empty.");
-            WriteLines(validationLines, output);
-            return 1;
+            return WriteHandoffValidationResult(validationLines, output, parseResult.OutputPath, exitCode: 1);
         }
 
         validationLines.Add($"Generated at: {manifest.GeneratedAt:O}");
@@ -398,8 +394,7 @@ public static class FeasibilityStatusCommand
         {
             validationLines.Add("Validation: fail");
             validationLines.Add("- [fail] Manifest has no artifactDetails entries.");
-            WriteLines(validationLines, output);
-            return 1;
+            return WriteHandoffValidationResult(validationLines, output, parseResult.OutputPath, exitCode: 1);
         }
 
         var detailedFiles = new HashSet<string>(
@@ -507,8 +502,27 @@ public static class FeasibilityStatusCommand
         }
 
         validationLines.Add(isValid ? "Validation: pass" : "Validation: fail");
+        return WriteHandoffValidationResult(
+            validationLines,
+            output,
+            parseResult.OutputPath,
+            isValid ? 0 : 1);
+    }
+
+    private static int WriteHandoffValidationResult(
+        IReadOnlyList<string> validationLines,
+        TextWriter output,
+        string? outputPath,
+        int exitCode)
+    {
         WriteLines(validationLines, output);
-        return isValid ? 0 : 1;
+        if (!string.IsNullOrWhiteSpace(outputPath))
+        {
+            SaveTextFile(outputPath, string.Join(Environment.NewLine, validationLines) + Environment.NewLine);
+            output.WriteLine($"Handoff validation saved: {outputPath}");
+        }
+
+        return exitCode;
     }
 
     private static bool ValidateHandoffDiagnosticReport(
@@ -1612,6 +1626,7 @@ public static class FeasibilityStatusCommand
     private static ParseResult ParseValidateHandoffArgs(string[] args)
     {
         string? inputFolder = null;
+        string? outputPath = null;
 
         for (var index = 1; index < args.Length; index++)
         {
@@ -1632,6 +1647,22 @@ public static class FeasibilityStatusCommand
                 continue;
             }
 
+            if (arg.Equals("--output", StringComparison.OrdinalIgnoreCase))
+            {
+                if (index + 1 >= args.Length)
+                {
+                    return ParseResult.Invalid("--output requires a value.");
+                }
+
+                outputPath = args[++index];
+                if (string.IsNullOrWhiteSpace(outputPath))
+                {
+                    return ParseResult.Invalid("--output requires a value.");
+                }
+
+                continue;
+            }
+
             return ParseResult.Invalid($"Unknown option: {arg}");
         }
 
@@ -1640,7 +1671,7 @@ public static class FeasibilityStatusCommand
             return ParseResult.Invalid("validate-handoff requires --input-folder.");
         }
 
-        return ParseResult.TextOutput("validate-handoff", dataFolder: null, inputFolder);
+        return ParseResult.TextOutput("validate-handoff", inputFolder, outputPath);
     }
 
     private static void WriteUsage(TextWriter writer)
@@ -1657,7 +1688,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--dry-run] [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools report [--data-folder <path>] [--profile-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools scenarios");
-        writer.WriteLine("  StreamOrchestra.Tools validate-handoff --input-folder <path>");
+        writer.WriteLine("  StreamOrchestra.Tools validate-handoff --input-folder <path> [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools verify [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools --help");
     }
