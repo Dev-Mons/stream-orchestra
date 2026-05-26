@@ -443,8 +443,10 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-preflight.txt readiness:", text);
         Assert.Contains("- [pass] phase0-results.json result count: 0", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json isVerified: False", text);
+        Assert.Contains("- [pass] phase0-audit.txt content matches results snapshot.", text);
         Assert.Contains("- [pass] phase0-verification.txt plan status: pending", text);
         Assert.Contains("- [pass] phase0-verification.txt completion: False", text);
+        Assert.Contains("- [pass] phase0-history.txt content matches results snapshot.", text);
         Assert.Contains("- [pass] diagnostic report result count: 0", text);
         Assert.Contains("- [pass] diagnostic report decision: 검증 대기 (pending)", text);
         Assert.Contains("- [pass] diagnostic report plan gates: pass=0, pending=11, fail=0, outstanding=11, status=pending", text);
@@ -606,6 +608,50 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains(
             "phase0-results.json plan gates mismatch, expected pass=0, pending=11, fail=0, outstanding=11, status=pending; actual pass=11, pending=0, fail=0, outstanding=0, status=pass.",
             text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsAuditAndHistoryMismatches()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-audit-history-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var auditPath = Path.Combine(handoffFolder, "phase0-audit.txt");
+        var historyPath = Path.Combine(handoffFolder, "phase0-history.txt");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        File.WriteAllText(
+            auditPath,
+            File.ReadAllText(auditPath)
+                .Replace("Plan audit: pass=0, pending=11, fail=0", "Plan audit: pass=11, pending=0, fail=0"));
+        File.WriteAllText(
+            historyPath,
+            File.ReadAllText(historyPath)
+                .Replace("Results recorded: 0", "Results recorded: 1"));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-audit.txt");
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-history.txt");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-audit.txt content mismatch", text);
+        Assert.Contains("phase0-history.txt content mismatch", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
