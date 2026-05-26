@@ -444,6 +444,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Stream Orchestra Phase 0 Handoff Validation", text);
         Assert.Contains($"Input folder: {handoffFolder}", text);
         Assert.Contains("Plan verification: pending", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json profile groups: A, B, C, D", text);
         Assert.Contains("- [pass] phase0-results.json:", text);
         Assert.Contains("- [pass] phase0-preflight.txt data folder:", text);
         Assert.Contains("- [pass] phase0-preflight.txt results file:", text);
@@ -1185,6 +1186,41 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal(1, exitCode);
         Assert.Contains("phase0-results.json: duplicate artifactFiles entry.", text);
         Assert.Contains("phase0-results.json: duplicate artifactDetails entry.", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsInvalidManifestProfileGroups()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-invalid-profile-groups");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var profileGroup = manifest["profileGroups"]!.AsArray()[0]!.AsObject();
+        profileGroup["id"] = JsonValue.Create("X");
+        profileGroup["userDataFolder"] = JsonValue.Create(Path.Combine(_dataFolder, "Profiles", "GroupX"));
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-handoff-manifest.json profile group X is unexpected.", text);
+        Assert.Contains("phase0-handoff-manifest.json profile group A is missing.", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());

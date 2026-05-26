@@ -36,6 +36,8 @@ public static class FeasibilityStatusCommand
         HandoffResultsFileName
     ];
 
+    private static readonly string[] RequiredHandoffProfileGroupIds = ["A", "B", "C", "D"];
+
     public static int Execute(string[] args, TextWriter output, TextWriter error)
     {
         var parseResult = ParseArgs(args);
@@ -413,6 +415,7 @@ public static class FeasibilityStatusCommand
         validationLines.Add(
             $"Plan audit: pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}");
         validationLines.Add($"Outstanding gates: {manifest.OutstandingGateCount}");
+        isValid &= ValidateHandoffManifestProfileGroups(manifest, validationLines);
 
         var artifactDetails = manifest.ArtifactDetails?.ToArray() ?? Array.Empty<HandoffArtifactMetadata>();
         var manifestArtifactFiles = manifest.ArtifactFiles ?? Array.Empty<string>();
@@ -649,6 +652,98 @@ public static class FeasibilityStatusCommand
         }
 
         return duplicates;
+    }
+
+    private static bool ValidateHandoffManifestProfileGroups(
+        HandoffManifest manifest,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        if (string.IsNullOrWhiteSpace(manifest.ProfileRootFolder))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {HandoffManifestFileName} profile root is missing.");
+        }
+
+        var profileGroups = (manifest.ProfileGroups ?? Array.Empty<HandoffProfileGroupMetadata>())
+            .Where(group => group is not null)
+            .Select(group => group!)
+            .ToArray();
+        if (profileGroups.Length == 0)
+        {
+            validationLines.Add($"- [fail] {HandoffManifestFileName} profile groups are missing.");
+            return false;
+        }
+
+        foreach (var duplicateGroupId in FindDuplicateFileNames(profileGroups.Select(group => group.Id)))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {HandoffManifestFileName} profile group {duplicateGroupId} is duplicated.");
+        }
+
+        var requiredGroupIds = new HashSet<string>(RequiredHandoffProfileGroupIds, StringComparer.OrdinalIgnoreCase);
+        var actualGroupIds = new HashSet<string>(
+            profileGroups
+                .Where(group => !string.IsNullOrWhiteSpace(group.Id))
+                .Select(group => group.Id),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var group in profileGroups)
+        {
+            if (string.IsNullOrWhiteSpace(group.Id))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {HandoffManifestFileName} profile group id is missing.");
+                continue;
+            }
+
+            if (!requiredGroupIds.Contains(group.Id))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {HandoffManifestFileName} profile group {group.Id} is unexpected.");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(group.UserDataFolder))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {HandoffManifestFileName} profile group {group.Id} folder is missing.");
+            }
+            else
+            {
+                var expectedFolder = Path.Combine(manifest.ProfileRootFolder, $"Group{group.Id.ToUpperInvariant()}");
+                if (!AreEquivalentPaths(group.UserDataFolder, expectedFolder))
+                {
+                    isValid = false;
+                    validationLines.Add(
+                        $"- [fail] {HandoffManifestFileName} profile group {group.Id} folder mismatch, expected {FormatPathForValidation(expectedFolder)}, actual {FormatPathForValidation(group.UserDataFolder)}.");
+                }
+            }
+
+            if (!string.Equals(group.Status, "ready", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(group.Status, "missing", StringComparison.OrdinalIgnoreCase))
+            {
+                isValid = false;
+                validationLines.Add(
+                    $"- [fail] {HandoffManifestFileName} profile group {group.Id} status is invalid: {FormatMismatchLine(group.Status)}.");
+            }
+        }
+
+        foreach (var requiredGroupId in RequiredHandoffProfileGroupIds)
+        {
+            if (!actualGroupIds.Contains(requiredGroupId))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {HandoffManifestFileName} profile group {requiredGroupId} is missing.");
+            }
+        }
+
+        if (isValid)
+        {
+            validationLines.Add(
+                $"- [pass] {HandoffManifestFileName} profile groups: {string.Join(", ", RequiredHandoffProfileGroupIds)}");
+        }
+
+        return isValid;
     }
 
     private static bool ValidateHandoffResultsSnapshotText(
