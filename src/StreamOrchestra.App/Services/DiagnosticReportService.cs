@@ -99,6 +99,7 @@ public sealed class DiagnosticReportService
         var lastSessionSlots = lastSession?.Slots?
             .Where(slot => slot is not null)
             .Select(slot => slot!)
+            .Where(IsValidSlotId)
             .ToArray() ?? [];
         return new WorkspaceDiagnostics(
             SavedWorkspaceCount: workspaces.Count,
@@ -109,6 +110,11 @@ public sealed class DiagnosticReportService
             LastSessionLayoutId: lastSession?.LayoutId,
             LastSessionSlotCount: lastSessionSlots.Length,
             LastSessionActiveStreamCount: lastSessionSlots.Count(HasLaunchableStreamUrl));
+    }
+
+    private static bool IsValidSlotId(WorkspaceSlot slot)
+    {
+        return slot.SlotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount;
     }
 
     private static bool HasLaunchableStreamUrl(WorkspaceSlot? slot)

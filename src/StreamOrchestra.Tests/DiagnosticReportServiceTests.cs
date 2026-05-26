@@ -285,6 +285,61 @@ public sealed class DiagnosticReportServiceTests : IDisposable
     }
 
     [Fact]
+    public void CreateReport_IgnoresOutOfRangeLastSessionSlots()
+    {
+        var profileService = new WebViewProfileService(_profileFolder);
+        var presetStorage = new PresetStorageService(_dataFolder);
+        var favoriteStorage = new FavoriteStorageService(_dataFolder);
+        var feasibilityStorage = new FeasibilityResultStorageService(_dataFolder);
+        presetStorage.SaveAppState(new AppState
+        {
+            LastWorkspaceId = "workspace_malformed",
+            LastSession = new WorkspacePreset
+            {
+                Id = "last_session",
+                Name = "Last Session",
+                LayoutId = LayoutPresetIds.Default,
+                Slots =
+                [
+                    new WorkspaceSlot
+                    {
+                        SlotId = 0,
+                        StreamName = "Zero",
+                        StreamUrl = "https://example.com/zero",
+                        ProfileGroupId = "A"
+                    },
+                    new WorkspaceSlot
+                    {
+                        SlotId = 5,
+                        StreamName = "Active",
+                        StreamUrl = "https://example.com/active",
+                        ProfileGroupId = "B"
+                    },
+                    new WorkspaceSlot
+                    {
+                        SlotId = 17,
+                        StreamName = "Seventeen",
+                        StreamUrl = "https://example.com/seventeen",
+                        ProfileGroupId = "D"
+                    }
+                ]
+            }
+        });
+        var service = new DiagnosticReportService();
+
+        var report = service.CreateReport(
+            profileService,
+            presetStorage,
+            favoriteStorage,
+            feasibilityStorage,
+            new FeasibilityDecision("pending", "Pending", "Pending"));
+
+        Assert.True(report.WorkspaceDiagnostics.HasLastSession);
+        Assert.Equal(1, report.WorkspaceDiagnostics.LastSessionSlotCount);
+        Assert.Equal(1, report.WorkspaceDiagnostics.LastSessionActiveStreamCount);
+    }
+
+    [Fact]
     public void CreateReport_TreatsNullLastSessionSlotsAsEmpty()
     {
         var profileService = new WebViewProfileService(_profileFolder);

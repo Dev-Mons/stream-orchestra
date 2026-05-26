@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 449 passing tests.
+Current automated test coverage: 450 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -72,7 +72,7 @@ Current automated test coverage: 449 passing tests.
 | Visible selected slot guard | Implemented | `SlotSelectionService` keeps restored/layout-changed selections on visible slots before explorer or favorite insertion and tolerates null saved layout slot collections/entries plus out-of-range layout slot IDs |
 | Slot mute state persists | Implemented | `WorkspaceSlot.Muted`, `AppState.LastSession` |
 | Slot profile group persists | Implemented | Profile group is slot-derived and stays with slot |
-| Malformed workspace resilience | Implemented | `WorkspacePresetNormalizationService` normalizes slot range, URLs, duplicate slots, missing/null slots, blank-slot names, and profile groups; diagnostic reports and external-browser fallback planning also tolerate null last-session slot lists and entries |
+| Malformed workspace resilience | Implemented | `WorkspacePresetNormalizationService` normalizes slot range, URLs, duplicate slots, missing/null slots, blank-slot names, and profile groups; diagnostic reports and external-browser fallback planning also tolerate null or out-of-range last-session slot lists and entries |
 | Workspace restore safety | Implemented | `WorkspaceRestoreService` prepares presets and last sessions by normalizing data, resolving the layout, and blanking slots outside that layout before WebViews are loaded |
 | Hidden slot background playback prevention | Implemented | `WorkspaceSlotVisibilityService` blanks slots outside the active layout, tolerates null saved slot collections/entries plus malformed layout slot entries, and hidden slots are cleared without initializing WebViews when possible |
 | Broadcast click passes to WebView/player | Implemented | `StreamSlotView.xaml` keeps `ControlBar` and `SlotUrlEditor` outside the WebView content row, and `StreamSlotViewLayoutTests` locks that structure |
