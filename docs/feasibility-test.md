@@ -64,7 +64,7 @@ Create a full handoff bundle when you want the setup, checklist, audit, and veri
 dotnet run --project src\StreamOrchestra.Tools -- handoff --output-folder .\phase0-handoff
 ```
 
-The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, and a normalized `phase0-results.json` snapshot of the current feasibility evidence. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
+The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, a normalized `phase0-results.json` snapshot of the current feasibility evidence, and `phase0-handoff-manifest.json`. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
 
 Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
 
@@ -151,7 +151,7 @@ The `checklist` command prints the ordered manual SOOP verification flow from `d
 
 The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, can save the same text with `--output <path>`, and exits non-zero until every Phase 0 plan gate passes.
 
-The `handoff` command saves the preflight, checklist, audit, verification, and normalized feasibility-results JSON artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands.
+The `handoff` command saves the preflight, checklist, audit, verification, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands.
 
 Export a diagnostic report from the CLI:
 

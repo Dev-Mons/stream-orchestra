@@ -250,6 +250,7 @@ public static class FeasibilityStatusCommand
     {
         var outputFolder = ResolveHandoffOutputFolder(parseResult.DataFolder, parseResult.OutputPath);
         Directory.CreateDirectory(outputFolder);
+        var generatedAt = DateTimeOffset.Now;
         var feasibilityStorage = new FeasibilityResultStorageService(parseResult.DataFolder);
         var results = feasibilityStorage.LoadResults();
 
@@ -267,9 +268,19 @@ public static class FeasibilityStatusCommand
             SaveHandoffArtifact(outputFolder, "phase0-verification.txt", verificationLines),
             SaveHandoffResultsSnapshot(outputFolder, results)
         };
+        var manifestPath = SaveHandoffManifest(
+            outputFolder,
+            generatedAt,
+            feasibilityStorage.DataFolder,
+            feasibilityStorage.ResultsFilePath,
+            results.Count,
+            isPreflightReady,
+            isVerified,
+            artifacts.Select(Path.GetFileName).Where(fileName => fileName is not null).Select(fileName => fileName!).ToArray());
 
         output.WriteLine("Stream Orchestra Phase 0 Handoff");
         output.WriteLine($"Output folder: {outputFolder}");
+        output.WriteLine($"Generated at: {generatedAt:O}");
         output.WriteLine($"Results snapshot source: {feasibilityStorage.ResultsFilePath}");
         output.WriteLine($"Results snapshot count: {results.Count}");
         foreach (var artifact in artifacts)
@@ -277,6 +288,7 @@ public static class FeasibilityStatusCommand
             output.WriteLine($"Saved: {artifact}");
         }
 
+        output.WriteLine($"Saved: {manifestPath}");
         output.WriteLine($"Preflight ready: {isPreflightReady}");
         output.WriteLine($"Verification complete: {isVerified}");
         output.WriteLine("Use the saved files as the setup, checklist, audit, and verification artifacts for the manual SOOP run.");
@@ -1466,6 +1478,29 @@ public static class FeasibilityStatusCommand
         return path;
     }
 
+    private static string SaveHandoffManifest(
+        string outputFolder,
+        DateTimeOffset generatedAt,
+        string dataFolder,
+        string resultsFilePath,
+        int resultCount,
+        bool isPreflightReady,
+        bool isVerified,
+        IReadOnlyList<string> artifactFiles)
+    {
+        var path = Path.Combine(outputFolder, "phase0-handoff-manifest.json");
+        var manifest = new HandoffManifest(
+            generatedAt,
+            dataFolder,
+            resultsFilePath,
+            resultCount,
+            isPreflightReady,
+            isVerified,
+            artifactFiles);
+        SaveTextFile(path, JsonSerializer.Serialize(manifest, HandoffJsonOptions) + Environment.NewLine);
+        return path;
+    }
+
     private static void WriteLines(IReadOnlyList<string> lines, TextWriter output)
     {
         foreach (var line in lines)
@@ -1619,6 +1654,15 @@ public static class FeasibilityStatusCommand
             return new ParseResult(false, false, "", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, errorMessage);
         }
     }
+
+    private sealed record HandoffManifest(
+        DateTimeOffset GeneratedAt,
+        string DataFolder,
+        string ResultsFilePath,
+        int ResultCount,
+        bool IsPreflightReady,
+        bool IsVerified,
+        IReadOnlyList<string> ArtifactFiles);
 
     private static IReadOnlyList<string> ParseProfileGroups(string rawValue)
     {

@@ -327,11 +327,13 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         var auditPath = Path.Combine(handoffFolder, "phase0-audit.txt");
         var verificationPath = Path.Combine(handoffFolder, "phase0-verification.txt");
         var resultsPath = Path.Combine(handoffFolder, "phase0-results.json");
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
         var text = output.ToString();
 
         Assert.Equal(0, exitCode);
         Assert.Contains("Stream Orchestra Phase 0 Handoff", text);
         Assert.Contains($"Output folder: {handoffFolder}", text);
+        Assert.Contains("Generated at:", text);
         Assert.Contains($"Results snapshot source: {Path.Combine(_dataFolder, "feasibility-results.json")}", text);
         Assert.Contains("Results snapshot count: 0", text);
         Assert.Contains($"Saved: {preflightPath}", text);
@@ -339,6 +341,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Saved: {auditPath}", text);
         Assert.Contains($"Saved: {verificationPath}", text);
         Assert.Contains($"Saved: {resultsPath}", text);
+        Assert.Contains($"Saved: {manifestPath}", text);
         Assert.Contains("Preflight ready:", text);
         Assert.Contains("Verification complete: False", text);
         Assert.Contains("Stream Orchestra Feasibility Preflight", File.ReadAllText(preflightPath));
@@ -346,6 +349,12 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Stream Orchestra Plan Audit", File.ReadAllText(auditPath));
         Assert.Contains("Verification: not complete", File.ReadAllText(verificationPath));
         Assert.Equal("[]" + Environment.NewLine, File.ReadAllText(resultsPath));
+        var manifestText = File.ReadAllText(manifestPath);
+        Assert.Contains("\"resultCount\": 0", manifestText);
+        Assert.Contains("\"isPreflightReady\":", manifestText);
+        Assert.Contains("\"isVerified\": false", manifestText);
+        Assert.Contains("\"phase0-results.json\"", manifestText);
+        Assert.Contains("\"phase0-verification.txt\"", manifestText);
         Assert.Equal("", error.ToString());
     }
 
