@@ -17,10 +17,15 @@ public sealed class StreamNavigationService
 
         if (Uri.TryCreate(trimmedUrl, UriKind.Absolute, out var absoluteUri))
         {
-            return absoluteUri.ToString();
+            return IsHttpOrHttps(absoluteUri) ? absoluteUri.ToString() : "about:blank";
         }
 
-        return $"https://{trimmedUrl}";
+        var urlWithScheme = $"https://{trimmedUrl}";
+        return Uri.TryCreate(urlWithScheme, UriKind.Absolute, out var inferredUri) &&
+            IsHttpOrHttps(inferredUri) &&
+            !string.IsNullOrWhiteSpace(inferredUri.Host)
+                ? urlWithScheme
+                : "about:blank";
     }
 
     public string CreateDisplayName(string? url)
@@ -76,5 +81,11 @@ public sealed class StreamNavigationService
         }
 
         return Uri.TryCreate(value, UriKind.Absolute, out _);
+    }
+
+    private static bool IsHttpOrHttps(Uri uri)
+    {
+        return uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+            uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
     }
 }

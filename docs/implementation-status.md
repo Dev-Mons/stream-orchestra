@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 450 passing tests.
+Current automated test coverage: 457 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -56,6 +56,7 @@ Current automated test coverage: 450 passing tests.
 | 4x4 tournament layout | Implemented | `data/layouts.json` / `layout_4x4`, and tests lock the plan's 1-16 row-major 4x4 geometry |
 | Layout validation | Implemented | `LayoutPresetService` rejects null layout/slot entries, missing/duplicate IDs, invalid grid sizes, duplicate/out-of-range slots, missing slot collections, out-of-bounds coordinates, and overlapping slot cells |
 | Slot URL storage | Implemented | `WorkspacePreset`, `AppState.LastSession` |
+| Slot URL normalization | Implemented | `StreamNavigationService` keeps `http`/`https` URLs and `about:blank`, infers `https://` for bare web domains, and blanks malformed or non-web schemes before workspace/favorite/swap persistence |
 | Slot URL sync after WebView navigation | Implemented | `StreamSlotView` listens to WebView2 source changes before saving presets/session state |
 | Slot display names from page title | Implemented | `StreamSlotView` uses WebView2 document titles when no explicit stream name was supplied |
 | Slot stream name display/storage | Implemented | `WorkspaceSlot.StreamName`, `StreamSlotView` control bar |
@@ -72,7 +73,7 @@ Current automated test coverage: 450 passing tests.
 | Visible selected slot guard | Implemented | `SlotSelectionService` keeps restored/layout-changed selections on visible slots before explorer or favorite insertion and tolerates null saved layout slot collections/entries plus out-of-range layout slot IDs |
 | Slot mute state persists | Implemented | `WorkspaceSlot.Muted`, `AppState.LastSession` |
 | Slot profile group persists | Implemented | Profile group is slot-derived and stays with slot |
-| Malformed workspace resilience | Implemented | `WorkspacePresetNormalizationService` normalizes slot range, URLs, duplicate slots, missing/null slots, blank-slot names, and profile groups; diagnostic reports and external-browser fallback planning also tolerate null or out-of-range last-session slot lists and entries |
+| Malformed workspace resilience | Implemented | `WorkspacePresetNormalizationService` normalizes slot range, URLs, duplicate slots, missing/null slots, blank/non-web stream names, and profile groups; diagnostic reports and external-browser fallback planning also tolerate null or out-of-range last-session slot lists and entries |
 | Workspace restore safety | Implemented | `WorkspaceRestoreService` prepares presets and last sessions by normalizing data, resolving the layout, and blanking slots outside that layout before WebViews are loaded |
 | Hidden slot background playback prevention | Implemented | `WorkspaceSlotVisibilityService` blanks slots outside the active layout, tolerates null saved slot collections/entries plus malformed layout slot entries, and hidden slots are cleared without initializing WebViews when possible |
 | Broadcast click passes to WebView/player | Implemented | `StreamSlotView.xaml` keeps `ControlBar` and `SlotUrlEditor` outside the WebView content row, and `StreamSlotViewLayoutTests` locks that structure |

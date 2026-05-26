@@ -11,6 +11,10 @@ public sealed class StreamNavigationServiceTests
     [InlineData("ABOUT:BLANK", "about:blank")]
     [InlineData("www.sooplive.co.kr", "https://www.sooplive.co.kr")]
     [InlineData("https://www.sooplive.co.kr", "https://www.sooplive.co.kr/")]
+    [InlineData("javascript:alert(1)", "about:blank")]
+    [InlineData("file:///C:/Temp/test.html", "about:blank")]
+    [InlineData("ftp://example.com/stream", "about:blank")]
+    [InlineData("not a url", "about:blank")]
     public void NormalizeUrl_NormalizesUserInput(string input, string expected)
     {
         var service = new StreamNavigationService();

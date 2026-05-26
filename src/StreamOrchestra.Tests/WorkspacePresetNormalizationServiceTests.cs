@@ -150,6 +150,56 @@ public sealed class WorkspacePresetNormalizationServiceTests
     }
 
     [Fact]
+    public void Normalize_NonWebUrlForcesBlankStream()
+    {
+        var service = new WorkspacePresetNormalizationService(new StreamNavigationService());
+        var workspace = new WorkspacePreset
+        {
+            Id = "workspace_test",
+            Name = "Test",
+            LayoutId = "layout_8_small_1_main",
+            Slots =
+            [
+                new WorkspaceSlot
+                {
+                    SlotId = 6,
+                    StreamName = "Stale Script Name",
+                    StreamUrl = "javascript:alert(1)",
+                    Muted = true
+                },
+                new WorkspaceSlot
+                {
+                    SlotId = 7,
+                    StreamName = "Stale File Name",
+                    StreamUrl = "file:///C:/Temp/test.html"
+                },
+                new WorkspaceSlot
+                {
+                    SlotId = 8,
+                    StreamName = "Stale FTP Name",
+                    StreamUrl = "ftp://example.com/stream"
+                }
+            ]
+        };
+
+        var normalized = service.Normalize(workspace, Layouts);
+
+        Assert.Contains(normalized.Slots, slot =>
+            slot.SlotId == 6 &&
+            slot.StreamName == "Empty" &&
+            slot.StreamUrl == "about:blank" &&
+            slot.Muted);
+        Assert.Contains(normalized.Slots, slot =>
+            slot.SlotId == 7 &&
+            slot.StreamName == "Empty" &&
+            slot.StreamUrl == "about:blank");
+        Assert.Contains(normalized.Slots, slot =>
+            slot.SlotId == 8 &&
+            slot.StreamName == "Empty" &&
+            slot.StreamUrl == "about:blank");
+    }
+
+    [Fact]
     public void Normalize_TreatsNullSlotCollectionAsEmptySlots()
     {
         var service = new WorkspacePresetNormalizationService(new StreamNavigationService());

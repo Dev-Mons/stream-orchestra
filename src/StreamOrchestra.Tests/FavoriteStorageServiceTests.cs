@@ -151,6 +151,48 @@ public sealed class FavoriteStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadFavorites_DropsNonWebUrls()
+    {
+        var service = new FavoriteStorageService(_dataFolder);
+        File.WriteAllText(
+            service.FavoritesFilePath,
+            """
+            [
+              {
+                "id": "script",
+                "name": "Script",
+                "platform": "SOOP",
+                "url": "javascript:alert(1)"
+              },
+              {
+                "id": "file",
+                "name": "File",
+                "platform": "SOOP",
+                "url": "file:///C:/Temp/test.html"
+              },
+              {
+                "id": "ftp",
+                "name": "FTP",
+                "platform": "SOOP",
+                "url": "ftp://example.com/stream"
+              },
+              {
+                "id": "valid",
+                "name": "Valid",
+                "platform": "SOOP",
+                "url": "https://example.com/stream"
+              }
+            ]
+            """);
+
+        var favorites = service.LoadFavorites();
+
+        var favorite = Assert.Single(favorites);
+        Assert.Equal("valid", favorite.Id);
+        Assert.Equal("https://example.com/stream", favorite.Url);
+    }
+
+    [Fact]
     public void SaveFavorites_NormalizesEntriesBeforeWriting()
     {
         var service = new FavoriteStorageService(_dataFolder);

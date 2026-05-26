@@ -85,6 +85,31 @@ public sealed class SlotSwapServiceTests
     }
 
     [Fact]
+    public void SwapStreams_BlanksNonWebStreamIdentity()
+    {
+        var service = new SlotSwapService();
+        var sourceSlot = new SlotRuntimeState(
+            SlotId: 2,
+            StreamName: "Source Stream",
+            StreamUrl: "https://example.com/source",
+            IsMuted: true,
+            ProfileGroupId: "A");
+        var targetSlot = new SlotRuntimeState(
+            SlotId: 9,
+            StreamName: "Stale Script Name",
+            StreamUrl: "javascript:alert(1)",
+            IsMuted: false,
+            ProfileGroupId: "C");
+
+        var result = service.SwapStreams(sourceSlot, targetSlot);
+
+        Assert.Equal("Empty", result.SourceSlot.StreamName);
+        Assert.Equal("about:blank", result.SourceSlot.StreamUrl);
+        Assert.True(result.SourceSlot.IsMuted);
+        Assert.Equal("A", result.SourceSlot.ProfileGroupId);
+    }
+
+    [Fact]
     public void SwapStreams_RejectsNullRuntimeState()
     {
         var service = new SlotSwapService();
