@@ -887,6 +887,57 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_RecordDryRun_PrintsPreviewWithoutAppendingResult()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            [
+                "record",
+                "--count",
+                "9",
+                "--outcome",
+                "success",
+                "--account",
+                "--account-label",
+                "main_soop",
+                "--profile-groups",
+                "A,B,C",
+                "--restart",
+                "--resources",
+                "--cpu-percent",
+                "45.5",
+                "--gpu-percent",
+                "60",
+                "--memory-mb",
+                "12000",
+                "--dry-run",
+                "--data-folder",
+                _dataFolder
+            ],
+            output,
+            error);
+
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Empty(storage.LoadResults());
+        Assert.Contains("Dry run: feasibility result was not recorded.", text);
+        Assert.Contains("Stored results before command: 0", text);
+        Assert.Contains("Stored results after command: 0", text);
+        Assert.Contains("Result: success, 9 slot(s)", text);
+        Assert.Contains("Scenario: Groups A/B/C, 9-slot success threshold (groups_a_b_c_9_slot_threshold)", text);
+        Assert.Contains("Account label: main_soop", text);
+        Assert.Contains("Profile groups: A/B/C", text);
+        Assert.Contains("continue_webview2_experiments", text);
+        Assert.Contains("Plan audit: pass=5, pending=6, fail=0", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_RecordWithGroup_DerivesIsolatedGroupScenarioAndDefaultCount()
     {
         using var output = new StringWriter();

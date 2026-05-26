@@ -573,14 +573,24 @@ public static class FeasibilityStatusCommand
         };
 
         var existingResults = storage.LoadResults();
-        var decision = new FeasibilityDecisionService().Decide(existingResults.Append(result).ToArray());
+        var previewResults = existingResults.Append(result).ToArray();
+        var decision = new FeasibilityDecisionService().Decide(previewResults);
         FeasibilityResultStorageService.ApplyDecisionSnapshot(result, decision);
-        storage.AppendResult(result);
-        var results = storage.LoadResults();
+        IReadOnlyList<FeasibilityTestResult> results = previewResults;
+        if (!parseResult.DryRun)
+        {
+            storage.AppendResult(result);
+            results = storage.LoadResults().ToArray();
+        }
+
         var auditItems = new FeasibilityAuditService().CreateAudit(results, decision);
 
-        output.WriteLine("Recorded feasibility result.");
+        output.WriteLine(parseResult.DryRun
+            ? "Dry run: feasibility result was not recorded."
+            : "Recorded feasibility result.");
         output.WriteLine($"Data folder: {storage.DataFolder}");
+        output.WriteLine($"Stored results before command: {existingResults.Count}");
+        output.WriteLine($"Stored results after command: {(parseResult.DryRun ? existingResults.Count : results.Count)}");
         output.WriteLine($"Result: {result.Outcome}, {result.PlaybackCount} slot(s), {result.CapturedAt:yyyy-MM-dd HH:mm:ss}");
         output.WriteLine($"Scenario: {result.ScenarioName} ({result.ScenarioId})");
         output.WriteLine($"Criteria: account={result.IsSameAccountSessionMaintained}, restart={result.IsRestartSessionMaintained}, resources={result.IsResourceUsageAcceptable}");
@@ -785,6 +795,7 @@ public static class FeasibilityStatusCommand
         IReadOnlyList<string> verifiedProfileGroups = [];
         string? accountLabel = null;
         string? notes = null;
+        var dryRun = false;
 
         for (var index = 1; index < args.Length; index++)
         {
@@ -908,6 +919,12 @@ public static class FeasibilityStatusCommand
                 }
 
                 notes = args[++index];
+                continue;
+            }
+
+            if (arg.Equals("--dry-run", StringComparison.OrdinalIgnoreCase))
+            {
+                dryRun = true;
                 continue;
             }
 
@@ -1056,7 +1073,8 @@ public static class FeasibilityStatusCommand
             observedGpuPercent,
             observedMemoryMegabytes,
             accountLabel,
-            notes);
+            notes,
+            dryRun);
     }
 
     private static FeasibilityScenario CreateDefaultRecordScenario(int playbackCount)
@@ -1147,7 +1165,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools fallback [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools history [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>]");
-        writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--data-folder <path>]");
+        writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--dry-run] [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools report [--data-folder <path>] [--profile-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools scenarios");
         writer.WriteLine("  StreamOrchestra.Tools verify [--data-folder <path>] [--output <path>]");
@@ -1331,16 +1349,17 @@ public static class FeasibilityStatusCommand
         double? ObservedMemoryMegabytes,
         string? AccountLabel,
         string? Notes,
+        bool DryRun,
         string ErrorMessage)
     {
         public static ParseResult Valid(string command, string? dataFolder)
         {
-            return new ParseResult(true, false, command, dataFolder, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
+            return new ParseResult(true, false, command, dataFolder, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
         }
 
         public static ParseResult TextOutput(string command, string? dataFolder, string? outputPath)
         {
-            return new ParseResult(true, false, command, dataFolder, null, outputPath, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
+            return new ParseResult(true, false, command, dataFolder, null, outputPath, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
         }
 
         public static ParseResult Record(
@@ -1357,7 +1376,8 @@ public static class FeasibilityStatusCommand
             double? observedGpuPercent,
             double? observedMemoryMegabytes,
             string? accountLabel,
-            string? notes)
+            string? notes,
+            bool dryRun)
         {
             return new ParseResult(
                 true,
@@ -1379,27 +1399,28 @@ public static class FeasibilityStatusCommand
                 observedMemoryMegabytes,
                 accountLabel,
                 notes,
+                dryRun,
                 "");
         }
 
         public static ParseResult Report(string? dataFolder, string? profileFolder)
         {
-            return new ParseResult(true, false, "report", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
+            return new ParseResult(true, false, "report", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
         }
 
         public static ParseResult Preflight(string? dataFolder, string? profileFolder)
         {
-            return new ParseResult(true, false, "preflight", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
+            return new ParseResult(true, false, "preflight", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
         }
 
         public static ParseResult Help()
         {
-            return new ParseResult(true, true, "help", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
+            return new ParseResult(true, true, "help", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
         }
 
         public static ParseResult Invalid(string errorMessage)
         {
-            return new ParseResult(false, false, "", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, errorMessage);
+            return new ParseResult(false, false, "", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, errorMessage);
         }
     }
 

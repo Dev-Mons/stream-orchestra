@@ -82,6 +82,8 @@ Record a manual result without opening the WPF app:
 dotnet run --project src\StreamOrchestra.Tools -- record --count 9 --outcome success --account --account-label main_soop --profile-groups A,B,C --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000 --scenario groups_a_b_c_9_slot_threshold --scenario-name "Groups A/B/C, 9-slot success threshold" --notes "manual SOOP test"
 ```
 
+Add `--dry-run` first to validate and preview the decision/audit output without saving to `feasibility-results.json`.
+
 Record an isolated profile-group check without manually typing the scenario ID:
 
 ```powershell
@@ -139,7 +141,7 @@ Use `--data-folder <path>` to inspect a non-default data folder.
 - The WPF feasibility row shows the current playback scenario and slot count before a result is recorded.
 - The WPF feasibility summary shows overall plan-verification status plus plan-gate audit counts, and `감사 복사` copies the detailed audit text plus suggested `record` shapes for sharing test evidence.
 - Feasibility decisions include a concrete next action, such as continuing the WebView2 MVP, repeating targeted experiments, or exporting an external-browser fallback script.
-- The CLI `status` and `record` commands print suggested `record` shapes for missing evidence after the current recommendation and plan-gate status, including `--account-label <label>` where same-account evidence is expected; 9-slot success suggestions are listed after higher-slot playback/account evidence so the latest 9+ result can remain the final success record.
+- The CLI `status` and `record` commands print suggested `record` shapes for missing evidence after the current recommendation and plan-gate status, including `--account-label <label>` where same-account evidence is expected; `record --dry-run` validates and previews the same decision/audit without saving, and 9-slot success suggestions are listed after higher-slot playback/account evidence so the latest 9+ result can remain the final success record.
 - The CLI `audit` command maps recorded results to the remaining plan gates: 4-slot Group A single-profile playback, distinct 8-slot split-profile, 9-slot threshold, 12-slot, and 16-slot playback evidence, A-D account persistence, restart persistence, resource acceptability, structured observations, and the Phase 0 success gate. Add `--output <path>` to save the audit text.
 - The CLI `history` command lists saved feasibility results with their recorded decision snapshots for manual-test audit trails.
 - The CLI `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md` with the current evidence status, outstanding gates, and suggested `record` shapes before evidence is recorded. Add `--output <path>` to save the checklist text.
