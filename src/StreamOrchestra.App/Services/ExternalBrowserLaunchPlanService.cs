@@ -195,6 +195,11 @@ public sealed class ExternalBrowserLaunchPlanService
             return null;
         }
 
+        if (slot.SlotId is < 1 or > PlaybackTestPlanService.MaxSlotCount)
+        {
+            return null;
+        }
+
         if (!TryNormalizeLaunchableStreamUrl(slot.StreamUrl, out var streamUrl))
         {
             return null;

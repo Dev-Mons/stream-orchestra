@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 447 passing tests.
+Current automated test coverage: 449 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -44,7 +44,7 @@ Current automated test coverage: 447 passing tests.
 | Resource acceptability | Manual verification pending | Fill CPU/GPU/memory and record with the `리소스 OK` checkbox |
 | Phase 0 decision recommendation | Implemented | `FeasibilityDecisionService` bases the current recommendation on the latest 9+ slot result, only recommends embedded WebView2 MVP when the result is a matching 9/12/16 plan playback scenario with A-D same-account evidence, restart persistence, resource acceptability, and valid structured resource observations, and only recommends external-browser transition from a matching 9/12/16 plan-scenario failure rather than an ambiguous custom failure record |
 | External browser fallback discovery | Implemented | `ExternalBrowserDiscoveryService` reports Chrome/Edge/Whale/Brave/Vivaldi availability, merges custom candidates from `external-browsers.json`, ignores malformed/null custom candidate entries, and `StreamOrchestra.Tools browsers` prints installed/missing candidates |
-| External browser fallback launch planning | Implemented as non-executing plan | `ExternalBrowserLaunchPlanService` maps active visible current-session HTTP/HTTPS stream URLs to installed browsers, per-slot profile folders, mute flags, display names, and layout window coordinates when a matching layout is available, falls back to the default layout when a saved session has no layout id, and ignores incomplete browser entries plus hidden, blank, malformed, null, or non-web saved slot URLs; fallback layout mapping also tolerates null layout entries, null/invalid layout slots, invalid grid sizes, and duplicate slot entries |
+| External browser fallback launch planning | Implemented as non-executing plan | `ExternalBrowserLaunchPlanService` maps active visible current-session HTTP/HTTPS stream URLs to installed browsers, per-slot profile folders, mute flags, display names, and layout window coordinates when a matching layout is available, falls back to the default layout when a saved session has no layout id, and ignores incomplete browser entries plus hidden, out-of-range, blank, malformed, null, or non-web saved slot URLs; fallback layout mapping also tolerates null layout entries, null/invalid layout slots, invalid grid sizes, and duplicate slot entries |
 | External browser fallback script export | Implemented | `ExternalBrowserFallbackExportService` writes a reviewable PowerShell script with plan, browser, executable, profile, URL, Chromium mute/window-position/window-size arguments, and repeatable Windows placement fallback commands when a launchable plan with layout data exists; script generation skips incomplete slot plans, rebuilds missing browser arguments from the slot URL/profile/mute state, ignores invalid window layouts, and reports a clear error if no slot can be scripted; `StreamOrchestra.Tools fallback` exports the script directly from the last saved session, the WPF `브라우저 스크립트` button exports it from the current session, and WPF/CLI status includes the reason when no script can be created |
 
 ## MVP Feature Coverage

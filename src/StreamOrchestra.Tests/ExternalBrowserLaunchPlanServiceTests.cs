@@ -147,6 +147,52 @@ public sealed class ExternalBrowserLaunchPlanServiceTests
     }
 
     [Fact]
+    public void CreatePlan_IgnoresOutOfRangeWorkspaceSlots()
+    {
+        var service = new ExternalBrowserLaunchPlanService();
+        var workspace = new WorkspacePreset
+        {
+            Id = "workspace_out_of_range",
+            Name = "Out Of Range",
+            Slots =
+            [
+                new WorkspaceSlot { SlotId = 0, StreamName = "Zero", StreamUrl = "https://example.com/0", ProfileGroupId = "A" },
+                new WorkspaceSlot { SlotId = 5, StreamName = "Five", StreamUrl = "https://example.com/5", ProfileGroupId = "B" },
+                new WorkspaceSlot { SlotId = 17, StreamName = "Seventeen", StreamUrl = "https://example.com/17", ProfileGroupId = "D" }
+            ]
+        };
+
+        var plan = service.CreatePlan(workspace, [CreateBrowser("edge", "Edge")], "C:\\Data");
+
+        Assert.True(plan.CanLaunch);
+        var slot = Assert.Single(plan.Slots);
+        Assert.Equal(5, slot.SlotId);
+        Assert.Equal("https://example.com/5", slot.StreamUrl);
+    }
+
+    [Fact]
+    public void CreatePlan_ReturnsUnavailableWhenOnlyOutOfRangeSlotsAreActive()
+    {
+        var service = new ExternalBrowserLaunchPlanService();
+        var workspace = new WorkspacePreset
+        {
+            Id = "workspace_out_of_range_only",
+            Name = "Out Of Range Only",
+            Slots =
+            [
+                new WorkspaceSlot { SlotId = 0, StreamName = "Zero", StreamUrl = "https://example.com/0", ProfileGroupId = "A" },
+                new WorkspaceSlot { SlotId = 17, StreamName = "Seventeen", StreamUrl = "https://example.com/17", ProfileGroupId = "D" }
+            ]
+        };
+
+        var plan = service.CreatePlan(workspace, [CreateBrowser("edge", "Edge")], "C:\\Data");
+
+        Assert.False(plan.CanLaunch);
+        Assert.Equal("No active stream URLs are available.", plan.Reason);
+        Assert.Empty(plan.Slots);
+    }
+
+    [Fact]
     public void CreatePlan_DerivesStreamNameWhenActiveSlotNameIsBlank()
     {
         var service = new ExternalBrowserLaunchPlanService();
