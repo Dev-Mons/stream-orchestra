@@ -15,6 +15,11 @@ public sealed class StreamNavigationServiceTests
     [InlineData("file:///C:/Temp/test.html", "about:blank")]
     [InlineData("ftp://example.com/stream", "about:blank")]
     [InlineData("not a url", "about:blank")]
+    [InlineData("http://", "about:blank")]
+    [InlineData("https://", "about:blank")]
+    [InlineData("http://?x", "about:blank")]
+    [InlineData("http:/example.com", "about:blank")]
+    [InlineData("http://example .com", "about:blank")]
     public void NormalizeUrl_NormalizesUserInput(string input, string expected)
     {
         var service = new StreamNavigationService();

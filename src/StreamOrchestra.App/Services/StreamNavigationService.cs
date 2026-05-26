@@ -20,6 +20,11 @@ public sealed class StreamNavigationService
             return IsHttpOrHttps(absoluteUri) ? absoluteUri.ToString() : "about:blank";
         }
 
+        if (HasMalformedHttpScheme(trimmedUrl))
+        {
+            return "about:blank";
+        }
+
         var urlWithScheme = $"https://{trimmedUrl}";
         return Uri.TryCreate(urlWithScheme, UriKind.Absolute, out var inferredUri) &&
             IsHttpOrHttps(inferredUri) &&
@@ -87,5 +92,12 @@ public sealed class StreamNavigationService
     {
         return uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
             uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasMalformedHttpScheme(string value)
+    {
+        return value.Contains("://", StringComparison.Ordinal) ||
+            value.StartsWith("http:", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("https:", StringComparison.OrdinalIgnoreCase);
     }
 }
