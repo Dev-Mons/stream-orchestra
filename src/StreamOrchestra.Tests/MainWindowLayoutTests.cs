@@ -88,10 +88,17 @@ public sealed class MainWindowLayoutTests
     public void FeasibilityToolbar_ProvidesAccountLabelAndManualEvidenceFields()
     {
         var document = LoadMainWindowDocument();
+        const string accountEvidenceBinding = "{Binding IsChecked, ElementName=SameAccountSessionCheckBox}";
 
         Assert.Equal("검증 메모", GetAttribute(FindElementByName(document, "FeasibilityNotesTextBox"), "ToolTip"));
-        Assert.Equal("SOOP account label for evidence", GetAttribute(FindElementByName(document, "AccountLabelTextBox"), "ToolTip"));
+        var accountLabelTextBox = FindElementByName(document, "AccountLabelTextBox");
+        Assert.Equal("SOOP account label for evidence", GetAttribute(accountLabelTextBox, "ToolTip"));
+        Assert.Equal(accountEvidenceBinding, GetAttribute(accountLabelTextBox, "IsEnabled"));
         Assert.Equal("계정 유지", GetAttribute(FindElementByName(document, "SameAccountSessionCheckBox"), "Content"));
+        Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupACheckBox"), "IsEnabled"));
+        Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupBCheckBox"), "IsEnabled"));
+        Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupCCheckBox"), "IsEnabled"));
+        Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupDCheckBox"), "IsEnabled"));
         Assert.Equal("CPU %", GetAttribute(FindElementByName(document, "ObservedCpuTextBox"), "ToolTip"));
         Assert.Equal("GPU %", GetAttribute(FindElementByName(document, "ObservedGpuTextBox"), "ToolTip"));
         Assert.Equal("Memory MB", GetAttribute(FindElementByName(document, "ObservedMemoryTextBox"), "ToolTip"));

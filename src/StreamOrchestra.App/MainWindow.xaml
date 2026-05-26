@@ -228,6 +228,7 @@
                                   Height="28"
                                   VerticalContentAlignment="Center"
                                   Margin="0,0,6,0"
+                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
                                   ToolTip="SOOP account label for evidence" />
                         <CheckBox x:Name="SameAccountSessionCheckBox"
                                   Content="계정 유지"
@@ -238,24 +239,28 @@
                                   Content="A"
                                   Foreground="#F3F6FA"
                                   VerticalAlignment="Center"
+                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
                                   Margin="0,0,4,0"
                                   ToolTip="Group A same-account session verified" />
                         <CheckBox x:Name="VerifiedGroupBCheckBox"
                                   Content="B"
                                   Foreground="#F3F6FA"
                                   VerticalAlignment="Center"
+                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
                                   Margin="0,0,4,0"
                                   ToolTip="Group B same-account session verified" />
                         <CheckBox x:Name="VerifiedGroupCCheckBox"
                                   Content="C"
                                   Foreground="#F3F6FA"
                                   VerticalAlignment="Center"
+                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
                                   Margin="0,0,4,0"
                                   ToolTip="Group C same-account session verified" />
                         <CheckBox x:Name="VerifiedGroupDCheckBox"
                                   Content="D"
                                   Foreground="#F3F6FA"
                                   VerticalAlignment="Center"
+                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
                                   Margin="0,0,8,0"
                                   ToolTip="Group D same-account session verified" />
                         <CheckBox x:Name="RestartSessionCheckBox"

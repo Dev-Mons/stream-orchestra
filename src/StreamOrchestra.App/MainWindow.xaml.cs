@@ -314,8 +314,8 @@ public partial class MainWindow : Window
 
         var playbackCount = _currentPlaybackTestCount;
         var sameAccountSession = SameAccountSessionCheckBox.IsChecked == true;
-        var accountLabel = AccountLabelTextBox.Text.Trim();
-        var verifiedProfileGroups = GetVerifiedProfileGroups();
+        var accountLabel = sameAccountSession ? AccountLabelTextBox.Text.Trim() : "";
+        var verifiedProfileGroups = sameAccountSession ? GetVerifiedProfileGroups() : [];
         var restartSession = RestartSessionCheckBox.IsChecked == true;
         var resourceUsageAcceptable = ResourceAcceptableCheckBox.IsChecked == true;
         if (!TryReadOptionalPercent(ObservedCpuTextBox, "CPU", out var observedCpuPercent) ||
