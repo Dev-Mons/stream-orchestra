@@ -1826,6 +1826,8 @@ public static class FeasibilityStatusCommand
         var isValid = true;
         isValid &= ValidateHandoffDiagnosticReportGeneratedAt(reportText, report, manifest, validationLines);
         isValid &= ValidateHandoffDiagnosticReportContext(report, manifest, validationLines);
+        isValid &= ValidateHandoffDiagnosticWorkspaceDiagnostics(report.WorkspaceDiagnostics, validationLines);
+        isValid &= ValidateHandoffDiagnosticExternalBrowserSnapshot(report, validationLines);
 
         if (report.FeasibilityResultCount == manifest.ResultCount)
         {
@@ -2007,6 +2009,316 @@ public static class FeasibilityStatusCommand
 
         isValid &= ValidateHandoffDiagnosticProfileGroups(report, manifest, validationLines);
         return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticWorkspaceDiagnostics(
+        WorkspaceDiagnostics? diagnostics,
+        List<string> validationLines)
+    {
+        if (diagnostics is null)
+        {
+            validationLines.Add("- [fail] diagnostic report workspace diagnostics are missing.");
+            return false;
+        }
+
+        var isValid = true;
+        if (diagnostics.SavedWorkspaceCount < 0)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report workspace saved workspace count is negative: {diagnostics.SavedWorkspaceCount}.");
+        }
+
+        if (diagnostics.FavoriteCount < 0)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report workspace favorite count is negative: {diagnostics.FavoriteCount}.");
+        }
+
+        if (diagnostics.SelectedSlotId is < 1 or > 16)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report workspace selected slot is outside 1-16: {diagnostics.SelectedSlotId}.");
+        }
+
+        if (diagnostics.LastSessionSlotCount < 0)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report workspace last-session slot count is negative: {diagnostics.LastSessionSlotCount}.");
+        }
+
+        if (diagnostics.LastSessionActiveStreamCount < 0)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report workspace active stream count is negative: {diagnostics.LastSessionActiveStreamCount}.");
+        }
+
+        if (diagnostics.LastSessionActiveStreamCount > diagnostics.LastSessionSlotCount)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report workspace active stream count exceeds slot count: {diagnostics.LastSessionActiveStreamCount}/{diagnostics.LastSessionSlotCount}.");
+        }
+
+        if (!diagnostics.HasLastSession)
+        {
+            if (!string.IsNullOrWhiteSpace(diagnostics.LastSessionLayoutId) ||
+                diagnostics.LastSessionSlotCount != 0 ||
+                diagnostics.LastSessionActiveStreamCount != 0)
+            {
+                isValid = false;
+                validationLines.Add("- [fail] diagnostic report workspace says no last session but includes last-session details.");
+            }
+        }
+
+        if (isValid)
+        {
+            validationLines.Add(
+                $"- [pass] diagnostic report workspace diagnostics: workspaces={diagnostics.SavedWorkspaceCount}, favorites={diagnostics.FavoriteCount}, lastSession={diagnostics.HasLastSession}, slots={diagnostics.LastSessionSlotCount}, active={diagnostics.LastSessionActiveStreamCount}");
+        }
+
+        return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticExternalBrowserSnapshot(
+        DiagnosticReport report,
+        List<string> validationLines)
+    {
+        var browsers = (report.ExternalBrowsers ?? Array.Empty<ExternalBrowserInfo>())
+            .Where(browser => browser is not null)
+            .Select(browser => browser!)
+            .ToArray();
+        var isValid = true;
+        var installedBrowserIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenBrowserIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var browser in browsers)
+        {
+            var id = browser.Id?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                isValid = false;
+                validationLines.Add("- [fail] diagnostic report external browser id is missing.");
+                continue;
+            }
+
+            seenBrowserIds[id] = seenBrowserIds.TryGetValue(id, out var count) ? count + 1 : 1;
+
+            if (string.IsNullOrWhiteSpace(browser.Name))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] diagnostic report external browser {id} name is missing.");
+            }
+
+            var candidatePaths = browser.CandidatePaths ?? Array.Empty<string>();
+            if (candidatePaths.Any(string.IsNullOrWhiteSpace))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] diagnostic report external browser {id} has a blank candidate path.");
+            }
+
+            if (browser.IsInstalled)
+            {
+                installedBrowserIds.Add(id);
+                if (string.IsNullOrWhiteSpace(browser.ExecutablePath))
+                {
+                    isValid = false;
+                    validationLines.Add($"- [fail] diagnostic report external browser {id} is installed but executable path is missing.");
+                }
+            }
+        }
+
+        foreach (var duplicateId in seenBrowserIds
+            .Where(item => item.Value > 1)
+            .Select(item => item.Key)
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] diagnostic report external browser {duplicateId} is duplicated.");
+        }
+
+        isValid &= ValidateHandoffDiagnosticExternalBrowserFallbackPlan(
+            report.ExternalBrowserFallbackPlan,
+            installedBrowserIds,
+            validationLines);
+
+        if (isValid)
+        {
+            validationLines.Add(
+                $"- [pass] diagnostic report external browsers: total={browsers.Length}, installed={installedBrowserIds.Count}");
+        }
+
+        return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticExternalBrowserFallbackPlan(
+        ExternalBrowserFallbackPlan? plan,
+        IReadOnlySet<string> installedBrowserIds,
+        List<string> validationLines)
+    {
+        if (plan is null)
+        {
+            validationLines.Add("- [pass] diagnostic report external browser fallback plan: n/a");
+            return true;
+        }
+
+        var isValid = true;
+        var slots = (plan.Slots ?? Array.Empty<ExternalBrowserSlotLaunchPlan>())
+            .Where(slot => slot is not null)
+            .Select(slot => slot!)
+            .ToArray();
+
+        if (string.IsNullOrWhiteSpace(plan.Reason))
+        {
+            isValid = false;
+            validationLines.Add("- [fail] diagnostic report external browser fallback reason is missing.");
+        }
+
+        if (plan.InstalledBrowserCount != installedBrowserIds.Count)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback installed count mismatch, expected {installedBrowserIds.Count}, actual {plan.InstalledBrowserCount}.");
+        }
+
+        if (plan.PlannedSlotCount != slots.Length)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback planned slot count mismatch, expected {slots.Length}, actual {plan.PlannedSlotCount}.");
+        }
+
+        if (plan.CanLaunch && slots.Length == 0)
+        {
+            isValid = false;
+            validationLines.Add("- [fail] diagnostic report external browser fallback can launch but has no planned slots.");
+        }
+
+        if (!plan.CanLaunch && slots.Length > 0)
+        {
+            isValid = false;
+            validationLines.Add("- [fail] diagnostic report external browser fallback cannot launch but includes planned slots.");
+        }
+
+        foreach (var duplicateSlotId in slots
+            .Where(slot => slot.SlotId is >= 1 and <= 16)
+            .GroupBy(slot => slot.SlotId)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(slotId => slotId))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] diagnostic report external browser fallback slot {duplicateSlotId} is duplicated.");
+        }
+
+        foreach (var slot in slots)
+        {
+            isValid &= ValidateHandoffDiagnosticExternalBrowserFallbackSlot(
+                slot,
+                installedBrowserIds,
+                validationLines);
+        }
+
+        if (isValid)
+        {
+            validationLines.Add(
+                $"- [pass] diagnostic report external browser fallback plan: canLaunch={plan.CanLaunch}, slots={slots.Length}");
+        }
+
+        return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticExternalBrowserFallbackSlot(
+        ExternalBrowserSlotLaunchPlan slot,
+        IReadOnlySet<string> installedBrowserIds,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        var slotLabel = slot.SlotId.ToString(CultureInfo.InvariantCulture);
+        if (slot.SlotId is < 1 or > 16)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot id is outside 1-16: {slot.SlotId}.");
+        }
+
+        if (!Uri.TryCreate(slot.StreamUrl?.Trim(), UriKind.Absolute, out var streamUri) ||
+            streamUri.Scheme is not ("http" or "https"))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} URL is not HTTP/HTTPS.");
+        }
+
+        var browserId = slot.BrowserId?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(browserId))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} browser id is missing.");
+        }
+        else if (!installedBrowserIds.Contains(browserId))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} browser {browserId} is not installed in the diagnostic snapshot.");
+        }
+
+        if (string.IsNullOrWhiteSpace(slot.BrowserName))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} browser name is missing.");
+        }
+
+        if (string.IsNullOrWhiteSpace(slot.ExecutablePath))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} executable path is missing.");
+        }
+
+        if (string.IsNullOrWhiteSpace(slot.UserDataFolder))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} user data folder is missing.");
+        }
+
+        var arguments = slot.Arguments ?? Array.Empty<string>();
+        if (arguments.Any(string.IsNullOrWhiteSpace))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} has a blank argument.");
+        }
+
+        if (slot.WindowLayout is not null &&
+            !IsValidHandoffDiagnosticExternalBrowserWindowLayout(slot.WindowLayout))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} window layout is invalid.");
+        }
+
+        return isValid;
+    }
+
+    private static bool IsValidHandoffDiagnosticExternalBrowserWindowLayout(
+        ExternalBrowserWindowLayout layout)
+    {
+        return layout.GridColumns > 0 &&
+            layout.GridRows > 0 &&
+            layout.X >= 0 &&
+            layout.Y >= 0 &&
+            layout.W > 0 &&
+            layout.H > 0 &&
+            layout.X + layout.W <= layout.GridColumns &&
+            layout.Y + layout.H <= layout.GridRows;
     }
 
     private static bool ValidateHandoffDiagnosticDataFiles(

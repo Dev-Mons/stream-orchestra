@@ -568,6 +568,9 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report results file:", text);
         Assert.Contains("- [pass] diagnostic report profile root:", text);
         Assert.Contains("- [pass] diagnostic report profile groups: 4", text);
+        Assert.Contains("- [pass] diagnostic report workspace diagnostics:", text);
+        Assert.Contains("- [pass] diagnostic report external browser fallback plan:", text);
+        Assert.Contains("- [pass] diagnostic report external browsers:", text);
         Assert.Contains("- [pass] diagnostic report decision: 검증 대기 (pending)", text);
         Assert.Contains("- [pass] diagnostic report plan gates: pass=0, pending=11, fail=0, outstanding=11, status=pending", text);
         Assert.Contains("- [pass] diagnostic report decision details: 검증 대기 (pending)", text);
@@ -614,6 +617,119 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal(0, handoffExitCode);
         Assert.Equal(1, exitCode);
         Assert.Contains("phase0-diagnostic-report.json generatedAt outside handoff window", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsDiagnosticWorkspaceAndExternalBrowserMismatches()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-diagnostic-workspace-browser-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var diagnosticReportPath = Path.Combine(handoffFolder, "phase0-diagnostic-report.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var diagnosticReport = JsonNode.Parse(File.ReadAllText(diagnosticReportPath))!.AsObject();
+        diagnosticReport["workspaceDiagnostics"] = new JsonObject
+        {
+            ["savedWorkspaceCount"] = JsonValue.Create(-1),
+            ["favoriteCount"] = JsonValue.Create(-2),
+            ["hasLastSession"] = JsonValue.Create(false),
+            ["lastWorkspaceId"] = JsonValue.Create("workspace_tampered"),
+            ["selectedSlotId"] = JsonValue.Create(99),
+            ["lastSessionLayoutId"] = JsonValue.Create("layout_4x4"),
+            ["lastSessionSlotCount"] = JsonValue.Create(3),
+            ["lastSessionActiveStreamCount"] = JsonValue.Create(4)
+        };
+        diagnosticReport["externalBrowsers"] = new JsonArray(
+            new JsonObject
+            {
+                ["id"] = JsonValue.Create("edge"),
+                ["name"] = JsonValue.Create(""),
+                ["isInstalled"] = JsonValue.Create(true),
+                ["executablePath"] = JsonValue.Create(""),
+                ["candidatePaths"] = new JsonArray(JsonValue.Create(""))
+            },
+            new JsonObject
+            {
+                ["id"] = JsonValue.Create("edge"),
+                ["name"] = JsonValue.Create("Duplicate Edge"),
+                ["isInstalled"] = JsonValue.Create(false),
+                ["executablePath"] = null,
+                ["candidatePaths"] = null
+            });
+        diagnosticReport["externalBrowserFallbackPlan"] = new JsonObject
+        {
+            ["canLaunch"] = JsonValue.Create(true),
+            ["reason"] = JsonValue.Create(""),
+            ["installedBrowserCount"] = JsonValue.Create(99),
+            ["plannedSlotCount"] = JsonValue.Create(2),
+            ["slots"] = new JsonArray(
+                new JsonObject
+                {
+                    ["slotId"] = JsonValue.Create(17),
+                    ["streamName"] = JsonValue.Create("Tampered"),
+                    ["streamUrl"] = JsonValue.Create("ftp://example.com/live"),
+                    ["browserId"] = JsonValue.Create("missing"),
+                    ["browserName"] = JsonValue.Create(""),
+                    ["executablePath"] = JsonValue.Create(""),
+                    ["userDataFolder"] = JsonValue.Create(""),
+                    ["arguments"] = new JsonArray(JsonValue.Create("")),
+                    ["windowLayout"] = new JsonObject
+                    {
+                        ["gridColumns"] = JsonValue.Create(4),
+                        ["gridRows"] = JsonValue.Create(3),
+                        ["x"] = JsonValue.Create(3),
+                        ["y"] = JsonValue.Create(2),
+                        ["w"] = JsonValue.Create(2),
+                        ["h"] = JsonValue.Create(2)
+                    },
+                    ["isMuted"] = JsonValue.Create(false)
+                })
+        };
+        File.WriteAllText(
+            diagnosticReportPath,
+            diagnosticReport.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-diagnostic-report.json");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("diagnostic report workspace saved workspace count is negative: -1.", text);
+        Assert.Contains("diagnostic report workspace favorite count is negative: -2.", text);
+        Assert.Contains("diagnostic report workspace selected slot is outside 1-16: 99.", text);
+        Assert.Contains("diagnostic report workspace active stream count exceeds slot count: 4/3.", text);
+        Assert.Contains("diagnostic report workspace says no last session but includes last-session details.", text);
+        Assert.Contains("diagnostic report external browser edge name is missing.", text);
+        Assert.Contains("diagnostic report external browser edge has a blank candidate path.", text);
+        Assert.Contains("diagnostic report external browser edge is installed but executable path is missing.", text);
+        Assert.Contains("diagnostic report external browser edge is duplicated.", text);
+        Assert.Contains("diagnostic report external browser fallback reason is missing.", text);
+        Assert.Contains("diagnostic report external browser fallback installed count mismatch, expected 1, actual 99.", text);
+        Assert.Contains("diagnostic report external browser fallback planned slot count mismatch, expected 1, actual 2.", text);
+        Assert.Contains("diagnostic report external browser fallback slot id is outside 1-16: 17.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 17 URL is not HTTP/HTTPS.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 17 browser missing is not installed in the diagnostic snapshot.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 17 browser name is missing.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 17 executable path is missing.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 17 user data folder is missing.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 17 has a blank argument.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 17 window layout is invalid.", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
