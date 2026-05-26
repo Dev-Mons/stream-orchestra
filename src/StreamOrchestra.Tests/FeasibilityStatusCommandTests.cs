@@ -174,11 +174,22 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         using var output = new StringWriter();
         using var error = new StringWriter();
 
-        var exitCode = FeasibilityStatusCommand.Execute(["checklist"], output, error);
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["checklist", "--data-folder", _dataFolder],
+            output,
+            error);
 
         var text = output.ToString();
         Assert.Equal(0, exitCode);
         Assert.Contains("Stream Orchestra Phase 0 Manual Checklist", text);
+        Assert.Contains($"Data folder: {_dataFolder}", text);
+        Assert.Contains("Results recorded: 0", text);
+        Assert.Contains("Decision: 검증 대기 (pending)", text);
+        Assert.Contains("Plan audit: pass=0, pending=11, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Success gate: [pending]", text);
+        Assert.Contains("Outstanding gates:", text);
+        Assert.Contains("- [pending] Manual feasibility result recorded", text);
         Assert.Contains("do not bypass DRM, authentication, or security behavior", text);
         Assert.Contains("Run `preflight`", text);
         Assert.Contains("same SOOP account in profile groups A, B, C, and D", text);
@@ -189,6 +200,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("one shared non-sensitive account label", text);
         Assert.Contains("Record the final 9+ `success` evidence last", text);
         Assert.Contains("Run `verify`", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C", text);
         Assert.Equal("", error.ToString());
     }
 

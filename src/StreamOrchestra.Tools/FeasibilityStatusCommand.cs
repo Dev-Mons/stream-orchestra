@@ -27,7 +27,7 @@ public static class FeasibilityStatusCommand
         {
             "audit" => PrintAudit(parseResult, output),
             "browsers" => PrintBrowsers(parseResult.DataFolder, output),
-            "checklist" => PrintChecklist(output),
+            "checklist" => PrintChecklist(parseResult.DataFolder, output),
             "fallback" => SaveFallbackScript(parseResult.DataFolder, output),
             "history" => PrintHistory(parseResult.DataFolder, output),
             "preflight" => PrintPreflight(parseResult, output),
@@ -235,9 +235,24 @@ public static class FeasibilityStatusCommand
         return 0;
     }
 
-    private static int PrintChecklist(TextWriter output)
+    private static int PrintChecklist(string? dataFolder, TextWriter output)
     {
+        var storage = new FeasibilityResultStorageService(dataFolder);
+        var results = storage.LoadResults();
+        var decision = new FeasibilityDecisionService().Decide(results);
+        var auditService = new FeasibilityAuditService();
+        var auditItems = auditService.CreateAudit(results, decision);
+
         output.WriteLine("Stream Orchestra Phase 0 Manual Checklist");
+        output.WriteLine($"Data folder: {storage.DataFolder}");
+        output.WriteLine($"Results file: {storage.ResultsFilePath}");
+        output.WriteLine($"Results recorded: {results.Count}");
+        output.WriteLine($"Decision: {decision.Title} ({decision.Code})");
+        WriteNextAction(decision, output);
+        WriteAuditSummary(auditItems, output);
+        WritePlanVerificationStatus(auditItems, output);
+        WritePhase0SuccessGate(auditItems, output);
+        WriteOutstandingGates(auditItems, output);
         output.WriteLine("Safety: use normal SOOP login/player behavior only; do not bypass DRM, authentication, or security behavior.");
         output.WriteLine("1. Run `preflight` and confirm WebView2 Runtime, A-D profile folders, and 4/8/9/12/16 layout coverage are ready.");
         output.WriteLine("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, and D.");
@@ -250,6 +265,7 @@ public static class FeasibilityStatusCommand
         output.WriteLine("9. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
         output.WriteLine("10. Run `verify`; Phase 0 is not complete until every plan gate passes.");
         output.WriteLine("Helpful commands: `scenarios`, `audit`, `verify`.");
+        WriteSuggestedRecordShapes(auditItems, output);
         return 0;
     }
 
@@ -1039,7 +1055,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools status [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools audit [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools browsers [--data-folder <path>]");
-        writer.WriteLine("  StreamOrchestra.Tools checklist");
+        writer.WriteLine("  StreamOrchestra.Tools checklist [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools fallback [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools history [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>]");
