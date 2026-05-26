@@ -292,9 +292,10 @@ public static class FeasibilityStatusCommand
         var outstandingGateCount = diagnosticReport.FeasibilityAudit.Count(
             item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase));
 
+        var preflightSnapshot = CreateHandoffPreflightSnapshot(parseResult.ProfileFolder);
         var (preflightLines, isPreflightReady) = CreatePreflightLines(
             parseResult.DataFolder,
-            parseResult.ProfileFolder);
+            preflightSnapshot);
         var checklistLines = CreateChecklistLines(parseResult.DataFolder);
         var auditLines = CreateAuditLines(parseResult.DataFolder);
         var (verificationLines, isVerified) = CreateVerificationLines(parseResult.DataFolder);
@@ -322,6 +323,10 @@ public static class FeasibilityStatusCommand
             generatedAt,
             feasibilityStorage.DataFolder,
             feasibilityStorage.ResultsFilePath,
+            preflightSnapshot.ProfileRootFolder,
+            preflightSnapshot.WebView2RuntimeStatus,
+            preflightSnapshot.PlaybackLayoutStatus,
+            preflightSnapshot.ProfileGroups,
             results.Count,
             isPreflightReady,
             isVerified,
@@ -529,8 +534,6 @@ public static class FeasibilityStatusCommand
             }
         }
 
-        isValid &= ValidateHandoffPreflightArtifact(inputFolder, manifest, validationLines);
-
         HandoffResultsSummary? resultsSummary = null;
         var resultsPath = Path.Combine(inputFolder, HandoffResultsFileName);
         if (File.Exists(resultsPath))
@@ -561,6 +564,8 @@ public static class FeasibilityStatusCommand
                 validationLines.Add($"- [fail] {HandoffResultsFileName} JSON is invalid: {ex.Message}");
             }
         }
+
+        isValid &= ValidateHandoffPreflightArtifact(inputFolder, manifest, resultsSummary, validationLines);
 
         if (resultsSummary is not null)
         {
@@ -762,6 +767,7 @@ public static class FeasibilityStatusCommand
     private static bool ValidateHandoffPreflightArtifact(
         string inputFolder,
         HandoffManifest manifest,
+        HandoffResultsSummary? summary,
         List<string> validationLines)
     {
         var preflightPath = Path.Combine(inputFolder, HandoffPreflightFileName);
@@ -806,27 +812,110 @@ public static class FeasibilityStatusCommand
                 $"- [fail] {HandoffPreflightFileName} results file mismatch, expected {FormatPathForValidation(manifest.ResultsFilePath)}, actual {FormatPathForValidation(resultsFile)}.");
         }
 
+        var profileRoot = ReadLineValue(lines, "Profile root:");
+        if (string.IsNullOrWhiteSpace(profileRoot))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {HandoffPreflightFileName} profile root line is missing.");
+        }
+        else if (AreEquivalentPaths(profileRoot, manifest.ProfileRootFolder))
+        {
+            validationLines.Add($"- [pass] {HandoffPreflightFileName} profile root: {FormatPathForValidation(profileRoot)}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffPreflightFileName} profile root mismatch, expected {FormatPathForValidation(manifest.ProfileRootFolder)}, actual {FormatPathForValidation(profileRoot)}.");
+        }
+
         var runtimeLine = lines.FirstOrDefault(
             line => line.StartsWith("WebView2 runtime:", StringComparison.OrdinalIgnoreCase));
         var layoutsLine = lines.FirstOrDefault(
             line => line.StartsWith("Layouts:", StringComparison.OrdinalIgnoreCase));
         if (runtimeLine is null || layoutsLine is null)
         {
+            isValid = false;
             validationLines.Add($"- [fail] {HandoffPreflightFileName} readiness lines are missing.");
-            return false;
+        }
+        else
+        {
+            var runtimeStatus = ReadLineValue(lines, "WebView2 runtime:");
+            if (string.Equals(runtimeStatus, manifest.WebView2RuntimeStatus, StringComparison.Ordinal))
+            {
+                validationLines.Add($"- [pass] {HandoffPreflightFileName} WebView2 runtime: {runtimeStatus}");
+            }
+            else
+            {
+                isValid = false;
+                validationLines.Add(
+                    $"- [fail] {HandoffPreflightFileName} WebView2 runtime mismatch, expected {FormatMismatchLine(manifest.WebView2RuntimeStatus)}, actual {FormatMismatchLine(runtimeStatus)}.");
+            }
+
+            var layoutStatus = ReadLineValue(lines, "Layouts:");
+            if (string.Equals(layoutStatus, manifest.PlaybackLayoutStatus, StringComparison.Ordinal))
+            {
+                validationLines.Add($"- [pass] {HandoffPreflightFileName} layouts: {layoutStatus}");
+            }
+            else
+            {
+                isValid = false;
+                validationLines.Add(
+                    $"- [fail] {HandoffPreflightFileName} layout status mismatch, expected {FormatMismatchLine(manifest.PlaybackLayoutStatus)}, actual {FormatMismatchLine(layoutStatus)}.");
+            }
+
+            var isReady = runtimeLine.Contains("[available]", StringComparison.OrdinalIgnoreCase) &&
+                layoutsLine.Contains("[ready]", StringComparison.OrdinalIgnoreCase);
+            if (manifest.IsPreflightReady == isReady)
+            {
+                validationLines.Add($"- [pass] {HandoffPreflightFileName} readiness: {isReady}");
+            }
+            else
+            {
+                isValid = false;
+                validationLines.Add(
+                    $"- [fail] {HandoffPreflightFileName} readiness mismatch, expected {isReady} from artifact, actual {manifest.IsPreflightReady} in manifest.");
+            }
         }
 
-        var isReady = runtimeLine.Contains("[available]", StringComparison.OrdinalIgnoreCase) &&
-            layoutsLine.Contains("[ready]", StringComparison.OrdinalIgnoreCase);
-        if (manifest.IsPreflightReady == isReady)
+        var expectedProfileGroupLines = CreateExpectedHandoffProfileGroupLines(manifest.ProfileGroups);
+        var actualProfileGroupLines = ReadPreflightProfileGroupLines(lines);
+        if (actualProfileGroupLines.SequenceEqual(expectedProfileGroupLines, StringComparer.Ordinal))
         {
-            validationLines.Add($"- [pass] {HandoffPreflightFileName} readiness: {isReady}");
+            validationLines.Add($"- [pass] {HandoffPreflightFileName} profile groups: {expectedProfileGroupLines.Count}");
+        }
+        else
+        {
+            isValid = false;
+            var lineNumber = FindFirstLineMismatch(expectedProfileGroupLines, actualProfileGroupLines) + 1;
+            var expectedLine = lineNumber <= expectedProfileGroupLines.Count ? expectedProfileGroupLines[lineNumber - 1] : "<missing>";
+            var actualLine = lineNumber <= actualProfileGroupLines.Count ? actualProfileGroupLines[lineNumber - 1] : "<missing>";
+            validationLines.Add(
+                $"- [fail] {HandoffPreflightFileName} profile groups mismatch at item {lineNumber}, expected {FormatMismatchLine(expectedLine)}, actual {FormatMismatchLine(actualLine)}.");
+        }
+
+        if (summary is null)
+        {
             return isValid;
         }
 
+        var expectedLines = CreateExpectedHandoffPreflightLines(manifest, summary);
+        if (lines.SequenceEqual(expectedLines, StringComparer.Ordinal))
+        {
+            validationLines.Add($"- [pass] {HandoffPreflightFileName} content matches manifest and results snapshot.");
+            return isValid;
+        }
+
+        var mismatchLineNumber = FindFirstLineMismatch(expectedLines, lines) + 1;
+        var expectedMismatchLine = mismatchLineNumber <= expectedLines.Count
+            ? expectedLines[mismatchLineNumber - 1]
+            : "<missing>";
+        var actualMismatchLine = mismatchLineNumber <= lines.Length
+            ? lines[mismatchLineNumber - 1]
+            : "<missing>";
         isValid = false;
         validationLines.Add(
-            $"- [fail] {HandoffPreflightFileName} readiness mismatch, expected {isReady} from artifact, actual {manifest.IsPreflightReady} in manifest.");
+            $"- [fail] {HandoffPreflightFileName} content mismatch at line {mismatchLineNumber}, expected {FormatMismatchLine(expectedMismatchLine)}, actual {FormatMismatchLine(actualMismatchLine)}.");
         return isValid;
     }
 
@@ -965,6 +1054,90 @@ public static class FeasibilityStatusCommand
         return line.Length <= maxLength
             ? $"\"{line}\""
             : $"\"{line[..maxLength]}...\"";
+    }
+
+    private static IReadOnlyList<string> CreateExpectedHandoffPreflightLines(
+        HandoffManifest manifest,
+        HandoffResultsSummary summary)
+    {
+        var lines = new List<string>
+        {
+            "Stream Orchestra Feasibility Preflight",
+            $"Data folder: {manifest.DataFolder}",
+            $"Results file: {manifest.ResultsFilePath}",
+            $"Profile root: {manifest.ProfileRootFolder}",
+            $"WebView2 runtime: {manifest.WebView2RuntimeStatus}",
+            "Profile groups:"
+        };
+
+        lines.AddRange(CreateExpectedHandoffProfileGroupLines(manifest.ProfileGroups));
+        lines.Add($"Layouts: {manifest.PlaybackLayoutStatus}");
+        lines.Add($"Evidence recorded: {summary.Results.Count}");
+        lines.Add($"Decision: {summary.Decision.Title} ({summary.Decision.Code})");
+        if (!string.IsNullOrWhiteSpace(summary.Decision.NextAction))
+        {
+            lines.Add($"Next action: {summary.Decision.NextAction}");
+        }
+
+        lines.Add($"Plan audit: {summary.AuditSummary.ToCompactText()}");
+        lines.Add($"Plan verification: [{summary.PlanVerificationStatus}]");
+        var successGate = summary.AuditItems.FirstOrDefault(item => item.Id == "phase0_success_gate");
+        if (successGate is not null)
+        {
+            lines.Add($"Success gate: [{successGate.Status}] {successGate.Evidence}");
+        }
+
+        var suggestions = new FeasibilityAuditService().CreateSuggestedRecordShapes(summary.AuditItems);
+        if (suggestions.Count > 0)
+        {
+            lines.Add("Suggested record shapes:");
+            lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
+        }
+
+        return lines;
+    }
+
+    private static IReadOnlyList<string> CreateExpectedHandoffProfileGroupLines(
+        IReadOnlyList<HandoffProfileGroupMetadata>? profileGroups)
+    {
+        return (profileGroups ?? Array.Empty<HandoffProfileGroupMetadata>())
+            .Select(FormatHandoffProfileGroupLine)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> ReadPreflightProfileGroupLines(IReadOnlyList<string> lines)
+    {
+        var startIndex = -1;
+        for (var index = 0; index < lines.Count; index++)
+        {
+            if (lines[index].Equals("Profile groups:", StringComparison.OrdinalIgnoreCase))
+            {
+                startIndex = index;
+                break;
+            }
+        }
+
+        if (startIndex < 0)
+        {
+            return [];
+        }
+
+        var endIndex = lines.Count;
+        for (var index = startIndex + 1; index < lines.Count; index++)
+        {
+            if (lines[index].StartsWith("Layouts:", StringComparison.OrdinalIgnoreCase))
+            {
+                endIndex = index;
+                break;
+            }
+        }
+
+        return lines.Skip(startIndex + 1).Take(endIndex - startIndex - 1).ToArray();
+    }
+
+    private static string FormatHandoffProfileGroupLine(HandoffProfileGroupMetadata group)
+    {
+        return $"- [{group.Status}] Group {group.Id}: {group.UserDataFolder}";
     }
 
     private static IReadOnlyList<string> CreateExpectedHandoffChecklistLines(
@@ -1200,7 +1373,7 @@ public static class FeasibilityStatusCommand
         List<string> validationLines)
     {
         var isValid = true;
-        isValid &= ValidateHandoffDiagnosticReportContext(report, manifest, inputFolder, validationLines);
+        isValid &= ValidateHandoffDiagnosticReportContext(report, manifest, validationLines);
 
         if (report.FeasibilityResultCount == manifest.ResultCount)
         {
@@ -1265,7 +1438,6 @@ public static class FeasibilityStatusCommand
     private static bool ValidateHandoffDiagnosticReportContext(
         DiagnosticReport report,
         HandoffManifest manifest,
-        string inputFolder,
         List<string> validationLines)
     {
         var isValid = true;
@@ -1303,27 +1475,14 @@ public static class FeasibilityStatusCommand
                 $"- [fail] diagnostic report results file mismatch, expected {FormatPathForValidation(manifest.ResultsFilePath)}, actual {FormatPathForValidation(resultsFile.Path)}.");
         }
 
-        var preflightPath = Path.Combine(inputFolder, HandoffPreflightFileName);
-        if (!File.Exists(preflightPath))
-        {
-            return isValid;
-        }
-
-        var profileRoot = ReadLineValue(File.ReadAllLines(preflightPath), "Profile root:");
-        if (string.IsNullOrWhiteSpace(profileRoot))
-        {
-            validationLines.Add($"- [fail] {HandoffPreflightFileName} profile root line is missing.");
-            return false;
-        }
-
-        if (AreEquivalentPaths(report.ProfileRootFolder, profileRoot))
+        if (AreEquivalentPaths(report.ProfileRootFolder, manifest.ProfileRootFolder))
         {
             validationLines.Add($"- [pass] diagnostic report profile root: {FormatPathForValidation(report.ProfileRootFolder)}");
             return isValid;
         }
 
         validationLines.Add(
-            $"- [fail] diagnostic report profile root mismatch, expected {FormatPathForValidation(profileRoot)}, actual {FormatPathForValidation(report.ProfileRootFolder)}.");
+            $"- [fail] diagnostic report profile root mismatch, expected {FormatPathForValidation(manifest.ProfileRootFolder)}, actual {FormatPathForValidation(report.ProfileRootFolder)}.");
         return false;
     }
 
@@ -1689,31 +1848,52 @@ public static class FeasibilityStatusCommand
         string? dataFolder,
         string? profileFolder)
     {
+        return CreatePreflightLines(dataFolder, CreateHandoffPreflightSnapshot(profileFolder));
+    }
+
+    private static HandoffPreflightSnapshot CreateHandoffPreflightSnapshot(string? profileFolder)
+    {
         var profileService = new WebViewProfileService(profileFolder);
+        var profileGroups = profileService.Groups
+            .OrderBy(group => group.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new HandoffProfileGroupMetadata(
+                group.Id,
+                group.UserDataFolder,
+                Directory.Exists(group.UserDataFolder) ? "ready" : "missing"))
+            .ToArray();
+
+        return new HandoffPreflightSnapshot(
+            profileService.BaseProfileFolder,
+            GetWebView2RuntimeStatus(),
+            GetPlaybackLayoutStatus(),
+            profileGroups);
+    }
+
+    private static (IReadOnlyList<string> Lines, bool IsReady) CreatePreflightLines(
+        string? dataFolder,
+        HandoffPreflightSnapshot preflightSnapshot)
+    {
         var feasibilityStorage = new FeasibilityResultStorageService(dataFolder);
         var results = feasibilityStorage.LoadResults();
         var decision = new FeasibilityDecisionService().Decide(results);
         var auditService = new FeasibilityAuditService();
         var auditItems = auditService.CreateAudit(results, decision);
-        var runtimeStatus = GetWebView2RuntimeStatus();
-        var layoutStatus = GetPlaybackLayoutStatus();
         var lines = new List<string>
         {
             "Stream Orchestra Feasibility Preflight",
             $"Data folder: {feasibilityStorage.DataFolder}",
             $"Results file: {feasibilityStorage.ResultsFilePath}",
-            $"Profile root: {profileService.BaseProfileFolder}",
-            $"WebView2 runtime: {runtimeStatus}",
+            $"Profile root: {preflightSnapshot.ProfileRootFolder}",
+            $"WebView2 runtime: {preflightSnapshot.WebView2RuntimeStatus}",
             "Profile groups:"
         };
 
-        foreach (var group in profileService.Groups.OrderBy(group => group.Id, StringComparer.OrdinalIgnoreCase))
+        foreach (var group in preflightSnapshot.ProfileGroups)
         {
-            var status = Directory.Exists(group.UserDataFolder) ? "ready" : "missing";
-            lines.Add($"- [{status}] Group {group.Id}: {group.UserDataFolder}");
+            lines.Add(FormatHandoffProfileGroupLine(group));
         }
 
-        lines.Add($"Layouts: {layoutStatus}");
+        lines.Add($"Layouts: {preflightSnapshot.PlaybackLayoutStatus}");
         lines.Add($"Evidence recorded: {results.Count}");
         lines.Add($"Decision: {decision.Title} ({decision.Code})");
         if (!string.IsNullOrWhiteSpace(decision.NextAction))
@@ -1737,8 +1917,8 @@ public static class FeasibilityStatusCommand
             lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
         }
 
-        var isReady = runtimeStatus.StartsWith("[available]", StringComparison.OrdinalIgnoreCase) &&
-            layoutStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase);
+        var isReady = preflightSnapshot.WebView2RuntimeStatus.StartsWith("[available]", StringComparison.OrdinalIgnoreCase) &&
+            preflightSnapshot.PlaybackLayoutStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase);
 
         return (lines, isReady);
     }
@@ -2821,6 +3001,10 @@ public static class FeasibilityStatusCommand
         DateTimeOffset generatedAt,
         string dataFolder,
         string resultsFilePath,
+        string profileRootFolder,
+        string webView2RuntimeStatus,
+        string playbackLayoutStatus,
+        IReadOnlyList<HandoffProfileGroupMetadata> profileGroups,
         int resultCount,
         bool isPreflightReady,
         bool isVerified,
@@ -2839,6 +3023,10 @@ public static class FeasibilityStatusCommand
             generatedAt,
             dataFolder,
             resultsFilePath,
+            profileRootFolder,
+            webView2RuntimeStatus,
+            playbackLayoutStatus,
+            profileGroups,
             resultCount,
             isPreflightReady,
             isVerified,
@@ -3031,6 +3219,10 @@ public static class FeasibilityStatusCommand
         DateTimeOffset GeneratedAt,
         string DataFolder,
         string ResultsFilePath,
+        string ProfileRootFolder,
+        string WebView2RuntimeStatus,
+        string PlaybackLayoutStatus,
+        IReadOnlyList<HandoffProfileGroupMetadata> ProfileGroups,
         int ResultCount,
         bool IsPreflightReady,
         bool IsVerified,
@@ -3043,6 +3235,17 @@ public static class FeasibilityStatusCommand
         int OutstandingGateCount,
         IReadOnlyList<string> ArtifactFiles,
         IReadOnlyList<HandoffArtifactMetadata> ArtifactDetails);
+
+    private sealed record HandoffPreflightSnapshot(
+        string ProfileRootFolder,
+        string WebView2RuntimeStatus,
+        string PlaybackLayoutStatus,
+        IReadOnlyList<HandoffProfileGroupMetadata> ProfileGroups);
+
+    private sealed record HandoffProfileGroupMetadata(
+        string Id,
+        string UserDataFolder,
+        string Status);
 
     private sealed record HandoffArtifactMetadata(
         string FileName,

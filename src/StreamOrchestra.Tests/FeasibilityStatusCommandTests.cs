@@ -365,6 +365,11 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal("[]" + Environment.NewLine, File.ReadAllText(resultsPath));
         var manifestText = File.ReadAllText(manifestPath);
         Assert.Contains("\"resultCount\": 0", manifestText);
+        Assert.Contains($"\"profileRootFolder\": \"{JsonEncodedText.Encode(profileFolder)}\"", manifestText);
+        Assert.Contains("\"webView2RuntimeStatus\":", manifestText);
+        Assert.Contains("\"playbackLayoutStatus\":", manifestText);
+        Assert.Contains("\"profileGroups\":", manifestText);
+        Assert.Contains("\"id\": \"A\"", manifestText);
         Assert.Contains("\"isPreflightReady\":", manifestText);
         Assert.Contains("\"isVerified\": false", manifestText);
         Assert.Contains("\"decisionCode\": \"pending\"", manifestText);
@@ -442,7 +447,12 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-results.json:", text);
         Assert.Contains("- [pass] phase0-preflight.txt data folder:", text);
         Assert.Contains("- [pass] phase0-preflight.txt results file:", text);
+        Assert.Contains("- [pass] phase0-preflight.txt profile root:", text);
+        Assert.Contains("- [pass] phase0-preflight.txt WebView2 runtime:", text);
+        Assert.Contains("- [pass] phase0-preflight.txt layouts:", text);
         Assert.Contains("- [pass] phase0-preflight.txt readiness:", text);
+        Assert.Contains("- [pass] phase0-preflight.txt profile groups: 4", text);
+        Assert.Contains("- [pass] phase0-preflight.txt content matches manifest and results snapshot.", text);
         Assert.Contains("- [pass] phase0-results.json normalized snapshot content.", text);
         Assert.Contains("- [pass] phase0-results.json result count: 0", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json isVerified: False", text);
@@ -697,6 +707,43 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal(1, exitCode);
         Assert.Contains("phase0-preflight.txt data folder mismatch", text);
         Assert.Contains("phase0-preflight.txt results file mismatch", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsPreflightContentMismatch()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-preflight-content-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var preflightPath = Path.Combine(handoffFolder, "phase0-preflight.txt");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        File.WriteAllText(
+            preflightPath,
+            File.ReadAllText(preflightPath)
+                .Replace("Evidence recorded: 0", "Evidence recorded: 1"));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-preflight.txt");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-preflight.txt content mismatch", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());

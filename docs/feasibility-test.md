@@ -64,7 +64,7 @@ Create a full handoff bundle when you want the setup, checklist, audit, verifica
 dotnet run --project src\StreamOrchestra.Tools -- handoff --output-folder .\phase0-handoff
 ```
 
-The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, `phase0-diagnostic-report.json`, a normalized `phase0-results.json` snapshot of the current feasibility evidence, and `phase0-handoff-manifest.json`. The manifest includes the current decision, plan-verification status, pass/pending/fail gate counts, outstanding gate count, and artifact file sizes plus SHA-256 hashes. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
+The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, `phase0-diagnostic-report.json`, a normalized `phase0-results.json` snapshot of the current feasibility evidence, and `phase0-handoff-manifest.json`. The manifest includes the preflight profile root, WebView2 runtime status, playback layout status, A-D profile group status, current decision, plan-verification status, pass/pending/fail gate counts, outstanding gate count, and artifact file sizes plus SHA-256 hashes. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
 
 Validate the saved bundle before sharing or reviewing it:
 
@@ -72,7 +72,7 @@ Validate the saved bundle before sharing or reviewing it:
 dotnet run --project src\StreamOrchestra.Tools -- validate-handoff --input-folder .\phase0-handoff
 ```
 
-Add `--output .\phase0-handoff-validation.txt` to save the validation result. `validate-handoff` exits `0` only when the manifest lists only the standard handoff artifacts exactly once, every artifact detail is unique, each listed artifact exists and still matches its recorded size and SHA-256 hash, `phase0-results.json` is the canonical normalized snapshot, the checklist/audit/history/verification artifacts agree with the results snapshot and manifest, the preflight artifact agrees with the manifest context/readiness, and the diagnostic report agrees with the manifest's data folder, results file, profile root, result count, latest result, account-label summary, suggested records, full decision snapshot, audit items, and recomputed plan-gate summary.
+Add `--output .\phase0-handoff-validation.txt` to save the validation result. `validate-handoff` exits `0` only when the manifest lists only the standard handoff artifacts exactly once, every artifact detail is unique, each listed artifact exists and still matches its recorded size and SHA-256 hash, `phase0-results.json` is the canonical normalized snapshot, the preflight/checklist/audit/history/verification artifacts agree with the results snapshot and manifest, and the diagnostic report agrees with the manifest's data folder, results file, profile root, result count, latest result, account-label summary, suggested records, full decision snapshot, audit items, and recomputed plan-gate summary.
 
 Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
 
@@ -159,7 +159,7 @@ The `checklist` command prints the ordered manual SOOP verification flow from `d
 
 The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, can save the same text with `--output <path>`, and exits non-zero until every Phase 0 plan gate passes.
 
-The `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands. The manifest also records preflight readiness, verification completion, the current decision, plan-gate pass/pending/fail summary, and artifact hashes; `validate-handoff` checks the required standard artifact list, unexpected or duplicate manifest entries, normalized results snapshot content, checklist/audit/history/preflight-context/readiness/status consistency, diagnostic report context fields, snapshot fields and audit items, those hashes, plus recomputed result/report/manifest consistency later. Add `--output <path>` to save that validation text.
+The `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands. The manifest also records preflight profile root, runtime/layout/profile-group status, preflight readiness, verification completion, the current decision, plan-gate pass/pending/fail summary, and artifact hashes; `validate-handoff` checks the required standard artifact list, unexpected or duplicate manifest entries, normalized results snapshot content, preflight/checklist/audit/history/verification content consistency, diagnostic report context fields, snapshot fields and audit items, those hashes, plus recomputed result/report/manifest consistency later. Add `--output <path>` to save that validation text.
 
 Export a diagnostic report from the CLI:
 
