@@ -75,7 +75,7 @@ public sealed class FeasibilityResultStorageService
         return $"feasibility_{capturedAt:yyyyMMdd_HHmmss}_{playbackCount}_{normalizedOutcome}";
     }
 
-    private static IReadOnlyList<FeasibilityTestResult> NormalizeResults(IReadOnlyList<FeasibilityTestResult>? results)
+    public static IReadOnlyList<FeasibilityTestResult> NormalizeResults(IReadOnlyList<FeasibilityTestResult>? results)
     {
         IEnumerable<FeasibilityTestResult?> sourceResults = results ?? [];
         return sourceResults

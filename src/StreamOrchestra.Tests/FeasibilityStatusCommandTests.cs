@@ -443,6 +443,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-preflight.txt data folder:", text);
         Assert.Contains("- [pass] phase0-preflight.txt results file:", text);
         Assert.Contains("- [pass] phase0-preflight.txt readiness:", text);
+        Assert.Contains("- [pass] phase0-results.json normalized snapshot content.", text);
         Assert.Contains("- [pass] phase0-results.json result count: 0", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json isVerified: False", text);
         Assert.Contains("- [pass] phase0-checklist.txt content matches results snapshot.", text);
@@ -620,6 +621,40 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains(
             "phase0-results.json plan gates mismatch, expected pass=0, pending=11, fail=0, outstanding=11, status=pending; actual pass=11, pending=0, fail=0, outstanding=0, status=pass.",
             text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsNonCanonicalResultsSnapshot()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-noncanonical-results");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var resultsPath = Path.Combine(handoffFolder, "phase0-results.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        File.WriteAllText(resultsPath, JsonNode.Parse(File.ReadAllText(resultsPath))!.ToJsonString());
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-results.json");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-results.json normalized snapshot content mismatch", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());

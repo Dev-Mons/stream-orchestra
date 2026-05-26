@@ -519,19 +519,22 @@ public static class FeasibilityStatusCommand
         {
             try
             {
+                var resultsText = File.ReadAllText(resultsPath);
                 var results = JsonSerializer.Deserialize<FeasibilityTestResult[]>(
-                    File.ReadAllText(resultsPath),
+                    resultsText,
                     HandoffJsonOptions) ?? [];
-                resultsSummary = CreateHandoffResultsSummary(results);
-                if (results.Length == manifest.ResultCount)
+                var normalizedResults = FeasibilityResultStorageService.NormalizeResults(results);
+                isValid &= ValidateHandoffResultsSnapshotText(resultsText, normalizedResults, validationLines);
+                resultsSummary = CreateHandoffResultsSummary(normalizedResults);
+                if (normalizedResults.Count == manifest.ResultCount)
                 {
-                    validationLines.Add($"- [pass] {HandoffResultsFileName} result count: {results.Length}");
+                    validationLines.Add($"- [pass] {HandoffResultsFileName} result count: {normalizedResults.Count}");
                 }
                 else
                 {
                     isValid = false;
                     validationLines.Add(
-                        $"- [fail] {HandoffResultsFileName} result count mismatch, expected {manifest.ResultCount}, actual {results.Length}.");
+                        $"- [fail] {HandoffResultsFileName} result count mismatch, expected {manifest.ResultCount}, actual {normalizedResults.Count}.");
                 }
             }
             catch (JsonException ex)
@@ -624,6 +627,22 @@ public static class FeasibilityStatusCommand
         }
 
         return duplicates;
+    }
+
+    private static bool ValidateHandoffResultsSnapshotText(
+        string actualText,
+        IReadOnlyList<FeasibilityTestResult> normalizedResults,
+        List<string> validationLines)
+    {
+        var expectedText = JsonSerializer.Serialize(normalizedResults, HandoffJsonOptions) + Environment.NewLine;
+        if (string.Equals(actualText, expectedText, StringComparison.Ordinal))
+        {
+            validationLines.Add($"- [pass] {HandoffResultsFileName} normalized snapshot content.");
+            return true;
+        }
+
+        validationLines.Add($"- [fail] {HandoffResultsFileName} normalized snapshot content mismatch.");
+        return false;
     }
 
     private static HandoffResultsSummary CreateHandoffResultsSummary(IReadOnlyList<FeasibilityTestResult> results)
