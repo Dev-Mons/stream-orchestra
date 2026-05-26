@@ -31,12 +31,12 @@ public sealed class PresetStorageService
 
     public IReadOnlyList<WorkspacePreset> LoadWorkspaces()
     {
-        return JsonFileStorage.LoadList<WorkspacePreset>(WorkspacesFilePath, SerializerOptions);
+        return NormalizeWorkspaces(JsonFileStorage.LoadList<WorkspacePreset>(WorkspacesFilePath, SerializerOptions));
     }
 
     public void SaveWorkspaces(IReadOnlyList<WorkspacePreset> workspaces)
     {
-        JsonFileStorage.Save(WorkspacesFilePath, workspaces, SerializerOptions);
+        JsonFileStorage.Save(WorkspacesFilePath, NormalizeWorkspaces(workspaces), SerializerOptions);
     }
 
     public AppState? LoadAppState()
@@ -81,6 +81,57 @@ public sealed class PresetStorageService
         {
             var candidate = $"{baseId}_{suffix}";
             if (!existingIds.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private static IReadOnlyList<WorkspacePreset> NormalizeWorkspaces(IReadOnlyList<WorkspacePreset> workspaces)
+    {
+        IEnumerable<WorkspacePreset?> sourceWorkspaces = workspaces ?? [];
+        var normalizedWorkspaces = new List<WorkspacePreset>();
+        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var workspace in sourceWorkspaces)
+        {
+            if (workspace is null)
+            {
+                continue;
+            }
+
+            var id = CreateUniqueWorkspaceId(workspace.Id, usedIds);
+            var name = string.IsNullOrWhiteSpace(workspace.Name)
+                ? "Imported Workspace"
+                : workspace.Name.Trim();
+
+            normalizedWorkspaces.Add(new WorkspacePreset
+            {
+                Id = id,
+                Name = name,
+                LayoutId = workspace.LayoutId?.Trim() ?? "",
+                Slots = workspace.Slots ?? []
+            });
+        }
+
+        return normalizedWorkspaces;
+    }
+
+    private static string CreateUniqueWorkspaceId(string? requestedId, HashSet<string> usedIds)
+    {
+        var baseId = string.IsNullOrWhiteSpace(requestedId)
+            ? "workspace_imported"
+            : requestedId.Trim();
+
+        if (usedIds.Add(baseId))
+        {
+            return baseId;
+        }
+
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{baseId}_{suffix}";
+            if (usedIds.Add(candidate))
             {
                 return candidate;
             }

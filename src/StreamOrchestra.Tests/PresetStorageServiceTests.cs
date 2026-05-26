@@ -91,6 +91,63 @@ public sealed class PresetStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadWorkspaces_NormalizesBlankAndDuplicateWorkspaceMetadata()
+    {
+        var service = new PresetStorageService(_dataFolder);
+        File.WriteAllText(
+            service.WorkspacesFilePath,
+            """
+            [
+              {
+                "id": " duplicate ",
+                "name": " First ",
+                "layoutId": " layout_4x4 ",
+                "slots": []
+              },
+              {
+                "id": "duplicate",
+                "name": "Second",
+                "layoutId": null,
+                "slots": null
+              },
+              {
+                "id": " ",
+                "name": " ",
+                "layoutId": "layout_8_small_1_main",
+                "slots": []
+              }
+            ]
+            """);
+
+        var workspaces = service.LoadWorkspaces();
+
+        Assert.Equal(["duplicate", "duplicate_2", "workspace_imported"], workspaces.Select(workspace => workspace.Id));
+        Assert.Equal(["First", "Second", "Imported Workspace"], workspaces.Select(workspace => workspace.Name));
+        Assert.Equal("layout_4x4", workspaces[0].LayoutId);
+        Assert.Equal("", workspaces[1].LayoutId);
+        Assert.Empty(workspaces[1].Slots);
+    }
+
+    [Fact]
+    public void SaveWorkspaces_NormalizesDuplicateWorkspaceMetadataBeforeWriting()
+    {
+        var service = new PresetStorageService(_dataFolder);
+
+        service.SaveWorkspaces(
+        [
+            CreateWorkspace(" duplicate ", " First "),
+            CreateWorkspace("duplicate", "Second"),
+            CreateWorkspace(" ", " ")
+        ]);
+
+        var loadedWorkspaces = service.LoadWorkspaces();
+
+        Assert.Equal(["duplicate", "duplicate_2", "workspace_imported"], loadedWorkspaces.Select(workspace => workspace.Id));
+        Assert.Equal(["First", "Second", "Imported Workspace"], loadedWorkspaces.Select(workspace => workspace.Name));
+        Assert.Contains("\"id\": \"duplicate_2\"", File.ReadAllText(service.WorkspacesFilePath));
+    }
+
+    [Fact]
     public void SaveAppState_AndLoadAppState_RoundTripsLastSessionWithoutUsingWorkspacesFile()
     {
         var service = new PresetStorageService(_dataFolder);
