@@ -567,7 +567,7 @@ public static class FeasibilityStatusCommand
             isValid &= ValidateHandoffResultsSummary(resultsSummary, manifest, validationLines);
             isValid &= ValidateHandoffChecklistArtifact(inputFolder, manifest, resultsSummary, validationLines);
             isValid &= ValidateHandoffAuditArtifact(inputFolder, manifest, resultsSummary, validationLines);
-            isValid &= ValidateHandoffVerificationArtifact(inputFolder, resultsSummary, validationLines);
+            isValid &= ValidateHandoffVerificationArtifact(inputFolder, manifest, resultsSummary, validationLines);
             isValid &= ValidateHandoffHistoryArtifact(inputFolder, manifest, resultsSummary, validationLines);
         }
 
@@ -832,6 +832,7 @@ public static class FeasibilityStatusCommand
 
     private static bool ValidateHandoffVerificationArtifact(
         string inputFolder,
+        HandoffManifest manifest,
         HandoffResultsSummary summary,
         List<string> validationLines)
     {
@@ -873,11 +874,26 @@ public static class FeasibilityStatusCommand
         if (isArtifactVerified == isExpectedVerified)
         {
             validationLines.Add($"- [pass] {HandoffVerificationFileName} completion: {isArtifactVerified}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffVerificationFileName} completion mismatch, expected {isExpectedVerified} from results, actual {isArtifactVerified}.");
+        }
+
+        var expectedLines = CreateExpectedHandoffVerificationLines(manifest, summary);
+        if (lines.SequenceEqual(expectedLines, StringComparer.Ordinal))
+        {
+            validationLines.Add($"- [pass] {HandoffVerificationFileName} content matches results snapshot.");
             return isValid;
         }
 
+        var lineNumber = FindFirstLineMismatch(expectedLines, lines) + 1;
+        var expectedLine = lineNumber <= expectedLines.Count ? expectedLines[lineNumber - 1] : "<missing>";
+        var actualLine = lineNumber <= lines.Length ? lines[lineNumber - 1] : "<missing>";
         validationLines.Add(
-            $"- [fail] {HandoffVerificationFileName} completion mismatch, expected {isExpectedVerified} from results, actual {isArtifactVerified}.");
+            $"- [fail] {HandoffVerificationFileName} content mismatch at line {lineNumber}, expected {FormatMismatchLine(expectedLine)}, actual {FormatMismatchLine(actualLine)}.");
         return false;
     }
 
@@ -1094,6 +1110,60 @@ public static class FeasibilityStatusCommand
             {
                 lines.Add($"  Notes: {result.Notes}");
             }
+        }
+
+        return lines;
+    }
+
+    private static IReadOnlyList<string> CreateExpectedHandoffVerificationLines(
+        HandoffManifest manifest,
+        HandoffResultsSummary summary)
+    {
+        var lines = new List<string>
+        {
+            "Stream Orchestra Plan Verification",
+            $"Data folder: {manifest.DataFolder}",
+            $"Results file: {manifest.ResultsFilePath}",
+            $"Results recorded: {summary.Results.Count}",
+            $"Decision: {summary.Decision.Title} ({summary.Decision.Code})"
+        };
+
+        if (!string.IsNullOrWhiteSpace(summary.Decision.NextAction))
+        {
+            lines.Add($"Next action: {summary.Decision.NextAction}");
+        }
+
+        lines.Add($"Plan audit: {summary.AuditSummary.ToCompactText()}");
+        lines.Add($"Plan verification: [{summary.PlanVerificationStatus}]");
+
+        var successGate = summary.AuditItems.FirstOrDefault(item => item.Id == "phase0_success_gate");
+        if (successGate is not null)
+        {
+            lines.Add($"Success gate: [{successGate.Status}] {successGate.Evidence}");
+        }
+
+        if (summary.PlanVerificationStatus.Equals("pass", StringComparison.OrdinalIgnoreCase))
+        {
+            lines.Add("Verification: pass");
+            return lines;
+        }
+
+        lines.Add("Verification: not complete");
+        var outstandingItems = summary.AuditItems
+            .Where(item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (outstandingItems.Length > 0)
+        {
+            lines.Add("Outstanding gates:");
+            lines.AddRange(outstandingItems.Select(item => $"- [{item.Status}] {item.Title}: {item.Evidence}"));
+        }
+
+        lines.Add("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account-label, restart, resource, CPU, GPU, and memory evidence.");
+        var suggestions = new FeasibilityAuditService().CreateSuggestedRecordShapes(summary.AuditItems);
+        if (suggestions.Count > 0)
+        {
+            lines.Add("Suggested record shapes:");
+            lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
         }
 
         return lines;

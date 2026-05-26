@@ -72,7 +72,7 @@ Validate the saved bundle before sharing or reviewing it:
 dotnet run --project src\StreamOrchestra.Tools -- validate-handoff --input-folder .\phase0-handoff
 ```
 
-Add `--output .\phase0-handoff-validation.txt` to save the validation result. `validate-handoff` exits `0` only when the manifest lists only the standard handoff artifacts exactly once, every artifact detail is unique, each listed artifact exists and still matches its recorded size and SHA-256 hash, `phase0-results.json` is the canonical normalized snapshot, the checklist/audit/history/preflight/verification artifacts agree with the results snapshot and manifest, and the diagnostic report agrees with the manifest's data folder, results file, profile root, result count, latest result, account-label summary, suggested records, full decision snapshot, audit items, and recomputed plan-gate summary.
+Add `--output .\phase0-handoff-validation.txt` to save the validation result. `validate-handoff` exits `0` only when the manifest lists only the standard handoff artifacts exactly once, every artifact detail is unique, each listed artifact exists and still matches its recorded size and SHA-256 hash, `phase0-results.json` is the canonical normalized snapshot, the checklist/audit/history/verification artifacts agree with the results snapshot and manifest, the preflight artifact agrees with the manifest context/readiness, and the diagnostic report agrees with the manifest's data folder, results file, profile root, result count, latest result, account-label summary, suggested records, full decision snapshot, audit items, and recomputed plan-gate summary.
 
 Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
 
