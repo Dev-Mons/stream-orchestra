@@ -511,6 +511,7 @@ public static class FeasibilityStatusCommand
             }
         }
 
+        HandoffResultsSummary? resultsSummary = null;
         var resultsPath = Path.Combine(inputFolder, HandoffResultsFileName);
         if (File.Exists(resultsPath))
         {
@@ -519,6 +520,7 @@ public static class FeasibilityStatusCommand
                 var results = JsonSerializer.Deserialize<FeasibilityTestResult[]>(
                     File.ReadAllText(resultsPath),
                     HandoffJsonOptions) ?? [];
+                resultsSummary = CreateHandoffResultsSummary(results);
                 if (results.Length == manifest.ResultCount)
                 {
                     validationLines.Add($"- [pass] {HandoffResultsFileName} result count: {results.Length}");
@@ -535,6 +537,11 @@ public static class FeasibilityStatusCommand
                 isValid = false;
                 validationLines.Add($"- [fail] {HandoffResultsFileName} JSON is invalid: {ex.Message}");
             }
+        }
+
+        if (resultsSummary is not null)
+        {
+            isValid &= ValidateHandoffResultsSummary(resultsSummary, manifest, validationLines);
         }
 
         var diagnosticReportPath = Path.Combine(inputFolder, HandoffDiagnosticReportFileName);
@@ -606,6 +613,58 @@ public static class FeasibilityStatusCommand
         }
 
         return duplicates;
+    }
+
+    private static HandoffResultsSummary CreateHandoffResultsSummary(IReadOnlyList<FeasibilityTestResult> results)
+    {
+        var decision = new FeasibilityDecisionService().Decide(results);
+        var auditService = new FeasibilityAuditService();
+        var auditItems = auditService.CreateAudit(results, decision);
+        var auditSummary = auditService.CreateSummary(auditItems);
+        var planVerificationStatus = auditService.CreatePlanVerificationStatus(auditItems);
+        var outstandingGateCount = auditItems.Count(
+            item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase));
+
+        return new HandoffResultsSummary(
+            decision,
+            auditSummary,
+            planVerificationStatus,
+            outstandingGateCount);
+    }
+
+    private static bool ValidateHandoffResultsSummary(
+        HandoffResultsSummary summary,
+        HandoffManifest manifest,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        if (string.Equals(summary.Decision.Code, manifest.DecisionCode, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(summary.Decision.Title, manifest.DecisionTitle, StringComparison.Ordinal))
+        {
+            validationLines.Add(
+                $"- [pass] {HandoffResultsFileName} decision: {summary.Decision.Title} ({summary.Decision.Code})");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffResultsFileName} decision mismatch, expected {summary.Decision.Title} ({summary.Decision.Code}), actual {manifest.DecisionTitle} ({manifest.DecisionCode}).");
+        }
+
+        if (summary.AuditSummary.PassCount == manifest.PassingGateCount &&
+            summary.AuditSummary.PendingCount == manifest.PendingGateCount &&
+            summary.AuditSummary.FailCount == manifest.FailingGateCount &&
+            summary.OutstandingGateCount == manifest.OutstandingGateCount &&
+            summary.PlanVerificationStatus.Equals(manifest.PlanVerificationStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            validationLines.Add(
+                $"- [pass] {HandoffResultsFileName} plan gates: pass={summary.AuditSummary.PassCount}, pending={summary.AuditSummary.PendingCount}, fail={summary.AuditSummary.FailCount}, outstanding={summary.OutstandingGateCount}, status={summary.PlanVerificationStatus}");
+            return isValid;
+        }
+
+        validationLines.Add(
+            $"- [fail] {HandoffResultsFileName} plan gates mismatch, expected pass={summary.AuditSummary.PassCount}, pending={summary.AuditSummary.PendingCount}, fail={summary.AuditSummary.FailCount}, outstanding={summary.OutstandingGateCount}, status={summary.PlanVerificationStatus}; actual pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}, outstanding={manifest.OutstandingGateCount}, status={manifest.PlanVerificationStatus}.");
+        return false;
     }
 
     private static bool ValidateHandoffDiagnosticReport(
@@ -2158,6 +2217,12 @@ public static class FeasibilityStatusCommand
         string FileName,
         long SizeBytes,
         string Sha256);
+
+    private sealed record HandoffResultsSummary(
+        FeasibilityDecision Decision,
+        FeasibilityAuditSummary AuditSummary,
+        string PlanVerificationStatus,
+        int OutstandingGateCount);
 
     private static IReadOnlyList<string> ParseProfileGroups(string rawValue)
     {

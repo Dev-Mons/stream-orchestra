@@ -543,6 +543,71 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_ValidateHandoff_RecomputesSummaryFromResultsSnapshot()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-recomputed-summary-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var diagnosticReportPath = Path.Combine(handoffFolder, "phase0-diagnostic-report.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var diagnosticReport = JsonNode.Parse(File.ReadAllText(diagnosticReportPath))!.AsObject();
+
+        manifest["decisionCode"] = JsonValue.Create("continue_webview2_mvp");
+        manifest["decisionTitle"] = JsonValue.Create("WebView2 MVP 계속");
+        manifest["planVerificationStatus"] = JsonValue.Create("pass");
+        manifest["passingGateCount"] = JsonValue.Create(11);
+        manifest["pendingGateCount"] = JsonValue.Create(0);
+        manifest["failingGateCount"] = JsonValue.Create(0);
+        manifest["outstandingGateCount"] = JsonValue.Create(0);
+        diagnosticReport["feasibilityDecision"] = new JsonObject
+        {
+            ["code"] = "continue_webview2_mvp",
+            ["title"] = "WebView2 MVP 계속",
+            ["detail"] = "tampered summary",
+            ["nextAction"] = "tampered summary"
+        };
+
+        foreach (var item in diagnosticReport["feasibilityAudit"]!.AsArray())
+        {
+            var itemObject = item!.AsObject();
+            itemObject["status"] = JsonValue.Create("pass");
+            itemObject["evidence"] = JsonValue.Create("tampered summary");
+        }
+
+        File.WriteAllText(
+            diagnosticReportPath,
+            diagnosticReport.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-diagnostic-report.json");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains(
+            "phase0-results.json decision mismatch, expected 검증 대기 (pending), actual WebView2 MVP 계속 (continue_webview2_mvp).",
+            text);
+        Assert.Contains(
+            "phase0-results.json plan gates mismatch, expected pass=0, pending=11, fail=0, outstanding=11, status=pending; actual pass=11, pending=0, fail=0, outstanding=0, status=pass.",
+            text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_ValidateHandoff_DetectsMissingRequiredArtifactListing()
     {
         var handoffFolder = Path.Combine(_dataFolder, "handoff-missing-artifact-listing");
@@ -1575,6 +1640,22 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         {
             Directory.Delete(_dataFolder, recursive: true);
         }
+    }
+
+    private static void UpdateManifestArtifactMetadata(
+        JsonObject manifest,
+        string handoffFolder,
+        string artifactFileName)
+    {
+        var artifactPath = Path.Combine(handoffFolder, artifactFileName);
+        var fileInfo = new FileInfo(artifactPath);
+        var sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(artifactPath))).ToLowerInvariant();
+        var artifactDetail = manifest["artifactDetails"]!.AsArray()
+            .Single(node => node!["fileName"]!.GetValue<string>() == artifactFileName)!
+            .AsObject();
+
+        artifactDetail["sizeBytes"] = JsonValue.Create(fileInfo.Length);
+        artifactDetail["sha256"] = JsonValue.Create(sha256);
     }
 
     private static FeasibilityTestResult CreateSuccessfulResult()
