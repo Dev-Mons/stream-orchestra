@@ -2247,17 +2247,31 @@ public static class FeasibilityStatusCommand
         string? dataFolder,
         HandoffPreflightSnapshot preflightSnapshot)
     {
-        var feasibilityStorage = new FeasibilityResultStorageService(dataFolder);
-        var dataStorageStatus = GetDataStorageStatus(feasibilityStorage);
-        var results = feasibilityStorage.LoadResults();
+        var resolvedDataFolder = FeasibilityResultStorageService.ResolveDataFolder(dataFolder);
+        var resultsFilePath = FeasibilityResultStorageService.GetResultsFilePath(resolvedDataFolder);
+        var dataStorageStatus = GetDataStorageStatus(resolvedDataFolder);
+        IReadOnlyList<FeasibilityTestResult> results = [];
+        if (dataStorageStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var feasibilityStorage = new FeasibilityResultStorageService(resolvedDataFolder);
+                results = feasibilityStorage.LoadResults();
+            }
+            catch (Exception ex)
+            {
+                dataStorageStatus = $"[blocked] {ex.Message}";
+            }
+        }
+
         var decision = new FeasibilityDecisionService().Decide(results);
         var auditService = new FeasibilityAuditService();
         var auditItems = auditService.CreateAudit(results, decision);
         var lines = new List<string>
         {
             "Stream Orchestra Feasibility Preflight",
-            $"Data folder: {feasibilityStorage.DataFolder}",
-            $"Results file: {feasibilityStorage.ResultsFilePath}",
+            $"Data folder: {resolvedDataFolder}",
+            $"Results file: {resultsFilePath}",
             $"Data storage: {dataStorageStatus}",
             $"Profile root: {preflightSnapshot.ProfileRootFolder}",
             $"WebView2 runtime: {preflightSnapshot.WebView2RuntimeStatus}",
@@ -2302,13 +2316,14 @@ public static class FeasibilityStatusCommand
         return (lines, isReady, dataStorageStatus);
     }
 
-    private static string GetDataStorageStatus(FeasibilityResultStorageService storage)
+    private static string GetDataStorageStatus(string dataFolder)
     {
         var probePath = Path.Combine(
-            storage.DataFolder,
+            dataFolder,
             $"feasibility-preflight-write-test-{Guid.NewGuid():N}.tmp");
         try
         {
+            Directory.CreateDirectory(dataFolder);
             File.WriteAllText(probePath, "preflight");
             File.Delete(probePath);
             return "[ready] data folder is writable for feasibility artifacts.";

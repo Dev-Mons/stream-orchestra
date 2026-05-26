@@ -15,10 +15,7 @@ public sealed class FeasibilityResultStorageService
 
     public FeasibilityResultStorageService(string? dataFolder = null)
     {
-        DataFolder = dataFolder ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "StreamOrchestra",
-            "Data");
+        DataFolder = ResolveDataFolder(dataFolder);
 
         Directory.CreateDirectory(DataFolder);
     }
@@ -26,6 +23,19 @@ public sealed class FeasibilityResultStorageService
     public string DataFolder { get; }
 
     public string ResultsFilePath => Path.Combine(DataFolder, "feasibility-results.json");
+
+    public static string ResolveDataFolder(string? dataFolder)
+    {
+        return dataFolder ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StreamOrchestra",
+            "Data");
+    }
+
+    public static string GetResultsFilePath(string dataFolder)
+    {
+        return Path.Combine(dataFolder, "feasibility-results.json");
+    }
 
     public IReadOnlyList<FeasibilityTestResult> LoadResults()
     {

@@ -307,6 +307,32 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_PreflightWithFileDataFolder_PrintsBlockedStorageStatus()
+    {
+        Directory.CreateDirectory(_dataFolder);
+        var dataFolderFile = Path.Combine(_dataFolder, "data-folder-file");
+        File.WriteAllText(dataFolderFile, "not a directory");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["preflight", "--data-folder", dataFolderFile],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Stream Orchestra Feasibility Preflight", text);
+        Assert.Contains($"Data folder: {dataFolderFile}", text);
+        Assert.Contains($"Results file: {Path.Combine(dataFolderFile, "feasibility-results.json")}", text);
+        Assert.Contains("Data storage: [blocked]", text);
+        Assert.Contains("Evidence recorded: 0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_Handoff_WritesPhase0ArtifactBundle()
     {
         var profileFolder = Path.Combine(_dataFolder, "Profiles");
