@@ -744,6 +744,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
                 "--account",
                 "--profile-groups",
                 "D",
+                "--account-label",
+                "main_soop",
                 "--data-folder",
                 _dataFolder
             ],
@@ -760,8 +762,10 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal("Isolated Group D test (4 slot(s))", result.ScenarioName);
         Assert.Equal("partial", result.Outcome);
         Assert.True(result.IsSameAccountSessionMaintained);
+        Assert.Equal("main_soop", result.AccountLabel);
         Assert.Equal(["D"], result.VerifiedProfileGroups);
         Assert.Contains("Scenario: Isolated Group D test (4 slot(s)) (isolated_group_d)", text);
+        Assert.Contains("Account label: main_soop", text);
         Assert.Contains("Profile groups: D", text);
         Assert.Equal("", error.ToString());
     }
@@ -845,6 +849,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     [InlineData("record --count 9 --outcome partial --gpu-percent bad", "--gpu-percent requires a numeric value.")]
     [InlineData("record --count 9 --outcome partial --memory-mb -1", "--memory-mb must be 0 or higher.")]
     [InlineData("record --count 9 --outcome partial --account-label", "--account-label requires a value.")]
+    [InlineData("record --group D --outcome partial --account --profile-groups D", "Same-account evidence requires an account label.")]
     [InlineData("record --group Z --outcome partial", "--group must be A, B, C, or D.")]
     [InlineData("record --group A --count 5 --outcome partial", "--group can only be used with --count 1-4.")]
     [InlineData("record --group A --outcome partial --scenario manual_group_a", "--group cannot be combined with --scenario or --scenario-name.")]

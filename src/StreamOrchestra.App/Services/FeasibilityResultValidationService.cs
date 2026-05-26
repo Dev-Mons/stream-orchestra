@@ -11,7 +11,8 @@ public sealed class FeasibilityResultValidationService
         double? observedCpuPercent = null,
         double? observedGpuPercent = null,
         double? observedMemoryMegabytes = null,
-        IReadOnlyList<string>? verifiedProfileGroups = null)
+        IReadOnlyList<string>? verifiedProfileGroups = null,
+        string? accountLabel = null)
     {
         if (playbackCount is < 1 or > PlaybackTestPlanService.MaxSlotCount)
         {
@@ -44,13 +45,20 @@ public sealed class FeasibilityResultValidationService
             return profileGroupValidationError;
         }
 
+        var accountLabelValidationError = ValidateSameAccountLabel(
+            sameAccountSession,
+            verifiedProfileGroups,
+            accountLabel);
+
         if (normalizedOutcome != "success")
         {
-            return ValidateResourceAcceptanceObservation(
+            var resourceObservationError = ValidateResourceAcceptanceObservation(
                 resourceUsageAcceptable,
                 observedCpuPercent,
                 observedGpuPercent,
                 observedMemoryMegabytes);
+
+            return resourceObservationError ?? accountLabelValidationError;
         }
 
         if (playbackCount < 9)
@@ -79,11 +87,13 @@ public sealed class FeasibilityResultValidationService
             return "Success requires acceptable resource usage.";
         }
 
-        return ValidateResourceAcceptanceObservation(
+        var successResourceObservationError = ValidateResourceAcceptanceObservation(
             resourceUsageAcceptable,
             observedCpuPercent,
             observedGpuPercent,
             observedMemoryMegabytes);
+
+        return successResourceObservationError ?? accountLabelValidationError;
     }
 
     private static string? ValidateResourceAcceptanceObservation(
@@ -103,5 +113,20 @@ public sealed class FeasibilityResultValidationService
         }
 
         return null;
+    }
+
+    private static string? ValidateSameAccountLabel(
+        bool sameAccountSession,
+        IReadOnlyList<string>? verifiedProfileGroups,
+        string? accountLabel)
+    {
+        if (!sameAccountSession ||
+            FeasibilityProfileGroupEvidenceService.Normalize(verifiedProfileGroups).Count == 0 ||
+            !string.IsNullOrWhiteSpace(accountLabel))
+        {
+            return null;
+        }
+
+        return "Same-account evidence requires an account label.";
     }
 }

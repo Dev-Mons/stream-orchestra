@@ -880,7 +880,8 @@ public static class FeasibilityStatusCommand
             observedCpuPercent,
             observedGpuPercent,
             observedMemoryMegabytes,
-            verifiedProfileGroups);
+            verifiedProfileGroups,
+            accountLabel);
         if (validationError is not null)
         {
             return ParseResult.Invalid(validationError);

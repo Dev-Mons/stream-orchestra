@@ -314,6 +314,7 @@ public partial class MainWindow : Window
 
         var playbackCount = _currentPlaybackTestCount;
         var sameAccountSession = SameAccountSessionCheckBox.IsChecked == true;
+        var accountLabel = AccountLabelTextBox.Text.Trim();
         var verifiedProfileGroups = GetVerifiedProfileGroups();
         var restartSession = RestartSessionCheckBox.IsChecked == true;
         var resourceUsageAcceptable = ResourceAcceptableCheckBox.IsChecked == true;
@@ -352,7 +353,8 @@ public partial class MainWindow : Window
             observedCpuPercent,
             observedGpuPercent,
             observedMemoryMegabytes,
-            verifiedProfileGroups);
+            verifiedProfileGroups,
+            accountLabel);
         if (validationError is not null)
         {
             StatusTextBlock.Text = validationError;
@@ -371,7 +373,7 @@ public partial class MainWindow : Window
             Outcome = outcome,
             Diagnostics = diagnostics,
             IsSameAccountSessionMaintained = sameAccountSession,
-            AccountLabel = AccountLabelTextBox.Text.Trim(),
+            AccountLabel = accountLabel,
             VerifiedProfileGroups = verifiedProfileGroups,
             IsRestartSessionMaintained = restartSession,
             IsResourceUsageAcceptable = resourceUsageAcceptable,

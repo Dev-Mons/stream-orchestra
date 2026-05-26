@@ -18,7 +18,8 @@ public sealed class FeasibilityResultValidationServiceTests
             observedCpuPercent: 45,
             observedGpuPercent: 60,
             observedMemoryMegabytes: 12000,
-            verifiedProfileGroups: ["A", "B", "C"]);
+            verifiedProfileGroups: ["A", "B", "C"],
+            accountLabel: "main_soop");
 
         Assert.Null(error);
     }
@@ -37,9 +38,26 @@ public sealed class FeasibilityResultValidationServiceTests
             observedCpuPercent: 45,
             observedGpuPercent: 60,
             observedMemoryMegabytes: 12000,
-            verifiedProfileGroups: ["a", "b", "c"]);
+            verifiedProfileGroups: ["a", "b", "c"],
+            accountLabel: "main_soop");
 
         Assert.Null(error);
+    }
+
+    [Fact]
+    public void Validate_RejectsSameAccountEvidenceWithoutAccountLabel()
+    {
+        var service = new FeasibilityResultValidationService();
+
+        var error = service.Validate(
+            playbackCount: 4,
+            outcome: "partial",
+            sameAccountSession: true,
+            restartSession: false,
+            resourceUsageAcceptable: false,
+            verifiedProfileGroups: ["A"]);
+
+        Assert.Equal("Same-account evidence requires an account label.", error);
     }
 
     [Theory]
