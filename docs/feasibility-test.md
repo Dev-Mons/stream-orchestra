@@ -58,13 +58,13 @@ dotnet run --project src\StreamOrchestra.Tools -- preflight
 
 Add `--output .\phase0-preflight.txt` to save the exact preflight text as the setup artifact for the manual verification run.
 
-Create a full handoff bundle when you want the setup, checklist, audit, and verification text in one folder:
+Create a full handoff bundle when you want the setup, checklist, audit, verification, and diagnostic snapshots in one folder:
 
 ```powershell
 dotnet run --project src\StreamOrchestra.Tools -- handoff --output-folder .\phase0-handoff
 ```
 
-The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, a normalized `phase0-results.json` snapshot of the current feasibility evidence, and `phase0-handoff-manifest.json`. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
+The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, `phase0-diagnostic-report.json`, a normalized `phase0-results.json` snapshot of the current feasibility evidence, and `phase0-handoff-manifest.json`. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
 
 Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
 
@@ -151,7 +151,7 @@ The `checklist` command prints the ordered manual SOOP verification flow from `d
 
 The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, can save the same text with `--output <path>`, and exits non-zero until every Phase 0 plan gate passes.
 
-The `handoff` command saves the preflight, checklist, audit, verification, history, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands.
+The `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands.
 
 Export a diagnostic report from the CLI:
 

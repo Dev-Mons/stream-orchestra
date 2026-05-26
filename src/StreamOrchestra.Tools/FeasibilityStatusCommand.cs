@@ -262,6 +262,7 @@ public static class FeasibilityStatusCommand
         var generatedAt = DateTimeOffset.Now;
         var feasibilityStorage = new FeasibilityResultStorageService(parseResult.DataFolder);
         var results = feasibilityStorage.LoadResults();
+        var diagnosticReport = CreateDiagnosticReport(parseResult, feasibilityStorage, results);
 
         var (preflightLines, isPreflightReady) = CreatePreflightLines(
             parseResult.DataFolder,
@@ -277,6 +278,7 @@ public static class FeasibilityStatusCommand
             SaveHandoffArtifact(outputFolder, "phase0-audit.txt", auditLines),
             SaveHandoffArtifact(outputFolder, "phase0-verification.txt", verificationLines),
             SaveHandoffArtifact(outputFolder, "phase0-history.txt", historyLines),
+            SaveHandoffDiagnosticReport(outputFolder, diagnosticReport),
             SaveHandoffResultsSnapshot(outputFolder, results)
         };
         var manifestPath = SaveHandoffManifest(
@@ -715,22 +717,12 @@ public static class FeasibilityStatusCommand
 
     private static int SaveReport(ParseResult parseResult, TextWriter output)
     {
-        var profileService = new WebViewProfileService(parseResult.ProfileFolder);
-        var presetStorage = new PresetStorageService(parseResult.DataFolder);
-        var favoriteStorage = new FavoriteStorageService(parseResult.DataFolder);
         var feasibilityStorage = new FeasibilityResultStorageService(parseResult.DataFolder);
         var results = feasibilityStorage.LoadResults();
         var decision = new FeasibilityDecisionService().Decide(results);
-        var appState = presetStorage.LoadAppState();
+        var presetStorage = new PresetStorageService(parseResult.DataFolder);
         var reportService = new DiagnosticReportService();
-        var report = reportService.CreateReport(
-            profileService,
-            presetStorage,
-            favoriteStorage,
-            feasibilityStorage,
-            decision,
-            appState?.LastSession,
-            TryLoadLayouts());
+        var report = CreateDiagnosticReport(parseResult, feasibilityStorage, results);
         var path = reportService.SaveReport(report, presetStorage.DataFolder);
         var fallbackScriptPath = reportService.SaveExternalBrowserFallbackScript(report, presetStorage.DataFolder);
 
@@ -746,6 +738,27 @@ public static class FeasibilityStatusCommand
         WriteSuggestedRecordShapes(report.FeasibilityAudit, output);
 
         return 0;
+    }
+
+    private static DiagnosticReport CreateDiagnosticReport(
+        ParseResult parseResult,
+        FeasibilityResultStorageService feasibilityStorage,
+        IReadOnlyList<FeasibilityTestResult> results)
+    {
+        var profileService = new WebViewProfileService(parseResult.ProfileFolder);
+        var presetStorage = new PresetStorageService(parseResult.DataFolder);
+        var favoriteStorage = new FavoriteStorageService(parseResult.DataFolder);
+        var decision = new FeasibilityDecisionService().Decide(results);
+        var appState = presetStorage.LoadAppState();
+
+        return new DiagnosticReportService().CreateReport(
+            profileService,
+            presetStorage,
+            favoriteStorage,
+            feasibilityStorage,
+            decision,
+            appState?.LastSession,
+            TryLoadLayouts());
     }
 
     private static ParseResult ParseArgs(string[] args)
@@ -1486,6 +1499,15 @@ public static class FeasibilityStatusCommand
     {
         var path = Path.Combine(outputFolder, "phase0-results.json");
         SaveTextFile(path, JsonSerializer.Serialize(results, HandoffJsonOptions) + Environment.NewLine);
+        return path;
+    }
+
+    private static string SaveHandoffDiagnosticReport(
+        string outputFolder,
+        DiagnosticReport report)
+    {
+        var path = Path.Combine(outputFolder, "phase0-diagnostic-report.json");
+        SaveTextFile(path, JsonSerializer.Serialize(report, HandoffJsonOptions) + Environment.NewLine);
         return path;
     }
 

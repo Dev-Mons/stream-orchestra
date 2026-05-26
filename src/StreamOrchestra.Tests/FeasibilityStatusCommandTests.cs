@@ -327,6 +327,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         var auditPath = Path.Combine(handoffFolder, "phase0-audit.txt");
         var verificationPath = Path.Combine(handoffFolder, "phase0-verification.txt");
         var historyPath = Path.Combine(handoffFolder, "phase0-history.txt");
+        var diagnosticReportPath = Path.Combine(handoffFolder, "phase0-diagnostic-report.json");
         var resultsPath = Path.Combine(handoffFolder, "phase0-results.json");
         var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
         var text = output.ToString();
@@ -342,6 +343,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Saved: {auditPath}", text);
         Assert.Contains($"Saved: {verificationPath}", text);
         Assert.Contains($"Saved: {historyPath}", text);
+        Assert.Contains($"Saved: {diagnosticReportPath}", text);
         Assert.Contains($"Saved: {resultsPath}", text);
         Assert.Contains($"Saved: {manifestPath}", text);
         Assert.Contains("Preflight ready:", text);
@@ -351,6 +353,9 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Stream Orchestra Plan Audit", File.ReadAllText(auditPath));
         Assert.Contains("Verification: not complete", File.ReadAllText(verificationPath));
         Assert.Contains("Stream Orchestra Feasibility History", File.ReadAllText(historyPath));
+        var diagnosticReportText = File.ReadAllText(diagnosticReportPath);
+        Assert.Contains("\"profileRootFolder\":", diagnosticReportText);
+        Assert.Contains("\"feasibilityResultCount\": 0", diagnosticReportText);
         Assert.Equal("[]" + Environment.NewLine, File.ReadAllText(resultsPath));
         var manifestText = File.ReadAllText(manifestPath);
         Assert.Contains("\"resultCount\": 0", manifestText);
@@ -358,6 +363,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("\"isVerified\": false", manifestText);
         Assert.Contains("\"phase0-results.json\"", manifestText);
         Assert.Contains("\"phase0-history.txt\"", manifestText);
+        Assert.Contains("\"phase0-diagnostic-report.json\"", manifestText);
         Assert.Contains("\"phase0-verification.txt\"", manifestText);
         Assert.Equal("", error.ToString());
     }
@@ -378,12 +384,15 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
 
         var resultsText = File.ReadAllText(Path.Combine(handoffFolder, "phase0-results.json"));
         var historyText = File.ReadAllText(Path.Combine(handoffFolder, "phase0-history.txt"));
+        var diagnosticReportText = File.ReadAllText(Path.Combine(handoffFolder, "phase0-diagnostic-report.json"));
         Assert.Equal(0, exitCode);
         Assert.Contains("Results snapshot count: 1", output.ToString());
         Assert.Contains("\"id\": \"result_1\"", resultsText);
         Assert.Contains("\"scenarioId\": \"groups_a_b_c_9_slot_threshold\"", resultsText);
         Assert.Contains("\"accountLabel\": \"main_soop\"", resultsText);
         Assert.Contains("success, 9 slot(s)", historyText);
+        Assert.Contains("\"feasibilityResultCount\": 1", diagnosticReportText);
+        Assert.Contains("\"feasibilityDecision\":", diagnosticReportText);
         Assert.Equal("", error.ToString());
     }
 
