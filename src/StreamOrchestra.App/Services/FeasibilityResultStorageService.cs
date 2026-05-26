@@ -327,11 +327,18 @@ public sealed class FeasibilityResultStorageService
         }
 
         return new RuntimeDiagnosticsSnapshot(
-            diagnostics.CapturedAt,
+            NormalizeDiagnosticCapturedAt(diagnostics.CapturedAt, capturedAt),
             WebViewProcessCount: Math.Max(0, diagnostics.WebViewProcessCount),
             WebViewWorkingSetMegabytes: NormalizeNonNegativeMegabytes(diagnostics.WebViewWorkingSetMegabytes),
             WebViewPrivateMemoryMegabytes: NormalizeNonNegativeMegabytes(diagnostics.WebViewPrivateMemoryMegabytes),
             WebViewCpuPercent: FeasibilityResourceObservationService.NormalizePercent(diagnostics.WebViewCpuPercent));
+    }
+
+    private static DateTimeOffset NormalizeDiagnosticCapturedAt(
+        DateTimeOffset diagnosticCapturedAt,
+        DateTimeOffset resultCapturedAt)
+    {
+        return diagnosticCapturedAt == default ? resultCapturedAt : diagnosticCapturedAt;
     }
 
     private static double NormalizeNonNegativeMegabytes(double value)

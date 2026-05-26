@@ -221,6 +221,39 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_UsesResultTimestampWhenRuntimeDiagnosticsTimestampIsMissing()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "missing_diagnostics_timestamp",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "diagnostics": {
+                  "webViewProcessCount": 4,
+                  "webViewWorkingSetMegabytes": 1024,
+                  "webViewPrivateMemoryMegabytes": 800,
+                  "webViewCpuPercent": 25
+                }
+              }
+            ]
+            """);
+
+        var result = Assert.Single(service.LoadResults());
+
+        Assert.Equal(capturedAt, result.Diagnostics.CapturedAt);
+        Assert.Equal(4, result.Diagnostics.WebViewProcessCount);
+        Assert.Equal(25, result.Diagnostics.WebViewCpuPercent);
+    }
+
+    [Fact]
     public void LoadResults_NormalizesDuplicateResultIds()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);
