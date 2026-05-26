@@ -88,14 +88,24 @@ public sealed class FeasibilityResultStorageService
     public static IReadOnlyList<FeasibilityTestResult> NormalizeResults(IReadOnlyList<FeasibilityTestResult>? results)
     {
         IEnumerable<FeasibilityTestResult?> sourceResults = results ?? [];
-        return sourceResults
-            .Select(NormalizeResult)
-            .Where(result => result is not null)
-            .Select(result => result!)
-            .ToArray();
+        var normalizedResults = new List<FeasibilityTestResult>();
+        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var result in sourceResults)
+        {
+            var normalizedResult = NormalizeResult(result, usedIds);
+            if (normalizedResult is not null)
+            {
+                normalizedResults.Add(normalizedResult);
+            }
+        }
+
+        return normalizedResults;
     }
 
-    private static FeasibilityTestResult? NormalizeResult(FeasibilityTestResult? result)
+    private static FeasibilityTestResult? NormalizeResult(
+        FeasibilityTestResult? result,
+        HashSet<string> usedIds)
     {
         if (result is null || result.PlaybackCount is < 1 or > PlaybackTestPlanService.MaxSlotCount)
         {
@@ -154,12 +164,13 @@ public sealed class FeasibilityResultStorageService
             normalizedObservedCpuPercent,
             normalizedObservedGpuPercent,
             normalizedObservedMemoryMegabytes);
+        var resultId = string.IsNullOrWhiteSpace(result.Id)
+            ? CreateResultId(result.CapturedAt, result.PlaybackCount, normalizedOutcome)
+            : result.Id.Trim();
 
         return new FeasibilityTestResult
         {
-            Id = string.IsNullOrWhiteSpace(result.Id)
-                ? CreateResultId(result.CapturedAt, result.PlaybackCount, normalizedOutcome)
-                : result.Id.Trim(),
+            Id = CreateUniqueResultId(resultId, usedIds),
             CapturedAt = result.CapturedAt,
             PlaybackCount = result.PlaybackCount,
             ScenarioId = normalizedScenarioId,
@@ -180,6 +191,23 @@ public sealed class FeasibilityResultStorageService
             DecisionNextAction = shouldClearDecisionSnapshot ? "" : result.DecisionNextAction?.Trim() ?? "",
             Notes = result.Notes?.Trim() ?? ""
         };
+    }
+
+    private static string CreateUniqueResultId(string requestedId, HashSet<string> usedIds)
+    {
+        if (usedIds.Add(requestedId))
+        {
+            return requestedId;
+        }
+
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{requestedId}_{suffix}";
+            if (usedIds.Add(candidate))
+            {
+                return candidate;
+            }
+        }
     }
 
     private static string NormalizeOutcome(

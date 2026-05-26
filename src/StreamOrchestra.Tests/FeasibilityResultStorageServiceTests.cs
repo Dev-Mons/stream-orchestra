@@ -187,6 +187,61 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_NormalizesDuplicateResultIds()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": " duplicate ",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial"
+              },
+              {
+                "id": "duplicate",
+                "capturedAt": "2026-05-26T12:05:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial"
+              },
+              {
+                "id": " ",
+                "capturedAt": "2026-05-26T12:10:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial"
+              },
+              {
+                "id": "",
+                "capturedAt": "2026-05-26T12:10:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial"
+              }
+            ]
+            """);
+
+        var results = service.LoadResults();
+
+        Assert.Equal(
+            [
+                "duplicate",
+                "duplicate_2",
+                "feasibility_20260526_121000_9_partial",
+                "feasibility_20260526_121000_9_partial_2"
+            ],
+            results.Select(result => result.Id));
+    }
+
+    [Fact]
     public void LoadResults_DropsAccountLabelWhenSameAccountEvidenceIsFalse()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);
@@ -736,6 +791,23 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
         Assert.Contains("\"decisionDetail\": \"detail\"", savedJson);
         Assert.Contains("\"decisionNextAction\": \"\"", savedJson);
         Assert.Contains("\"notes\": \"\"", savedJson);
+    }
+
+    [Fact]
+    public void SaveResults_NormalizesDuplicateResultIdsBeforeWriting()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+
+        service.SaveResults(
+        [
+            CreateResult(" duplicate ", new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero)),
+            CreateResult("duplicate", new DateTimeOffset(2026, 5, 26, 12, 5, 0, TimeSpan.Zero))
+        ]);
+
+        var loadedResults = service.LoadResults();
+
+        Assert.Equal(["duplicate", "duplicate_2"], loadedResults.Select(result => result.Id));
+        Assert.Contains("\"id\": \"duplicate_2\"", File.ReadAllText(service.ResultsFilePath));
     }
 
     [Fact]
