@@ -734,6 +734,41 @@ public static class FeasibilityStatusCommand
         }
 
         var lines = File.ReadAllLines(preflightPath);
+        var isValid = true;
+        var dataFolder = ReadLineValue(lines, "Data folder:");
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {HandoffPreflightFileName} data folder line is missing.");
+        }
+        else if (AreEquivalentPaths(dataFolder, manifest.DataFolder))
+        {
+            validationLines.Add($"- [pass] {HandoffPreflightFileName} data folder: {FormatPathForValidation(dataFolder)}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffPreflightFileName} data folder mismatch, expected {FormatPathForValidation(manifest.DataFolder)}, actual {FormatPathForValidation(dataFolder)}.");
+        }
+
+        var resultsFile = ReadLineValue(lines, "Results file:");
+        if (string.IsNullOrWhiteSpace(resultsFile))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {HandoffPreflightFileName} results file line is missing.");
+        }
+        else if (AreEquivalentPaths(resultsFile, manifest.ResultsFilePath))
+        {
+            validationLines.Add($"- [pass] {HandoffPreflightFileName} results file: {FormatPathForValidation(resultsFile)}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffPreflightFileName} results file mismatch, expected {FormatPathForValidation(manifest.ResultsFilePath)}, actual {FormatPathForValidation(resultsFile)}.");
+        }
+
         var runtimeLine = lines.FirstOrDefault(
             line => line.StartsWith("WebView2 runtime:", StringComparison.OrdinalIgnoreCase));
         var layoutsLine = lines.FirstOrDefault(
@@ -749,12 +784,13 @@ public static class FeasibilityStatusCommand
         if (manifest.IsPreflightReady == isReady)
         {
             validationLines.Add($"- [pass] {HandoffPreflightFileName} readiness: {isReady}");
-            return true;
+            return isValid;
         }
 
+        isValid = false;
         validationLines.Add(
             $"- [fail] {HandoffPreflightFileName} readiness mismatch, expected {isReady} from artifact, actual {manifest.IsPreflightReady} in manifest.");
-        return false;
+        return isValid;
     }
 
     private static bool ValidateHandoffVerificationArtifact(
