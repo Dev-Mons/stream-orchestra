@@ -23,6 +23,8 @@ public sealed class FeasibilityTestResult
 
     public bool IsSameAccountSessionMaintained { get; init; }
 
+    public string AccountLabel { get; init; } = "";
+
     public bool IsRestartSessionMaintained { get; init; }
 
     public bool IsResourceUsageAcceptable { get; init; }

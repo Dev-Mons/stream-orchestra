@@ -69,7 +69,7 @@ dotnet run --project src\StreamOrchestra.Tools -- scenarios
 Record a manual result without opening the WPF app:
 
 ```powershell
-dotnet run --project src\StreamOrchestra.Tools -- record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000 --scenario groups_a_b_c_9_slot_threshold --scenario-name "Groups A/B/C, 9-slot success threshold" --notes "manual SOOP test"
+dotnet run --project src\StreamOrchestra.Tools -- record --count 9 --outcome success --account --account-label main_soop --profile-groups A,B,C --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000 --scenario groups_a_b_c_9_slot_threshold --scenario-name "Groups A/B/C, 9-slot success threshold" --notes "manual SOOP test"
 ```
 
 Record an isolated profile-group check without manually typing the scenario ID:
@@ -78,7 +78,7 @@ Record an isolated profile-group check without manually typing the scenario ID:
 dotnet run --project src\StreamOrchestra.Tools -- record --group D --outcome partial --account --profile-groups D --notes "Group D session check"
 ```
 
-`success` requires 9 or more streams plus `--account`, required `--profile-groups`, `--restart`, `--resources`, `--cpu-percent`, `--gpu-percent`, and `--memory-mb`; otherwise record `partial` or `failure`. A 9-slot success proves the threshold scenario for A/B/C, but final verification still requires A-D same-account evidence. `--resources` always requires the CPU, GPU, and memory values so resource acceptability has structured evidence. If `--scenario` is omitted, the CLI derives the scenario from `--count` using the same 4/8/9/12/16 playback-test names as the WPF app. Use `--group A`, `--group B`, `--group C`, or `--group D` for isolated profile-group evidence; without `--count`, it records the group's 4-slot test. Profile-group evidence and playback count must match the selected scenario, so Group A evidence cannot be recorded against a Group D scenario and a single-group scenario cannot be recorded as a 16-slot result.
+`success` requires 9 or more streams plus `--account`, required `--profile-groups`, `--restart`, `--resources`, `--cpu-percent`, `--gpu-percent`, and `--memory-mb`; otherwise record `partial` or `failure`. Use optional `--account-label <text>` to leave a non-sensitive label for the SOOP account used across profile groups. A 9-slot success proves the threshold scenario for A/B/C, but final verification still requires A-D same-account evidence. `--resources` always requires the CPU, GPU, and memory values so resource acceptability has structured evidence. If `--scenario` is omitted, the CLI derives the scenario from `--count` using the same 4/8/9/12/16 playback-test names as the WPF app. Use `--group A`, `--group B`, `--group C`, or `--group D` for isolated profile-group evidence; without `--count`, it records the group's 4-slot test. Profile-group evidence and playback count must match the selected scenario, so Group A evidence cannot be recorded against a Group D scenario and a single-group scenario cannot be recorded as a 16-slot result.
 
 Use `partial` or `failure` for 4-slot, 8-slot, and isolated group evidence. `success` is reserved for the 9+ Phase 0 success path.
 
@@ -124,7 +124,7 @@ Use `--data-folder <path>` to inspect a non-default data folder.
 - Loaded workspaces and restored last sessions are prepared before use: invalid slots are ignored, missing slots become `about:blank`, duplicate slots use the last value, URLs are normalized, profile groups stay tied to slot number, and slots outside the resolved layout are blanked before WebViews are loaded.
 - The toolbar shows WebView2 process count, CPU sample, working set memory, and private memory to support the manual feasibility check.
 - Feasibility test outcomes can be recorded to `%LOCALAPPDATA%\StreamOrchestra\Data\feasibility-results.json` after running a playback test or group load.
-- Recorded feasibility results include playback count, test scenario, same-account session persistence, verified profile groups, restart session persistence, structured CPU/GPU/memory observations, resource acceptability, and a decision snapshot matching the Phase 0 decision path at record time. Full plan verification requires A-D same-account profile-group evidence, scenario/profile-group and scenario/playback-count consistency checks prevent mismatched evidence from being saved or counted, and `리소스 OK` cannot be recorded without all three manual resource values.
+- Recorded feasibility results include playback count, test scenario, same-account session persistence, optional account label, verified profile groups, restart session persistence, structured CPU/GPU/memory observations, resource acceptability, and a decision snapshot matching the Phase 0 decision path at record time. Full plan verification requires A-D same-account profile-group evidence, scenario/profile-group and scenario/playback-count consistency checks prevent mismatched evidence from being saved or counted, and `리소스 OK` cannot be recorded without all three manual resource values.
 - CLI records default to the same named scenarios as WPF playback tests when `--scenario` is omitted, so 9/12/16-slot evidence remains traceable; `--group A-D` records isolated profile-group evidence without manually typing `isolated_group_*` scenario IDs.
 - The WPF feasibility row shows the current playback scenario and slot count before a result is recorded.
 - The WPF feasibility summary shows overall plan-verification status plus plan-gate audit counts, and `감사 복사` copies the detailed audit text plus suggested `record` shapes for sharing test evidence.
@@ -160,7 +160,7 @@ This spike does not bypass DRM, authentication, or platform security controls. I
 4. Repeat for Groups B, C, and D.
 5. Use `그룹 단독` with Group A to verify one-group playback behavior without stale streams in other groups.
 6. Test 4, 8, 9, 12, and 16 simultaneous playback counts.
-7. Record CPU, GPU, memory, and whether SOOP allows at least 9 active streams.
+7. Record the account label, CPU, GPU, memory, and whether SOOP allows at least 9 active streams.
 
 Use `docs/feasibility-test.md` as the detailed result sheet for the Phase 0 decision.
 Use `docs/implementation-status.md` to see how the current code maps to `docs/plan.md` and what evidence is still pending.

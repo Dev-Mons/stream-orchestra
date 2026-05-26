@@ -84,6 +84,19 @@ public sealed class MainWindowLayoutTests
         }
     }
 
+    [Fact]
+    public void FeasibilityToolbar_ProvidesAccountLabelAndManualEvidenceFields()
+    {
+        var document = LoadMainWindowDocument();
+
+        Assert.Equal("검증 메모", GetAttribute(FindElementByName(document, "FeasibilityNotesTextBox"), "ToolTip"));
+        Assert.Equal("SOOP account label for evidence", GetAttribute(FindElementByName(document, "AccountLabelTextBox"), "ToolTip"));
+        Assert.Equal("계정 유지", GetAttribute(FindElementByName(document, "SameAccountSessionCheckBox"), "Content"));
+        Assert.Equal("CPU %", GetAttribute(FindElementByName(document, "ObservedCpuTextBox"), "ToolTip"));
+        Assert.Equal("GPU %", GetAttribute(FindElementByName(document, "ObservedGpuTextBox"), "ToolTip"));
+        Assert.Equal("Memory MB", GetAttribute(FindElementByName(document, "ObservedMemoryTextBox"), "ToolTip"));
+    }
+
     private static XDocument LoadMainWindowDocument()
     {
         var path = Path.GetFullPath(Path.Combine(

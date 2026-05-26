@@ -33,7 +33,7 @@ Use the same SOOP account in each profile group. Do not bypass SOOP DRM, authent
 | 8 | Click `12개`. | Slots 1-12 can play simultaneously. |  |
 | 9 | Click `16개`. | Slots 1-16 can play simultaneously. |  |
 | 10 | Observe diagnostics and Task Manager after playback stabilizes. | CPU, GPU, and memory are acceptable for the machine. |  |
-| 11 | Fill CPU/GPU/memory, then check `계정 유지`, the verified profile group boxes A-D, `재실행 유지`, and `리소스 OK` when each criterion is true. | The recorded result includes the success criteria, group-level account evidence, and structured resource evidence from `docs/plan.md`. |  |
+| 11 | Fill the account label and CPU/GPU/memory fields, then check `계정 유지`, the verified profile group boxes A-D, `재실행 유지`, and `리소스 OK` when each criterion is true. | The recorded result includes the success criteria, account label, group-level account evidence, and structured resource evidence from `docs/plan.md`. |  |
 | 12 | Click `성공`, `부분`, or `실패` in the app toolbar after running one of the playback/group load tests. | The result is saved to `%LOCALAPPDATA%\StreamOrchestra\Data\feasibility-results.json` with playback count, scenario, criteria, diagnostics, and a decision snapshot. |  |
 
 ## Decision
@@ -103,7 +103,7 @@ dotnet run --project src\StreamOrchestra.Tools -- scenarios
 Or record a result from the CLI:
 
 ```powershell
-dotnet run --project src\StreamOrchestra.Tools -- record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000 --scenario groups_a_b_c_9_slot_threshold --scenario-name "Groups A/B/C, 9-slot success threshold" --notes "manual SOOP test"
+dotnet run --project src\StreamOrchestra.Tools -- record --count 9 --outcome success --account --account-label main_soop --profile-groups A,B,C --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000 --scenario groups_a_b_c_9_slot_threshold --scenario-name "Groups A/B/C, 9-slot success threshold" --notes "manual SOOP test"
 ```
 
 For isolated A-D profile-group evidence, use `--group` so the CLI records the matching `isolated_group_*` scenario without manually typing the scenario ID:
@@ -112,7 +112,7 @@ For isolated A-D profile-group evidence, use `--group` so the CLI records the ma
 dotnet run --project src\StreamOrchestra.Tools -- record --group D --outcome partial --account --profile-groups D --notes "Group D session check"
 ```
 
-`success` records require `--count` 9 or higher plus `--account`, required `--profile-groups`, `--restart`, `--resources`, `--cpu-percent`, `--gpu-percent`, and `--memory-mb`. A 9-slot success record proves the threshold scenario for groups A/B/C, but the final `continue_webview2_mvp` recommendation and `verify` pass still require same-account evidence covering A-D. `--resources` and `리소스 OK` always require all three manual resource values. Use `partial` when any success criterion, profile-group account evidence, or resource observation is missing. The WPF buttons fill scenario evidence automatically; CLI records derive the named scenario from `--count` when `--scenario` is omitted, and `--group A-D` derives isolated profile-group scenarios with a 4-slot default count. Profile-group evidence and playback count must match the selected scenario, so Group A evidence cannot be recorded against a Group D scenario and a single-group scenario cannot be recorded as a 16-slot result. Custom evidence can still use `--scenario` and `--scenario-name` when `--group` is not used. Use Task Manager observations for the CPU, GPU, and memory values.
+`success` records require `--count` 9 or higher plus `--account`, required `--profile-groups`, `--restart`, `--resources`, `--cpu-percent`, `--gpu-percent`, and `--memory-mb`. Use optional `--account-label <text>` or the WPF account-label field to leave a non-sensitive label for the SOOP account used across groups. A 9-slot success record proves the threshold scenario for groups A/B/C, but the final `continue_webview2_mvp` recommendation and `verify` pass still require same-account evidence covering A-D. `--resources` and `리소스 OK` always require all three manual resource values. Use `partial` when any success criterion, profile-group account evidence, or resource observation is missing. The WPF buttons fill scenario evidence automatically; CLI records derive the named scenario from `--count` when `--scenario` is omitted, and `--group A-D` derives isolated profile-group scenarios with a 4-slot default count. Profile-group evidence and playback count must match the selected scenario, so Group A evidence cannot be recorded against a Group D scenario and a single-group scenario cannot be recorded as a 16-slot result. Custom evidence can still use `--scenario` and `--scenario-name` when `--group` is not used. Use Task Manager observations for the CPU, GPU, and memory values.
 
 Use `partial` or `failure` for 4-slot, 8-slot, and isolated group evidence. The audit treats `partial` as useful playback evidence for those lower-count gates, while reserving `success` for the 9+ Phase 0 success path.
 

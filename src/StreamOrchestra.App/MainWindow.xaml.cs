@@ -371,6 +371,7 @@ public partial class MainWindow : Window
             Outcome = outcome,
             Diagnostics = diagnostics,
             IsSameAccountSessionMaintained = sameAccountSession,
+            AccountLabel = AccountLabelTextBox.Text.Trim(),
             VerifiedProfileGroups = verifiedProfileGroups,
             IsRestartSessionMaintained = restartSession,
             IsResourceUsageAcceptable = resourceUsageAcceptable,

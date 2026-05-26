@@ -42,6 +42,7 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
                 WebViewPrivateMemoryMegabytes: 800,
                 WebViewCpuPercent: 42.5),
             IsSameAccountSessionMaintained = true,
+            AccountLabel = " main_soop ",
             VerifiedProfileGroups = ["A", "B", "C"],
             IsRestartSessionMaintained = true,
             IsResourceUsageAcceptable = false,
@@ -68,6 +69,7 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
         Assert.Equal(9, loadedResult.Diagnostics.WebViewProcessCount);
         Assert.Equal(42.5, loadedResult.Diagnostics.WebViewCpuPercent);
         Assert.True(loadedResult.IsSameAccountSessionMaintained);
+        Assert.Equal("main_soop", loadedResult.AccountLabel);
         Assert.Equal(["A", "B", "C"], loadedResult.VerifiedProfileGroups);
         Assert.True(loadedResult.IsRestartSessionMaintained);
         Assert.False(loadedResult.IsResourceUsageAcceptable);

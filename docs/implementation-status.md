@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 357 passing tests.
+Current automated test coverage: 359 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -32,7 +32,7 @@ Current automated test coverage: 357 passing tests.
 | App restart session test support | Implemented as tooling | Persistent WebView2 folders plus `docs/feasibility-test.md` |
 | Feasibility scenario evidence | Implemented | `FeasibilityScenarioService` records whether the result came from Group A, 8-slot, 9-slot threshold, 12-slot, 16-slot, or manual group load; CLI `record` derives the same named scenario from `--count` when no custom scenario is supplied, `--group A-D` records isolated profile-group evidence without manually typing `isolated_group_*` scenario IDs, known scenario IDs validate their expected playback count, and `StreamOrchestra.Tools scenarios` lists the WPF/CLI scenario IDs plus valid partial/failure shapes and separate 9+ success shapes with restart/resource/CPU/GPU/memory evidence before manual recording |
 | Feasibility result recording guard | Implemented | WPF result buttons require a playback/group load scenario before saving a result, show the current scenario/count before recording, validation returns clear errors for missing or invalid outcomes, audit/verify tolerate null outcomes or scenario IDs in hand-edited result files, malformed outcome evidence keeps the decision pending instead of forcing the external-browser failure path and does not prove account/restart/resource gates, and result storage normalizes hand-edited IDs/scenarios/outcomes/groups/decision text while dropping out-of-range playback counts and restoring missing diagnostics |
-| Group-level account evidence | Implemented | Feasibility results store verified profile groups A-D; WPF exposes A-D checkboxes beside `계정 유지`, CLI `record` accepts `--profile-groups`, success records require the groups implied by the playback count, final MVP recommendation requires A-D same-account coverage using the latest scenario-consistent evidence per profile group, scenario-specific failure records invalidate older same-account coverage for that group, custom/unknown failure records without checked groups do not invalidate older coverage, malformed-outcome records cannot prove or invalidate group coverage, and scenario/profile-group consistency checks reject or ignore mismatched, blank, or null evidence |
+| Group-level account evidence | Implemented | Feasibility results store verified profile groups A-D plus an optional account label; WPF exposes an account-label field and A-D checkboxes beside `계정 유지`, CLI `record` accepts `--account-label` and `--profile-groups`, success records require the groups implied by the playback count, final MVP recommendation requires A-D same-account coverage using the latest scenario-consistent evidence per profile group, scenario-specific failure records invalidate older same-account coverage for that group, custom/unknown failure records without checked groups do not invalidate older coverage, malformed-outcome records cannot prove or invalidate group coverage, and scenario/profile-group consistency checks reject or ignore mismatched, blank, or null evidence |
 | Structured resource observations | Implemented | Feasibility results store manual CPU %, GPU %, and memory MB alongside automatic WebView2 diagnostics; shared validation rejects non-finite values and invalid ranges, and any `리소스 OK`/`--resources` record requires all three manual values |
 | Feasibility decision snapshot | Implemented | WPF and CLI result recording store the decision code/title/detail/next action that applied when the result was recorded |
 | Feasibility preflight check | Implemented | `StreamOrchestra.Tools preflight` reports data/result paths, A-D profile folders, WebView2 Runtime availability, playback-test layout coverage for 4/8/9/12/16, current decision, audit summary, verification status, success gate, and suggested record shapes before live SOOP testing |
@@ -86,7 +86,7 @@ Runtime data is stored under `%LOCALAPPDATA%\StreamOrchestra\Data`.
 | `appstate.json` | Last window, selected slot, view options, transient session |
 | `workspaces.json` | Named presets saved explicitly by the user |
 | `favorites.json` | App-local stream favorites |
-| `feasibility-results.json` | Phase 0 test outcomes, scenario, verified profile groups, resource observations, criteria, and decision snapshots |
+| `feasibility-results.json` | Phase 0 test outcomes, scenario, account label, verified profile groups, resource observations, criteria, and decision snapshots |
 | `external-browsers.json` | Optional custom Chromium-compatible fallback browser candidates |
 | `diagnostic-report-*.json` | Exported report with profile folders, data file status, workspace/favorite/last-session diagnostics, external browser discovery, latest decision, plan-gate audit, and suggested record shapes |
 | `external-browser-fallback-*.ps1` | Reviewable fallback script generated only when active stream URLs and installed external browsers are available |
@@ -101,7 +101,7 @@ The project cannot be considered fully complete until Phase 0 is manually verifi
 2. Sign into SOOP in the required profile groups.
 3. Test 4, 8, 9, 12, and 16 playback.
 4. Record whether at least 9 streams play.
-5. Record same-account session persistence and verified profile groups A-D.
+5. Record same-account session persistence, account label, and verified profile groups A-D.
 6. Restart the app and record session persistence.
 7. Record CPU/GPU/memory and resource acceptability.
 8. Use the app's `성공`, `부분`, or `실패` buttons to save the result.

@@ -399,12 +399,17 @@ public sealed class FeasibilityAuditService
 
     private static string FormatResultEvidence(FeasibilityTestResult result)
     {
-        return $"{result.Outcome}, {result.PlaybackCount} slot(s), {result.ScenarioName} ({result.ScenarioId}), groups={FeasibilityProfileGroupEvidenceService.FormatGroups(result.VerifiedProfileGroups)}, {result.CapturedAt:yyyy-MM-dd HH:mm:ss}";
+        return $"{result.Outcome}, {result.PlaybackCount} slot(s), {result.ScenarioName} ({result.ScenarioId}), groups={FeasibilityProfileGroupEvidenceService.FormatGroups(result.VerifiedProfileGroups)}, account={FormatAccountLabel(result.AccountLabel)}, {result.CapturedAt:yyyy-MM-dd HH:mm:ss}";
     }
 
     private static string FormatResourceEvidence(FeasibilityTestResult result)
     {
         return $"cpu={result.ObservedCpuPercent!.Value:0.##}%, gpu={result.ObservedGpuPercent!.Value:0.##}%, memory={result.ObservedMemoryMegabytes!.Value:0.##} MB from {result.ScenarioName}.";
+    }
+
+    private static string FormatAccountLabel(string? accountLabel)
+    {
+        return string.IsNullOrWhiteSpace(accountLabel) ? "n/a" : accountLabel.Trim();
     }
 
     private static IEnumerable<string> CreateSuggestedRecordShapes(FeasibilityAuditItem auditItem)

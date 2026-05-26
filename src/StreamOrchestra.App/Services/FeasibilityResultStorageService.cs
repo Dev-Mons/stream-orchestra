@@ -107,6 +107,7 @@ public sealed class FeasibilityResultStorageService
             Outcome = normalizedOutcome,
             Diagnostics = diagnostics,
             IsSameAccountSessionMaintained = result.IsSameAccountSessionMaintained,
+            AccountLabel = result.AccountLabel?.Trim() ?? "",
             IsRestartSessionMaintained = result.IsRestartSessionMaintained,
             IsResourceUsageAcceptable = result.IsResourceUsageAcceptable,
             VerifiedProfileGroups = FeasibilityProfileGroupEvidenceService.Normalize(result.VerifiedProfileGroups),

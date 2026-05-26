@@ -667,6 +667,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
                 "--outcome",
                 "success",
                 "--account",
+                "--account-label",
+                "main_soop",
                 "--profile-groups",
                 "A,B,C",
                 "--restart",
@@ -699,6 +701,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal("Groups A/B/C, 9-slot success threshold", result.ScenarioName);
         Assert.Equal("success", result.Outcome);
         Assert.True(result.IsSameAccountSessionMaintained);
+        Assert.Equal("main_soop", result.AccountLabel);
         Assert.Equal(["A", "B", "C"], result.VerifiedProfileGroups);
         Assert.True(result.IsRestartSessionMaintained);
         Assert.True(result.IsResourceUsageAcceptable);
@@ -711,6 +714,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("프로필", result.DecisionNextAction);
         Assert.Contains("Recorded feasibility result.", text);
         Assert.Contains("Scenario: Groups A/B/C, 9-slot success threshold (groups_a_b_c_9_slot_threshold)", text);
+        Assert.Contains("Account label: main_soop", text);
         Assert.Contains("Profile groups: A/B/C", text);
         Assert.Contains("Observed resources: cpu=45.5%, gpu=60%, memory=12000 MB", text);
         Assert.Contains("continue_webview2_experiments", text);
@@ -838,6 +842,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     [InlineData("record --count 9 --outcome partial --cpu-percent NaN", "CPU % must be a finite number.")]
     [InlineData("record --count 9 --outcome partial --gpu-percent bad", "--gpu-percent requires a numeric value.")]
     [InlineData("record --count 9 --outcome partial --memory-mb -1", "--memory-mb must be 0 or higher.")]
+    [InlineData("record --count 9 --outcome partial --account-label", "--account-label requires a value.")]
     [InlineData("record --group Z --outcome partial", "--group must be A, B, C, or D.")]
     [InlineData("record --group A --count 5 --outcome partial", "--group can only be used with --count 1-4.")]
     [InlineData("record --group A --outcome partial --scenario manual_group_a", "--group cannot be combined with --scenario or --scenario-name.")]

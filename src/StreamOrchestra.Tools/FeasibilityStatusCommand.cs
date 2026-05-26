@@ -70,6 +70,7 @@ public static class FeasibilityStatusCommand
         output.WriteLine($"Scenario: {latest.ScenarioName} ({latest.ScenarioId})");
         output.WriteLine(
             $"Criteria: account={latest.IsSameAccountSessionMaintained}, restart={latest.IsRestartSessionMaintained}, resources={latest.IsResourceUsageAcceptable}");
+        output.WriteLine($"Account label: {FormatAccountLabel(latest.AccountLabel)}");
         output.WriteLine($"Profile groups: {FeasibilityProfileGroupEvidenceService.FormatGroups(latest.VerifiedProfileGroups)}");
         output.WriteLine(
             $"Observed resources: cpu={FormatNullable(latest.ObservedCpuPercent)}%, gpu={FormatNullable(latest.ObservedGpuPercent)}%, memory={FormatNullable(latest.ObservedMemoryMegabytes)} MB");
@@ -111,6 +112,7 @@ public static class FeasibilityStatusCommand
             output.WriteLine($"  Id: {result.Id}");
             output.WriteLine(
                 $"  Criteria: account={result.IsSameAccountSessionMaintained}, restart={result.IsRestartSessionMaintained}, resources={result.IsResourceUsageAcceptable}");
+            output.WriteLine($"  Account label: {FormatAccountLabel(result.AccountLabel)}");
             output.WriteLine($"  Profile groups: {FeasibilityProfileGroupEvidenceService.FormatGroups(result.VerifiedProfileGroups)}");
             output.WriteLine(
                 $"  Observed resources: cpu={FormatNullable(result.ObservedCpuPercent)}%, gpu={FormatNullable(result.ObservedGpuPercent)}%, memory={FormatNullable(result.ObservedMemoryMegabytes)} MB");
@@ -435,6 +437,7 @@ public static class FeasibilityStatusCommand
             Outcome = parseResult.Outcome!,
             Diagnostics = diagnostics,
             IsSameAccountSessionMaintained = parseResult.SameAccountSession,
+            AccountLabel = parseResult.AccountLabel ?? "",
             VerifiedProfileGroups = parseResult.VerifiedProfileGroups,
             IsRestartSessionMaintained = parseResult.RestartSession,
             IsResourceUsageAcceptable = parseResult.ResourceUsageAcceptable,
@@ -456,6 +459,7 @@ public static class FeasibilityStatusCommand
         output.WriteLine($"Result: {result.Outcome}, {result.PlaybackCount} slot(s), {result.CapturedAt:yyyy-MM-dd HH:mm:ss}");
         output.WriteLine($"Scenario: {result.ScenarioName} ({result.ScenarioId})");
         output.WriteLine($"Criteria: account={result.IsSameAccountSessionMaintained}, restart={result.IsRestartSessionMaintained}, resources={result.IsResourceUsageAcceptable}");
+        output.WriteLine($"Account label: {FormatAccountLabel(result.AccountLabel)}");
         output.WriteLine($"Profile groups: {FeasibilityProfileGroupEvidenceService.FormatGroups(result.VerifiedProfileGroups)}");
         output.WriteLine(
             $"Observed resources: cpu={FormatNullable(result.ObservedCpuPercent)}%, gpu={FormatNullable(result.ObservedGpuPercent)}%, memory={FormatNullable(result.ObservedMemoryMegabytes)} MB");
@@ -649,6 +653,7 @@ public static class FeasibilityStatusCommand
         double? observedGpuPercent = null;
         double? observedMemoryMegabytes = null;
         IReadOnlyList<string> verifiedProfileGroups = [];
+        string? accountLabel = null;
         string? notes = null;
 
         for (var index = 1; index < args.Length; index++)
@@ -700,6 +705,22 @@ public static class FeasibilityStatusCommand
             if (arg.Equals("--account", StringComparison.OrdinalIgnoreCase))
             {
                 sameAccountSession = true;
+                continue;
+            }
+
+            if (arg.Equals("--account-label", StringComparison.OrdinalIgnoreCase))
+            {
+                if (index + 1 >= args.Length)
+                {
+                    return ParseResult.Invalid("--account-label requires a value.");
+                }
+
+                accountLabel = args[++index].Trim();
+                if (string.IsNullOrWhiteSpace(accountLabel))
+                {
+                    return ParseResult.Invalid("--account-label requires a value.");
+                }
+
                 continue;
             }
 
@@ -903,6 +924,7 @@ public static class FeasibilityStatusCommand
             observedCpuPercent,
             observedGpuPercent,
             observedMemoryMegabytes,
+            accountLabel,
             notes);
     }
 
@@ -993,7 +1015,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools fallback [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools history [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>]");
-        writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--data-folder <path>]");
+        writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools report [--data-folder <path>] [--profile-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools scenarios");
         writer.WriteLine("  StreamOrchestra.Tools verify [--data-folder <path>]");
@@ -1152,6 +1174,11 @@ public static class FeasibilityStatusCommand
         return value?.ToString("0.##", CultureInfo.InvariantCulture) ?? "n/a";
     }
 
+    private static string FormatAccountLabel(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "n/a" : value.Trim();
+    }
+
     private sealed record ParseResult(
         bool IsValid,
         bool ShowHelp,
@@ -1170,17 +1197,18 @@ public static class FeasibilityStatusCommand
         double? ObservedCpuPercent,
         double? ObservedGpuPercent,
         double? ObservedMemoryMegabytes,
+        string? AccountLabel,
         string? Notes,
         string ErrorMessage)
     {
         public static ParseResult Valid(string command, string? dataFolder)
         {
-            return new ParseResult(true, false, command, dataFolder, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, "");
+            return new ParseResult(true, false, command, dataFolder, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
         }
 
         public static ParseResult Audit(string? dataFolder, string? auditOutputPath)
         {
-            return new ParseResult(true, false, "audit", dataFolder, null, auditOutputPath, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, "");
+            return new ParseResult(true, false, "audit", dataFolder, null, auditOutputPath, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
         }
 
         public static ParseResult Record(
@@ -1196,6 +1224,7 @@ public static class FeasibilityStatusCommand
             double? observedCpuPercent,
             double? observedGpuPercent,
             double? observedMemoryMegabytes,
+            string? accountLabel,
             string? notes)
         {
             return new ParseResult(
@@ -1216,28 +1245,29 @@ public static class FeasibilityStatusCommand
                 observedCpuPercent,
                 observedGpuPercent,
                 observedMemoryMegabytes,
+                accountLabel,
                 notes,
                 "");
         }
 
         public static ParseResult Report(string? dataFolder, string? profileFolder)
         {
-            return new ParseResult(true, false, "report", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, "");
+            return new ParseResult(true, false, "report", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
         }
 
         public static ParseResult Preflight(string? dataFolder, string? profileFolder)
         {
-            return new ParseResult(true, false, "preflight", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, "");
+            return new ParseResult(true, false, "preflight", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
         }
 
         public static ParseResult Help()
         {
-            return new ParseResult(true, true, "help", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, "");
+            return new ParseResult(true, true, "help", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
         }
 
         public static ParseResult Invalid(string errorMessage)
         {
-            return new ParseResult(false, false, "", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, errorMessage);
+            return new ParseResult(false, false, "", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, errorMessage);
         }
     }
 
