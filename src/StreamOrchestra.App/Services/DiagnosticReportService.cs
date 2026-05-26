@@ -106,10 +106,17 @@ public sealed class DiagnosticReportService
             FavoriteCount: favorites.Count,
             HasLastSession: lastSession is not null,
             LastWorkspaceId: appState?.LastWorkspaceId,
-            SelectedSlotId: appState?.SelectedSlotId,
+            SelectedSlotId: NormalizeSelectedSlotId(appState?.SelectedSlotId),
             LastSessionLayoutId: lastSession?.LayoutId,
             LastSessionSlotCount: lastSessionSlots.Length,
             LastSessionActiveStreamCount: lastSessionSlots.Count(HasLaunchableStreamUrl));
+    }
+
+    private static int? NormalizeSelectedSlotId(int? selectedSlotId)
+    {
+        return selectedSlotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount
+            ? selectedSlotId
+            : null;
     }
 
     private static bool IsValidSlotId(WorkspaceSlot slot)

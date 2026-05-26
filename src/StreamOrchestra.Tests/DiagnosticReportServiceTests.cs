@@ -339,6 +339,32 @@ public sealed class DiagnosticReportServiceTests : IDisposable
         Assert.Equal(1, report.WorkspaceDiagnostics.LastSessionActiveStreamCount);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(17)]
+    public void CreateReport_IgnoresOutOfRangeSelectedSlot(int selectedSlotId)
+    {
+        var profileService = new WebViewProfileService(_profileFolder);
+        var presetStorage = new PresetStorageService(_dataFolder);
+        var favoriteStorage = new FavoriteStorageService(_dataFolder);
+        var feasibilityStorage = new FeasibilityResultStorageService(_dataFolder);
+        presetStorage.SaveAppState(new AppState
+        {
+            SelectedSlotId = selectedSlotId
+        });
+        var service = new DiagnosticReportService();
+
+        var report = service.CreateReport(
+            profileService,
+            presetStorage,
+            favoriteStorage,
+            feasibilityStorage,
+            new FeasibilityDecision("pending", "Pending", "Pending"));
+
+        Assert.Null(report.WorkspaceDiagnostics.SelectedSlotId);
+    }
+
     [Fact]
     public void CreateReport_TreatsNullLastSessionSlotsAsEmpty()
     {
