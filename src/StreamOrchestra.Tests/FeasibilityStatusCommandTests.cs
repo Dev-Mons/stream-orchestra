@@ -348,6 +348,9 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Saved: {manifestPath}", text);
         Assert.Contains("Preflight ready:", text);
         Assert.Contains("Verification complete: False", text);
+        Assert.Contains("Plan verification: pending", text);
+        Assert.Contains("Plan audit: pass=0, pending=11, fail=0", text);
+        Assert.Contains("Outstanding gates: 11", text);
         Assert.Contains("Stream Orchestra Feasibility Preflight", File.ReadAllText(preflightPath));
         Assert.Contains("Stream Orchestra Phase 0 Manual Checklist", File.ReadAllText(checklistPath));
         Assert.Contains("Stream Orchestra Plan Audit", File.ReadAllText(auditPath));
@@ -361,6 +364,12 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("\"resultCount\": 0", manifestText);
         Assert.Contains("\"isPreflightReady\":", manifestText);
         Assert.Contains("\"isVerified\": false", manifestText);
+        Assert.Contains("\"decisionCode\": \"pending\"", manifestText);
+        Assert.Contains("\"planVerificationStatus\": \"pending\"", manifestText);
+        Assert.Contains("\"passingGateCount\": 0", manifestText);
+        Assert.Contains("\"pendingGateCount\": 11", manifestText);
+        Assert.Contains("\"failingGateCount\": 0", manifestText);
+        Assert.Contains("\"outstandingGateCount\": 11", manifestText);
         Assert.Contains("\"phase0-results.json\"", manifestText);
         Assert.Contains("\"phase0-history.txt\"", manifestText);
         Assert.Contains("\"phase0-diagnostic-report.json\"", manifestText);
@@ -393,6 +402,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("success, 9 slot(s)", historyText);
         Assert.Contains("\"feasibilityResultCount\": 1", diagnosticReportText);
         Assert.Contains("\"feasibilityDecision\":", diagnosticReportText);
+        Assert.Contains("\"planVerificationStatus\": \"pending\"", File.ReadAllText(Path.Combine(handoffFolder, "phase0-handoff-manifest.json")));
         Assert.Equal("", error.ToString());
     }
 

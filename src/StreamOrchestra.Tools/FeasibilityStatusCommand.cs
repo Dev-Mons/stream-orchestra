@@ -263,6 +263,11 @@ public static class FeasibilityStatusCommand
         var feasibilityStorage = new FeasibilityResultStorageService(parseResult.DataFolder);
         var results = feasibilityStorage.LoadResults();
         var diagnosticReport = CreateDiagnosticReport(parseResult, feasibilityStorage, results);
+        var auditService = new FeasibilityAuditService();
+        var auditSummary = auditService.CreateSummary(diagnosticReport.FeasibilityAudit);
+        var planVerificationStatus = auditService.CreatePlanVerificationStatus(diagnosticReport.FeasibilityAudit);
+        var outstandingGateCount = diagnosticReport.FeasibilityAudit.Count(
+            item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase));
 
         var (preflightLines, isPreflightReady) = CreatePreflightLines(
             parseResult.DataFolder,
@@ -289,6 +294,13 @@ public static class FeasibilityStatusCommand
             results.Count,
             isPreflightReady,
             isVerified,
+            diagnosticReport.FeasibilityDecision.Code,
+            diagnosticReport.FeasibilityDecision.Title,
+            planVerificationStatus,
+            auditSummary.PassCount,
+            auditSummary.PendingCount,
+            auditSummary.FailCount,
+            outstandingGateCount,
             artifacts.Select(Path.GetFileName).Where(fileName => fileName is not null).Select(fileName => fileName!).ToArray());
 
         output.WriteLine("Stream Orchestra Phase 0 Handoff");
@@ -304,6 +316,9 @@ public static class FeasibilityStatusCommand
         output.WriteLine($"Saved: {manifestPath}");
         output.WriteLine($"Preflight ready: {isPreflightReady}");
         output.WriteLine($"Verification complete: {isVerified}");
+        output.WriteLine($"Plan verification: {planVerificationStatus}");
+        output.WriteLine($"Plan audit: {auditSummary.ToCompactText()}");
+        output.WriteLine($"Outstanding gates: {outstandingGateCount}");
         output.WriteLine("Use the saved files as the setup, checklist, audit, and verification artifacts for the manual SOOP run.");
         return 0;
     }
@@ -1519,6 +1534,13 @@ public static class FeasibilityStatusCommand
         int resultCount,
         bool isPreflightReady,
         bool isVerified,
+        string decisionCode,
+        string decisionTitle,
+        string planVerificationStatus,
+        int passingGateCount,
+        int pendingGateCount,
+        int failingGateCount,
+        int outstandingGateCount,
         IReadOnlyList<string> artifactFiles)
     {
         var path = Path.Combine(outputFolder, "phase0-handoff-manifest.json");
@@ -1529,6 +1551,13 @@ public static class FeasibilityStatusCommand
             resultCount,
             isPreflightReady,
             isVerified,
+            decisionCode,
+            decisionTitle,
+            planVerificationStatus,
+            passingGateCount,
+            pendingGateCount,
+            failingGateCount,
+            outstandingGateCount,
             artifactFiles);
         SaveTextFile(path, JsonSerializer.Serialize(manifest, HandoffJsonOptions) + Environment.NewLine);
         return path;
@@ -1695,6 +1724,13 @@ public static class FeasibilityStatusCommand
         int ResultCount,
         bool IsPreflightReady,
         bool IsVerified,
+        string DecisionCode,
+        string DecisionTitle,
+        string PlanVerificationStatus,
+        int PassingGateCount,
+        int PendingGateCount,
+        int FailingGateCount,
+        int OutstandingGateCount,
         IReadOnlyList<string> ArtifactFiles);
 
     private static IReadOnlyList<string> ParseProfileGroups(string rawValue)
