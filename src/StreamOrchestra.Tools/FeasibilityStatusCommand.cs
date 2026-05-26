@@ -301,9 +301,10 @@ public static class FeasibilityStatusCommand
         lines.Add("6. After playback stabilizes, record Task Manager CPU %, GPU %, and memory MB, plus whether resource usage is acceptable.");
         lines.Add("7. Use one shared non-sensitive account label for every same-account evidence record across A-D.");
         lines.Add("8. Record lower-count playback evidence as `partial` when the requested slots visibly play but success-only evidence is incomplete, or `failure` when they do not work.");
-        lines.Add("9. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
-        lines.Add("10. Run `verify`; Phase 0 is not complete until every plan gate passes.");
-        lines.Add("Helpful commands: `scenarios`, `audit`, `verify`.");
+        lines.Add("9. Run each intended `record` command with `--dry-run` first to preview validation, decision, and audit output without saving.");
+        lines.Add("10. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
+        lines.Add("11. Run `verify`; Phase 0 is not complete until every plan gate passes.");
+        lines.Add("Helpful commands: `scenarios`, `record --dry-run`, `audit`, `verify`.");
 
         var suggestions = auditService.CreateSuggestedRecordShapes(auditItems);
         if (suggestions.Count > 0)

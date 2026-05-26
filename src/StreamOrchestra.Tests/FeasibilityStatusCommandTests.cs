@@ -198,6 +198,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests", text);
         Assert.Contains("CPU %, GPU %, and memory MB", text);
         Assert.Contains("one shared non-sensitive account label", text);
+        Assert.Contains("Run each intended `record` command with `--dry-run` first", text);
         Assert.Contains("Record the final 9+ `success` evidence last", text);
         Assert.Contains("Run `verify`", text);
         Assert.Contains("Suggested record shapes:", text);
