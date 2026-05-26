@@ -434,6 +434,73 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_DowngradesSuccessOutcomeWhenSuccessEvidenceIsIncomplete()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "success_without_restart",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "success",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": false,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000
+              },
+              {
+                "id": "success_without_required_groups",
+                "capturedAt": "2026-05-26T12:05:00+00:00",
+                "playbackCount": 16,
+                "scenarioId": "groups_a_b_c_d_16_slots",
+                "scenarioName": "Groups A/B/C/D, 16 slots",
+                "outcome": "success",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": true,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000
+              },
+              {
+                "id": "success_with_complete_evidence",
+                "capturedAt": "2026-05-26T12:10:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "success",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": true,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000
+              }
+            ]
+            """);
+
+        var results = service.LoadResults();
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal("partial", results[0].Outcome);
+        Assert.Equal("partial", results[1].Outcome);
+        Assert.Equal("success", results[2].Outcome);
+    }
+
+    [Fact]
     public void SaveResults_NormalizesResultsBeforeWriting()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);

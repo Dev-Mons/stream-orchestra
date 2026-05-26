@@ -93,7 +93,7 @@ public sealed class FeasibilityResultStorageService
         }
 
         var diagnostics = NormalizeDiagnostics(result.Diagnostics, result.CapturedAt);
-        var normalizedOutcome = result.Outcome?.Trim() ?? "";
+        var rawOutcome = result.Outcome?.Trim() ?? "";
         var normalizedScenarioId = string.IsNullOrWhiteSpace(result.ScenarioId)
             ? "unspecified"
             : result.ScenarioId.Trim();
@@ -113,6 +113,13 @@ public sealed class FeasibilityResultStorageService
         var normalizedRestartSession = result.IsRestartSessionMaintained && hasSameAccountEvidence;
         var normalizedResourceUsageAcceptable = result.IsResourceUsageAcceptable &&
             FeasibilityResourceObservationService.HasCompleteValidObservation(result);
+        var normalizedOutcome = NormalizeOutcome(
+            rawOutcome,
+            result.PlaybackCount,
+            normalizedGroups,
+            hasSameAccountEvidence,
+            normalizedRestartSession,
+            normalizedResourceUsageAcceptable);
 
         return new FeasibilityTestResult
         {
@@ -139,6 +146,31 @@ public sealed class FeasibilityResultStorageService
             DecisionNextAction = result.DecisionNextAction?.Trim() ?? "",
             Notes = result.Notes?.Trim() ?? ""
         };
+    }
+
+    private static string NormalizeOutcome(
+        string outcome,
+        int playbackCount,
+        IReadOnlyList<string> normalizedGroups,
+        bool hasSameAccountEvidence,
+        bool restartSession,
+        bool resourceUsageAcceptable)
+    {
+        if (!FeasibilityOutcomeService.IsSuccess(outcome))
+        {
+            return outcome;
+        }
+
+        var hasRequiredGroupEvidence = FeasibilityProfileGroupEvidenceService.HasRequiredGroups(
+            playbackCount,
+            normalizedGroups);
+        return playbackCount >= 9 &&
+            hasSameAccountEvidence &&
+            hasRequiredGroupEvidence &&
+            restartSession &&
+            resourceUsageAcceptable
+                ? outcome
+                : "partial";
     }
 
     private static RuntimeDiagnosticsSnapshot NormalizeDiagnostics(
