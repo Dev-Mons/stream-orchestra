@@ -66,6 +66,14 @@ dotnet run --project src\StreamOrchestra.Tools -- handoff --output-folder .\phas
 
 The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, `phase0-diagnostic-report.json`, a normalized `phase0-results.json` snapshot of the current feasibility evidence, and `phase0-handoff-manifest.json`. The manifest includes the current decision, plan-verification status, pass/pending/fail gate counts, outstanding gate count, and artifact file sizes plus SHA-256 hashes. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
 
+Validate the saved bundle before sharing or reviewing it:
+
+```powershell
+dotnet run --project src\StreamOrchestra.Tools -- validate-handoff --input-folder .\phase0-handoff
+```
+
+`validate-handoff` exits `0` only when every artifact listed in the manifest exists and still matches its recorded size and SHA-256 hash.
+
 Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
 
 ```powershell
@@ -151,7 +159,7 @@ The `checklist` command prints the ordered manual SOOP verification flow from `d
 
 The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, can save the same text with `--output <path>`, and exits non-zero until every Phase 0 plan gate passes.
 
-The `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands. The manifest also records the current decision, plan-gate pass/pending/fail summary, and artifact hashes.
+The `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands. The manifest also records the current decision, plan-gate pass/pending/fail summary, and artifact hashes; `validate-handoff` checks those hashes later.
 
 Export a diagnostic report from the CLI:
 

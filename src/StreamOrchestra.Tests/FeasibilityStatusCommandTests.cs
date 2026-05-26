@@ -414,6 +414,66 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_ValidateHandoff_ReturnsPassForGeneratedBundle()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-validation");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra Phase 0 Handoff Validation", text);
+        Assert.Contains($"Input folder: {handoffFolder}", text);
+        Assert.Contains("Plan verification: pending", text);
+        Assert.Contains("- [pass] phase0-results.json:", text);
+        Assert.Contains("Validation: pass", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsTamperedArtifact()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-tampered");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        File.AppendAllText(Path.Combine(handoffFolder, "phase0-results.json"), "tampered");
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-results.json: size mismatch", text);
+        Assert.Contains("phase0-results.json: sha256 mismatch", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_VerifyWithNoResults_ReturnsFailureAndPendingGate()
     {
         using var output = new StringWriter();
@@ -1283,6 +1343,19 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
 
         Assert.Equal(2, exitCode);
         Assert.Contains("--output-folder requires a value.", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoffValidationErrors_ReturnUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["validate-handoff"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("validate-handoff requires --input-folder.", error.ToString());
         Assert.Contains("Usage:", error.ToString());
     }
 

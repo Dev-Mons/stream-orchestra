@@ -11,6 +11,7 @@ public static class FeasibilityStatusCommand
 {
     private static readonly JsonSerializerOptions HandoffJsonOptions = new()
     {
+        PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true
     };
@@ -43,6 +44,7 @@ public static class FeasibilityStatusCommand
             "record" => RecordResult(parseResult, output),
             "report" => SaveReport(parseResult, output),
             "scenarios" => PrintScenarios(output),
+            "validate-handoff" => ValidateHandoff(parseResult, output),
             "verify" => VerifyPlan(parseResult, output),
             _ => PrintStatus(parseResult.DataFolder, output)
         };
@@ -331,6 +333,131 @@ public static class FeasibilityStatusCommand
         output.WriteLine($"Outstanding gates: {outstandingGateCount}");
         output.WriteLine("Use the saved files as the setup, checklist, audit, and verification artifacts for the manual SOOP run.");
         return 0;
+    }
+
+    private static int ValidateHandoff(ParseResult parseResult, TextWriter output)
+    {
+        var inputFolder = parseResult.OutputPath ?? "";
+        var manifestPath = Path.Combine(inputFolder, "phase0-handoff-manifest.json");
+        var validationLines = new List<string>
+        {
+            "Stream Orchestra Phase 0 Handoff Validation",
+            $"Input folder: {inputFolder}",
+            $"Manifest: {manifestPath}"
+        };
+        var isValid = true;
+
+        if (!Directory.Exists(inputFolder))
+        {
+            validationLines.Add("Validation: fail");
+            validationLines.Add("- [fail] Input folder does not exist.");
+            WriteLines(validationLines, output);
+            return 1;
+        }
+
+        if (!File.Exists(manifestPath))
+        {
+            validationLines.Add("Validation: fail");
+            validationLines.Add("- [fail] phase0-handoff-manifest.json is missing.");
+            WriteLines(validationLines, output);
+            return 1;
+        }
+
+        HandoffManifest? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<HandoffManifest>(
+                File.ReadAllText(manifestPath),
+                HandoffJsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            validationLines.Add("Validation: fail");
+            validationLines.Add($"- [fail] Manifest JSON is invalid: {ex.Message}");
+            WriteLines(validationLines, output);
+            return 1;
+        }
+
+        if (manifest is null)
+        {
+            validationLines.Add("Validation: fail");
+            validationLines.Add("- [fail] Manifest JSON is empty.");
+            WriteLines(validationLines, output);
+            return 1;
+        }
+
+        validationLines.Add($"Generated at: {manifest.GeneratedAt:O}");
+        validationLines.Add($"Decision: {manifest.DecisionTitle} ({manifest.DecisionCode})");
+        validationLines.Add($"Plan verification: {manifest.PlanVerificationStatus}");
+        validationLines.Add(
+            $"Plan audit: pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}");
+        validationLines.Add($"Outstanding gates: {manifest.OutstandingGateCount}");
+
+        var artifactDetails = manifest.ArtifactDetails?.ToArray() ?? Array.Empty<HandoffArtifactMetadata>();
+        if (artifactDetails.Length == 0)
+        {
+            validationLines.Add("Validation: fail");
+            validationLines.Add("- [fail] Manifest has no artifactDetails entries.");
+            WriteLines(validationLines, output);
+            return 1;
+        }
+
+        var detailedFiles = new HashSet<string>(
+            artifactDetails.Select(detail => detail.FileName),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var artifactFile in manifest.ArtifactFiles ?? Array.Empty<string>())
+        {
+            if (!detailedFiles.Contains(artifactFile))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {artifactFile}: missing artifactDetails entry.");
+            }
+        }
+
+        foreach (var detail in artifactDetails)
+        {
+            if (string.IsNullOrWhiteSpace(detail.FileName) || detail.FileName != Path.GetFileName(detail.FileName))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {detail.FileName}: invalid artifact file name.");
+                continue;
+            }
+
+            var artifactPath = Path.Combine(inputFolder, detail.FileName);
+            if (!File.Exists(artifactPath))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {detail.FileName}: missing.");
+                continue;
+            }
+
+            var fileInfo = new FileInfo(artifactPath);
+            var actualSha256 = ComputeFileSha256(artifactPath);
+            var hasExpectedSize = fileInfo.Length == detail.SizeBytes;
+            var hasExpectedSha = actualSha256.Equals(detail.Sha256, StringComparison.OrdinalIgnoreCase);
+            if (hasExpectedSize && hasExpectedSha)
+            {
+                validationLines.Add($"- [pass] {detail.FileName}: {fileInfo.Length} byte(s), sha256={actualSha256}");
+                continue;
+            }
+
+            isValid = false;
+            if (!hasExpectedSize)
+            {
+                validationLines.Add(
+                    $"- [fail] {detail.FileName}: size mismatch, expected {detail.SizeBytes} byte(s), actual {fileInfo.Length} byte(s).");
+            }
+
+            if (!hasExpectedSha)
+            {
+                validationLines.Add(
+                    $"- [fail] {detail.FileName}: sha256 mismatch, expected {detail.Sha256}, actual {actualSha256}.");
+            }
+        }
+
+        validationLines.Add(isValid ? "Validation: pass" : "Validation: fail");
+        WriteLines(validationLines, output);
+        return isValid ? 0 : 1;
     }
 
     private static int PrintChecklist(ParseResult parseResult, TextWriter output)
@@ -854,6 +981,11 @@ public static class FeasibilityStatusCommand
             return ParseTextOutputArgs("verify", args);
         }
 
+        if (command.Equals("validate-handoff", StringComparison.OrdinalIgnoreCase))
+        {
+            return ParseValidateHandoffArgs(args);
+        }
+
         if (command.Equals("status", StringComparison.OrdinalIgnoreCase))
         {
             return ParseDataFolderOnlyArgs("status", args);
@@ -1368,6 +1500,40 @@ public static class FeasibilityStatusCommand
         return ParseResult.Handoff(dataFolder, profileFolder, outputFolder);
     }
 
+    private static ParseResult ParseValidateHandoffArgs(string[] args)
+    {
+        string? inputFolder = null;
+
+        for (var index = 1; index < args.Length; index++)
+        {
+            var arg = args[index];
+            if (arg.Equals("--input-folder", StringComparison.OrdinalIgnoreCase))
+            {
+                if (index + 1 >= args.Length)
+                {
+                    return ParseResult.Invalid("--input-folder requires a value.");
+                }
+
+                inputFolder = args[++index];
+                if (string.IsNullOrWhiteSpace(inputFolder))
+                {
+                    return ParseResult.Invalid("--input-folder requires a value.");
+                }
+
+                continue;
+            }
+
+            return ParseResult.Invalid($"Unknown option: {arg}");
+        }
+
+        if (string.IsNullOrWhiteSpace(inputFolder))
+        {
+            return ParseResult.Invalid("validate-handoff requires --input-folder.");
+        }
+
+        return ParseResult.TextOutput("validate-handoff", dataFolder: null, inputFolder);
+    }
+
     private static void WriteUsage(TextWriter writer)
     {
         writer.WriteLine("Usage:");
@@ -1382,6 +1548,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--dry-run] [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools report [--data-folder <path>] [--profile-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools scenarios");
+        writer.WriteLine("  StreamOrchestra.Tools validate-handoff --input-folder <path>");
         writer.WriteLine("  StreamOrchestra.Tools verify [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools --help");
     }
@@ -1578,13 +1745,19 @@ public static class FeasibilityStatusCommand
     private static HandoffArtifactMetadata CreateHandoffArtifactMetadata(string path)
     {
         var fileInfo = new FileInfo(path);
-        using var stream = File.OpenRead(path);
-        var hash = SHA256.HashData(stream);
 
         return new HandoffArtifactMetadata(
             fileInfo.Name,
             fileInfo.Length,
-            Convert.ToHexString(hash).ToLowerInvariant());
+            ComputeFileSha256(path));
+    }
+
+    private static string ComputeFileSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        var hash = SHA256.HashData(stream);
+
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static void WriteLines(IReadOnlyList<string> lines, TextWriter output)
