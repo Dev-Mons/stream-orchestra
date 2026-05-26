@@ -183,6 +183,46 @@ public sealed class FeasibilityAuditServiceTests
     }
 
     [Fact]
+    public void CreateAudit_DoesNotPassRestartGateWhenRestartEvidenceHasNoAccountLabel()
+    {
+        var result = CreateResult(
+            playbackCount: 9,
+            outcome: "partial",
+            account: true,
+            restart: true,
+            resources: false,
+            scenarioId: "groups_a_b_c_9_slot_threshold",
+            accountLabel: "");
+        var decision = new FeasibilityDecisionService().Decide([result]);
+
+        var auditItems = new FeasibilityAuditService().CreateAudit([result], decision);
+
+        var restartGate = Find(auditItems, "restart_session");
+        Assert.Equal("pending", restartGate.Status);
+        Assert.Equal("No 9+ slot plan-scenario restart result recorded.", restartGate.Evidence);
+    }
+
+    [Fact]
+    public void CreateAudit_DoesNotPassRestartGateWhenRestartEvidenceLacksRequiredGroups()
+    {
+        var result = CreateResult(
+            playbackCount: 9,
+            outcome: "partial",
+            account: true,
+            restart: true,
+            resources: false,
+            scenarioId: "groups_a_b_c_9_slot_threshold",
+            verifiedProfileGroups: ["A", "B"]);
+        var decision = new FeasibilityDecisionService().Decide([result]);
+
+        var auditItems = new FeasibilityAuditService().CreateAudit([result], decision);
+
+        var restartGate = Find(auditItems, "restart_session");
+        Assert.Equal("pending", restartGate.Status);
+        Assert.Equal("No 9+ slot plan-scenario restart result recorded.", restartGate.Evidence);
+    }
+
+    [Fact]
     public void CreateAudit_RequiresFourSlotGroupAPlaybackEvidence()
     {
         var groupAOneSlot = CreateResult(

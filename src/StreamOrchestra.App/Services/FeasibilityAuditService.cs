@@ -322,7 +322,11 @@ public sealed class FeasibilityAuditService
     private static bool HasRestartSessionEvidence(FeasibilityTestResult result)
     {
         return result.IsRestartSessionMaintained &&
-            result.IsSameAccountSessionMaintained;
+            result.IsSameAccountSessionMaintained &&
+            !string.IsNullOrWhiteSpace(result.AccountLabel) &&
+            FeasibilityProfileGroupEvidenceService.HasRequiredGroups(
+                result.PlaybackCount,
+                result.VerifiedProfileGroups);
     }
 
     private static FeasibilityTestResult? GetLatestNinePlusResourceObservationEvidenceResult(
