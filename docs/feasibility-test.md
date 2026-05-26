@@ -58,6 +58,14 @@ dotnet run --project src\StreamOrchestra.Tools -- preflight
 
 Add `--output .\phase0-preflight.txt` to save the exact preflight text as the setup artifact for the manual verification run.
 
+Create a full handoff bundle when you want the setup, checklist, audit, and verification text in one folder:
+
+```powershell
+dotnet run --project src\StreamOrchestra.Tools -- handoff --output-folder .\phase0-handoff
+```
+
+The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, and `phase0-verification.txt`. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
+
 Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
 
 ```powershell
@@ -142,6 +150,8 @@ The `status`, `record`, and `audit` commands print pass, pending, or fail for th
 The `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md` with current evidence status, outstanding gates, and suggested `record` shapes, and can save the same text with `--output <path>`. The `scenarios` command prints the WPF playback buttons, isolated group tests, scenario IDs, matching CLI `record` shapes, and the partial/failure decision rule, including `--group A-D`, so manual SOOP evidence is named consistently. For 9+ playback, it separates partial/failure records from success records because success requires restart, resource, CPU, GPU, and memory evidence.
 
 The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, can save the same text with `--output <path>`, and exits non-zero until every Phase 0 plan gate passes.
+
+The `handoff` command saves the preflight, checklist, audit, and verification text artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands.
 
 Export a diagnostic report from the CLI:
 

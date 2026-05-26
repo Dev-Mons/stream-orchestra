@@ -302,6 +302,49 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_Handoff_WritesPhase0ArtifactBundle()
+    {
+        var profileFolder = Path.Combine(_dataFolder, "Profiles");
+        var handoffFolder = Path.Combine(_dataFolder, "handoff");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            [
+                "handoff",
+                "--data-folder",
+                _dataFolder,
+                "--profile-folder",
+                profileFolder,
+                "--output-folder",
+                handoffFolder
+            ],
+            output,
+            error);
+
+        var preflightPath = Path.Combine(handoffFolder, "phase0-preflight.txt");
+        var checklistPath = Path.Combine(handoffFolder, "phase0-checklist.txt");
+        var auditPath = Path.Combine(handoffFolder, "phase0-audit.txt");
+        var verificationPath = Path.Combine(handoffFolder, "phase0-verification.txt");
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra Phase 0 Handoff", text);
+        Assert.Contains($"Output folder: {handoffFolder}", text);
+        Assert.Contains($"Saved: {preflightPath}", text);
+        Assert.Contains($"Saved: {checklistPath}", text);
+        Assert.Contains($"Saved: {auditPath}", text);
+        Assert.Contains($"Saved: {verificationPath}", text);
+        Assert.Contains("Preflight ready:", text);
+        Assert.Contains("Verification complete: False", text);
+        Assert.Contains("Stream Orchestra Feasibility Preflight", File.ReadAllText(preflightPath));
+        Assert.Contains("Stream Orchestra Phase 0 Manual Checklist", File.ReadAllText(checklistPath));
+        Assert.Contains("Stream Orchestra Plan Audit", File.ReadAllText(auditPath));
+        Assert.Contains("Verification: not complete", File.ReadAllText(verificationPath));
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_VerifyWithNoResults_ReturnsFailureAndPendingGate()
     {
         using var output = new StringWriter();
@@ -1158,6 +1201,19 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
 
         Assert.Equal(2, exitCode);
         Assert.Contains(expectedError, error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_HandoffValidationErrors_ReturnUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["handoff", "--output-folder"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--output-folder requires a value.", error.ToString());
         Assert.Contains("Usage:", error.ToString());
     }
 

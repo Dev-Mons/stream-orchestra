@@ -29,6 +29,7 @@ public static class FeasibilityStatusCommand
             "browsers" => PrintBrowsers(parseResult.DataFolder, output),
             "checklist" => PrintChecklist(parseResult, output),
             "fallback" => SaveFallbackScript(parseResult.DataFolder, output),
+            "handoff" => SaveHandoff(parseResult, output),
             "history" => PrintHistory(parseResult.DataFolder, output),
             "preflight" => PrintPreflight(parseResult, output),
             "record" => RecordResult(parseResult, output),
@@ -138,7 +139,21 @@ public static class FeasibilityStatusCommand
 
     private static int PrintAudit(ParseResult parseResult, TextWriter output)
     {
-        var storage = new FeasibilityResultStorageService(parseResult.DataFolder);
+        var lines = CreateAuditLines(parseResult.DataFolder);
+        WriteLines(lines, output);
+
+        if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
+        {
+            SaveTextFile(parseResult.OutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            output.WriteLine($"Audit saved: {parseResult.OutputPath}");
+        }
+
+        return 0;
+    }
+
+    private static IReadOnlyList<string> CreateAuditLines(string? dataFolder)
+    {
+        var storage = new FeasibilityResultStorageService(dataFolder);
         var results = storage.LoadResults();
         var decision = new FeasibilityDecisionService().Decide(results);
         var auditService = new FeasibilityAuditService();
@@ -173,18 +188,7 @@ public static class FeasibilityStatusCommand
             lines.AddRange(suggestedRecordShapes.Select(suggestion => $"- {suggestion}"));
         }
 
-        foreach (var line in lines)
-        {
-            output.WriteLine(line);
-        }
-
-        if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
-        {
-            SaveTextFile(parseResult.OutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
-            output.WriteLine($"Audit saved: {parseResult.OutputPath}");
-        }
-
-        return 0;
+        return lines;
     }
 
     private static int SaveFallbackScript(string? dataFolder, TextWriter output)
@@ -232,6 +236,38 @@ public static class FeasibilityStatusCommand
 
         output.WriteLine($"External browser fallback script: {exportResult.ScriptPath}");
         output.WriteLine("Review the script before running it. This command does not launch browsers.");
+        return 0;
+    }
+
+    private static int SaveHandoff(ParseResult parseResult, TextWriter output)
+    {
+        var outputFolder = ResolveHandoffOutputFolder(parseResult.DataFolder, parseResult.OutputPath);
+        Directory.CreateDirectory(outputFolder);
+
+        var (preflightLines, isPreflightReady) = CreatePreflightLines(
+            parseResult.DataFolder,
+            parseResult.ProfileFolder);
+        var checklistLines = CreateChecklistLines(parseResult.DataFolder);
+        var auditLines = CreateAuditLines(parseResult.DataFolder);
+        var (verificationLines, isVerified) = CreateVerificationLines(parseResult.DataFolder);
+        var artifacts = new[]
+        {
+            SaveHandoffArtifact(outputFolder, "phase0-preflight.txt", preflightLines),
+            SaveHandoffArtifact(outputFolder, "phase0-checklist.txt", checklistLines),
+            SaveHandoffArtifact(outputFolder, "phase0-audit.txt", auditLines),
+            SaveHandoffArtifact(outputFolder, "phase0-verification.txt", verificationLines)
+        };
+
+        output.WriteLine("Stream Orchestra Phase 0 Handoff");
+        output.WriteLine($"Output folder: {outputFolder}");
+        foreach (var artifact in artifacts)
+        {
+            output.WriteLine($"Saved: {artifact}");
+        }
+
+        output.WriteLine($"Preflight ready: {isPreflightReady}");
+        output.WriteLine($"Verification complete: {isVerified}");
+        output.WriteLine("Use the saved files as the setup, checklist, audit, and verification artifacts for the manual SOOP run.");
         return 0;
     }
 
@@ -352,8 +388,24 @@ public static class FeasibilityStatusCommand
 
     private static int PrintPreflight(ParseResult parseResult, TextWriter output)
     {
-        var profileService = new WebViewProfileService(parseResult.ProfileFolder);
-        var feasibilityStorage = new FeasibilityResultStorageService(parseResult.DataFolder);
+        var (lines, isReady) = CreatePreflightLines(parseResult.DataFolder, parseResult.ProfileFolder);
+        WriteLines(lines, output);
+
+        if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
+        {
+            SaveTextFile(parseResult.OutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            output.WriteLine($"Preflight saved: {parseResult.OutputPath}");
+        }
+
+        return isReady ? 0 : 1;
+    }
+
+    private static (IReadOnlyList<string> Lines, bool IsReady) CreatePreflightLines(
+        string? dataFolder,
+        string? profileFolder)
+    {
+        var profileService = new WebViewProfileService(profileFolder);
+        var feasibilityStorage = new FeasibilityResultStorageService(dataFolder);
         var results = feasibilityStorage.LoadResults();
         var decision = new FeasibilityDecisionService().Decide(results);
         var auditService = new FeasibilityAuditService();
@@ -400,21 +452,10 @@ public static class FeasibilityStatusCommand
             lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
         }
 
-        foreach (var line in lines)
-        {
-            output.WriteLine(line);
-        }
+        var isReady = runtimeStatus.StartsWith("[available]", StringComparison.OrdinalIgnoreCase) &&
+            layoutStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase);
 
-        if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
-        {
-            SaveTextFile(parseResult.OutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
-            output.WriteLine($"Preflight saved: {parseResult.OutputPath}");
-        }
-
-        return runtimeStatus.StartsWith("[available]", StringComparison.OrdinalIgnoreCase) &&
-            layoutStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase)
-                ? 0
-                : 1;
+        return (lines, isReady);
     }
 
     private static string GetWebView2RuntimeStatus()
@@ -718,6 +759,11 @@ public static class FeasibilityStatusCommand
         if (command.Equals("fallback", StringComparison.OrdinalIgnoreCase))
         {
             return ParseDataFolderOnlyArgs("fallback", args);
+        }
+
+        if (command.Equals("handoff", StringComparison.OrdinalIgnoreCase))
+        {
+            return ParseHandoffArgs(args);
         }
 
         if (command.Equals("history", StringComparison.OrdinalIgnoreCase))
@@ -1196,6 +1242,59 @@ public static class FeasibilityStatusCommand
         return ParseResult.Preflight(dataFolder, profileFolder, outputPath);
     }
 
+    private static ParseResult ParseHandoffArgs(string[] args)
+    {
+        string? dataFolder = null;
+        string? profileFolder = null;
+        string? outputFolder = null;
+
+        for (var index = 1; index < args.Length; index++)
+        {
+            var arg = args[index];
+            if (arg.Equals("--data-folder", StringComparison.OrdinalIgnoreCase))
+            {
+                if (index + 1 >= args.Length)
+                {
+                    return ParseResult.Invalid("--data-folder requires a value.");
+                }
+
+                dataFolder = args[++index];
+                continue;
+            }
+
+            if (arg.Equals("--profile-folder", StringComparison.OrdinalIgnoreCase))
+            {
+                if (index + 1 >= args.Length)
+                {
+                    return ParseResult.Invalid("--profile-folder requires a value.");
+                }
+
+                profileFolder = args[++index];
+                continue;
+            }
+
+            if (arg.Equals("--output-folder", StringComparison.OrdinalIgnoreCase))
+            {
+                if (index + 1 >= args.Length)
+                {
+                    return ParseResult.Invalid("--output-folder requires a value.");
+                }
+
+                outputFolder = args[++index];
+                if (string.IsNullOrWhiteSpace(outputFolder))
+                {
+                    return ParseResult.Invalid("--output-folder requires a value.");
+                }
+
+                continue;
+            }
+
+            return ParseResult.Invalid($"Unknown option: {arg}");
+        }
+
+        return ParseResult.Handoff(dataFolder, profileFolder, outputFolder);
+    }
+
     private static void WriteUsage(TextWriter writer)
     {
         writer.WriteLine("Usage:");
@@ -1204,6 +1303,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools browsers [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools checklist [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools fallback [--data-folder <path>]");
+        writer.WriteLine("  StreamOrchestra.Tools handoff [--data-folder <path>] [--profile-folder <path>] [--output-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools history [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--dry-run] [--data-folder <path>]");
@@ -1322,6 +1422,35 @@ public static class FeasibilityStatusCommand
         }
 
         File.WriteAllText(path, text);
+    }
+
+    private static string ResolveHandoffOutputFolder(string? dataFolder, string? outputFolder)
+    {
+        if (!string.IsNullOrWhiteSpace(outputFolder))
+        {
+            return outputFolder;
+        }
+
+        var storage = new FeasibilityResultStorageService(dataFolder);
+        return Path.Combine(storage.DataFolder, $"phase0-handoff-{DateTimeOffset.Now:yyyyMMdd-HHmmss}");
+    }
+
+    private static string SaveHandoffArtifact(
+        string outputFolder,
+        string fileName,
+        IReadOnlyList<string> lines)
+    {
+        var path = Path.Combine(outputFolder, fileName);
+        SaveTextFile(path, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+        return path;
+    }
+
+    private static void WriteLines(IReadOnlyList<string> lines, TextWriter output)
+    {
+        foreach (var line in lines)
+        {
+            output.WriteLine(line);
+        }
     }
 
     private static bool TryParseOptionDouble(
@@ -1452,6 +1581,11 @@ public static class FeasibilityStatusCommand
         public static ParseResult Preflight(string? dataFolder, string? profileFolder, string? outputPath)
         {
             return new ParseResult(true, false, "preflight", dataFolder, profileFolder, outputPath, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
+        }
+
+        public static ParseResult Handoff(string? dataFolder, string? profileFolder, string? outputFolder)
+        {
+            return new ParseResult(true, false, "handoff", dataFolder, profileFolder, outputFolder, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
         }
 
         public static ParseResult Help()
