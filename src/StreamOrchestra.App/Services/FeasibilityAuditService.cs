@@ -86,7 +86,7 @@ public sealed class FeasibilityAuditService
             .FirstOrDefault();
         var latestRestartEvidenceResult = GetLatestNinePlusBooleanEvidenceResult(
             planNinePlusResults,
-            result => result.IsRestartSessionMaintained);
+            HasRestartSessionEvidence);
         var latestResourceAcceptabilityEvidenceResult = GetLatestNinePlusBooleanEvidenceResult(
             planNinePlusResults,
             result => result.IsResourceUsageAcceptable);
@@ -143,7 +143,7 @@ public sealed class FeasibilityAuditService
                 "App restart keeps login session",
                 latestRestartEvidenceResult,
                 latestPlanNinePlusResult,
-                result => result.IsRestartSessionMaintained,
+                HasRestartSessionEvidence,
                 "No 9+ slot result has restart=True.",
                 "No 9+ slot plan-scenario restart result recorded."),
             CreateLatestNinePlusBooleanAuditItem(
@@ -317,6 +317,12 @@ public sealed class FeasibilityAuditService
             .Where(result => predicate(result) || FeasibilityOutcomeService.IsFailure(result))
             .OrderByDescending(result => result.CapturedAt)
             .FirstOrDefault();
+    }
+
+    private static bool HasRestartSessionEvidence(FeasibilityTestResult result)
+    {
+        return result.IsRestartSessionMaintained &&
+            result.IsSameAccountSessionMaintained;
     }
 
     private static FeasibilityTestResult? GetLatestNinePlusResourceObservationEvidenceResult(

@@ -92,6 +92,21 @@ public sealed class FeasibilityResultValidationServiceTests
         Assert.Equal("Account label requires same-account evidence.", error);
     }
 
+    [Fact]
+    public void Validate_RejectsRestartEvidenceWithoutSameAccountEvidence()
+    {
+        var service = new FeasibilityResultValidationService();
+
+        var error = service.Validate(
+            playbackCount: 9,
+            outcome: "partial",
+            sameAccountSession: false,
+            restartSession: true,
+            resourceUsageAcceptable: false);
+
+        Assert.Equal("Restart evidence requires same-account evidence.", error);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

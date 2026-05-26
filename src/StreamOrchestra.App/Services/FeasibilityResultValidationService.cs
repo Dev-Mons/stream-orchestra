@@ -49,6 +49,9 @@ public sealed class FeasibilityResultValidationService
             sameAccountSession,
             verifiedProfileGroups,
             accountLabel);
+        var restartEvidenceValidationError = ValidateRestartSessionEvidence(
+            restartSession,
+            sameAccountSession);
 
         if (normalizedOutcome != "success")
         {
@@ -58,7 +61,7 @@ public sealed class FeasibilityResultValidationService
                 observedGpuPercent,
                 observedMemoryMegabytes);
 
-            return resourceObservationError ?? accountEvidenceValidationError;
+            return resourceObservationError ?? accountEvidenceValidationError ?? restartEvidenceValidationError;
         }
 
         if (playbackCount < 9)
@@ -94,6 +97,15 @@ public sealed class FeasibilityResultValidationService
             observedMemoryMegabytes);
 
         return successResourceObservationError ?? accountEvidenceValidationError;
+    }
+
+    private static string? ValidateRestartSessionEvidence(
+        bool restartSession,
+        bool sameAccountSession)
+    {
+        return restartSession && !sameAccountSession
+            ? "Restart evidence requires same-account evidence."
+            : null;
     }
 
     private static string? ValidateResourceAcceptanceObservation(
