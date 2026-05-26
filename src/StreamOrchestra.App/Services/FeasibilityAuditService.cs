@@ -213,6 +213,7 @@ public sealed class FeasibilityAuditService
 
         if (latestNinePlusResult is not null &&
             FeasibilityOutcomeService.IsKnown(latestNinePlusResult) &&
+            FeasibilityOutcomeService.IsFailure(latestNinePlusResult) &&
             !latestNinePlusResult.IsSameAccountSessionMaintained)
         {
             return new FeasibilityAuditItem(

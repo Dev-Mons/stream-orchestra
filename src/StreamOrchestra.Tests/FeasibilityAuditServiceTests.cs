@@ -425,6 +425,63 @@ public sealed class FeasibilityAuditServiceTests
     }
 
     [Fact]
+    public void CreateAudit_KeepsSameAccountGatePassedWhenLatestNinePlusPartialHasNoAccountEvidence()
+    {
+        var groupA = CreateResult(
+            playbackCount: 4,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_a",
+            verifiedProfileGroups: ["A"],
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero));
+        var groupB = CreateResult(
+            playbackCount: 4,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_b",
+            verifiedProfileGroups: ["B"],
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero));
+        var groupC = CreateResult(
+            playbackCount: 4,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_c",
+            verifiedProfileGroups: ["C"],
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero));
+        var groupD = CreateResult(
+            playbackCount: 4,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_d",
+            verifiedProfileGroups: ["D"],
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 45, 0, TimeSpan.Zero));
+        var playbackOnlyPartial = CreateResult(
+            playbackCount: 16,
+            outcome: "partial",
+            account: false,
+            restart: false,
+            resources: false,
+            scenarioId: "groups_a_b_c_d_16_slots",
+            capturedAt: new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero));
+        var results = new[] { groupA, groupB, groupC, groupD, playbackOnlyPartial };
+        var decision = new FeasibilityDecisionService().Decide(results);
+
+        var auditItems = new FeasibilityAuditService().CreateAudit(results, decision);
+
+        var sameAccountGate = Find(auditItems, "same_account_session");
+        Assert.Equal("pass", sameAccountGate.Status);
+        Assert.Contains("groups A/B/C/D", sameAccountGate.Evidence);
+    }
+
+    [Fact]
     public void CreateAudit_FailsSameAccountGateWhenAccountLabelsConflict()
     {
         var thresholdSuccess = CreateResult(
