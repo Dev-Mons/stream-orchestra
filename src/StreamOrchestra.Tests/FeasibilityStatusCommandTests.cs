@@ -2298,6 +2298,67 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_FallbackNormalizesBareDomainAndSkipsNonWebLastSessionUrls()
+    {
+        var browserFolder = Path.Combine(_dataFolder, "Browser");
+        Directory.CreateDirectory(browserFolder);
+        var executablePath = Path.Combine(browserFolder, "browser.exe");
+        File.WriteAllText(executablePath, "");
+        new ExternalBrowserCandidateStorageService(_dataFolder).SaveCandidates(
+        [
+            new ExternalBrowserCandidate(
+                "aaa_portable_browser",
+                "AAA Portable Browser",
+                [executablePath])
+        ]);
+        new PresetStorageService(_dataFolder).SaveAppState(new AppState
+        {
+            LastSession = new WorkspacePreset
+            {
+                Id = "last_session",
+                Name = "Last Session",
+                LayoutId = LayoutPresetIds.Default,
+                Slots =
+                [
+                    new WorkspaceSlot
+                    {
+                        SlotId = 1,
+                        StreamName = " ",
+                        StreamUrl = " example.com/live ",
+                        ProfileGroupId = "A"
+                    },
+                    new WorkspaceSlot
+                    {
+                        SlotId = 2,
+                        StreamName = "Script",
+                        StreamUrl = "javascript:alert(1)",
+                        ProfileGroupId = "A"
+                    }
+                ]
+            }
+        });
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["fallback", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var scripts = Directory.GetFiles(_dataFolder, "external-browser-fallback-*.ps1");
+        var text = output.ToString();
+        var scriptText = File.ReadAllText(Assert.Single(scripts));
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Planned slots: 1", text);
+        Assert.Contains("[slot 1] live -> AAA Portable Browser (aaa_portable_browser), muted=False: https://example.com/live", text);
+        Assert.DoesNotContain("javascript:alert", text);
+        Assert.Contains("'\"https://example.com/live\"'", scriptText);
+        Assert.Contains("'\"--user-data-dir=", scriptText);
+        Assert.DoesNotContain("javascript:alert", scriptText);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_UnknownCommand_ReturnsUsageError()
     {
         using var output = new StringWriter();
