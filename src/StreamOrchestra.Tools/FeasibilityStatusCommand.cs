@@ -594,7 +594,6 @@ public static class FeasibilityStatusCommand
                     isValid &= ValidateHandoffDiagnosticReport(
                         report,
                         manifest,
-                        inputFolder,
                         resultsSummary,
                         validationLines);
                 }
@@ -1368,7 +1367,6 @@ public static class FeasibilityStatusCommand
     private static bool ValidateHandoffDiagnosticReport(
         DiagnosticReport report,
         HandoffManifest manifest,
-        string inputFolder,
         HandoffResultsSummary? summary,
         List<string> validationLines)
     {
@@ -1478,12 +1476,84 @@ public static class FeasibilityStatusCommand
         if (AreEquivalentPaths(report.ProfileRootFolder, manifest.ProfileRootFolder))
         {
             validationLines.Add($"- [pass] diagnostic report profile root: {FormatPathForValidation(report.ProfileRootFolder)}");
-            return isValid;
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report profile root mismatch, expected {FormatPathForValidation(manifest.ProfileRootFolder)}, actual {FormatPathForValidation(report.ProfileRootFolder)}.");
         }
 
-        validationLines.Add(
-            $"- [fail] diagnostic report profile root mismatch, expected {FormatPathForValidation(manifest.ProfileRootFolder)}, actual {FormatPathForValidation(report.ProfileRootFolder)}.");
-        return false;
+        isValid &= ValidateHandoffDiagnosticProfileGroups(report, manifest, validationLines);
+        return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticProfileGroups(
+        DiagnosticReport report,
+        HandoffManifest manifest,
+        List<string> validationLines)
+    {
+        var expectedGroups = (manifest.ProfileGroups ?? Array.Empty<HandoffProfileGroupMetadata>())
+            .OrderBy(group => group.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (expectedGroups.Length == 0)
+        {
+            validationLines.Add("- [fail] diagnostic report profile groups cannot be checked because manifest profile groups are missing.");
+            return false;
+        }
+
+        var reportGroups = (report.ProfileGroups ?? Array.Empty<ProfileGroup>())
+            .Where(group => group is not null)
+            .Select(group => group!)
+            .ToArray();
+        var expectedIds = new HashSet<string>(
+            expectedGroups.Select(group => group.Id),
+            StringComparer.OrdinalIgnoreCase);
+        var duplicateIds = reportGroups
+            .Where(group => expectedIds.Contains(group.Id))
+            .GroupBy(group => group.Id, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (duplicateIds.Length > 0)
+        {
+            foreach (var duplicateId in duplicateIds)
+            {
+                validationLines.Add($"- [fail] diagnostic report profile group {duplicateId} is duplicated.");
+            }
+
+            return false;
+        }
+
+        var isValid = true;
+        foreach (var expectedGroup in expectedGroups)
+        {
+            var reportGroup = reportGroups.FirstOrDefault(
+                group => string.Equals(group.Id, expectedGroup.Id, StringComparison.OrdinalIgnoreCase));
+            if (reportGroup is null)
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] diagnostic report profile group {expectedGroup.Id} is missing.");
+                continue;
+            }
+
+            if (AreEquivalentPaths(reportGroup.UserDataFolder, expectedGroup.UserDataFolder))
+            {
+                continue;
+            }
+
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report profile group {expectedGroup.Id} mismatch, expected {FormatPathForValidation(expectedGroup.UserDataFolder)}, actual {FormatPathForValidation(reportGroup.UserDataFolder)}.");
+        }
+
+        if (isValid)
+        {
+            validationLines.Add($"- [pass] diagnostic report profile groups: {expectedGroups.Length}");
+        }
+
+        return isValid;
     }
 
     private static bool ValidateHandoffDiagnosticReportSnapshot(

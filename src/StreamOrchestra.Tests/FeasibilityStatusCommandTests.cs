@@ -466,6 +466,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report data folder:", text);
         Assert.Contains("- [pass] diagnostic report results file:", text);
         Assert.Contains("- [pass] diagnostic report profile root:", text);
+        Assert.Contains("- [pass] diagnostic report profile groups: 4", text);
         Assert.Contains("- [pass] diagnostic report decision: 검증 대기 (pending)", text);
         Assert.Contains("- [pass] diagnostic report plan gates: pass=0, pending=11, fail=0, outstanding=11, status=pending", text);
         Assert.Contains("- [pass] diagnostic report decision details: 검증 대기 (pending)", text);
@@ -768,6 +769,16 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         var diagnosticReport = JsonNode.Parse(File.ReadAllText(diagnosticReportPath))!.AsObject();
         diagnosticReport["dataFolder"] = JsonValue.Create(@"C:\tampered-data");
         diagnosticReport["profileRootFolder"] = JsonValue.Create(@"C:\tampered-profiles");
+        foreach (var profileGroup in diagnosticReport["profileGroups"]!.AsArray())
+        {
+            var profileGroupObject = profileGroup!.AsObject();
+            if (profileGroupObject["id"]?.GetValue<string>() == "A")
+            {
+                profileGroupObject["userDataFolder"] = JsonValue.Create(@"C:\tampered-profiles\GroupA");
+                break;
+            }
+        }
+
         foreach (var dataFile in diagnosticReport["dataFiles"]!.AsArray())
         {
             var dataFileObject = dataFile!.AsObject();
@@ -795,6 +806,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("diagnostic report data folder mismatch", text);
         Assert.Contains("diagnostic report results file mismatch", text);
         Assert.Contains("diagnostic report profile root mismatch", text);
+        Assert.Contains("diagnostic report profile group A mismatch", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
