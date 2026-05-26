@@ -54,22 +54,35 @@ public static class FeasibilityStatusCommand
             return 0;
         }
 
-        return parseResult.Command switch
+        try
         {
-            "audit" => PrintAudit(parseResult, output),
-            "browsers" => PrintBrowsers(parseResult.DataFolder, output),
-            "checklist" => PrintChecklist(parseResult, output),
-            "fallback" => SaveFallbackScript(parseResult.DataFolder, output),
-            "handoff" => SaveHandoff(parseResult, output),
-            "history" => PrintHistory(parseResult.DataFolder, output),
-            "preflight" => PrintPreflight(parseResult, output),
-            "record" => RecordResult(parseResult, output),
-            "report" => SaveReport(parseResult, output),
-            "scenarios" => PrintScenarios(output),
-            "validate-handoff" => ValidateHandoff(parseResult, output),
-            "verify" => VerifyPlan(parseResult, output),
-            _ => PrintStatus(parseResult.DataFolder, output)
-        };
+            return parseResult.Command switch
+            {
+                "audit" => PrintAudit(parseResult, output),
+                "browsers" => PrintBrowsers(parseResult.DataFolder, output),
+                "checklist" => PrintChecklist(parseResult, output),
+                "fallback" => SaveFallbackScript(parseResult.DataFolder, output),
+                "handoff" => SaveHandoff(parseResult, output),
+                "history" => PrintHistory(parseResult.DataFolder, output),
+                "preflight" => PrintPreflight(parseResult, output),
+                "record" => RecordResult(parseResult, output),
+                "report" => SaveReport(parseResult, output),
+                "scenarios" => PrintScenarios(output),
+                "validate-handoff" => ValidateHandoff(parseResult, output),
+                "verify" => VerifyPlan(parseResult, output),
+                _ => PrintStatus(parseResult.DataFolder, output)
+            };
+        }
+        catch (Exception ex) when (IsCommandEnvironmentException(ex))
+        {
+            error.WriteLine($"Command failed: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static bool IsCommandEnvironmentException(Exception ex)
+    {
+        return ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException;
     }
 
     private static int PrintStatus(string? dataFolder, TextWriter output)

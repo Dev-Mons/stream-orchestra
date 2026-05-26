@@ -2121,6 +2121,35 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_RecordDryRunWithFileDataFolder_ReturnsCommandFailure()
+    {
+        Directory.CreateDirectory(_dataFolder);
+        var dataFolderFile = Path.Combine(_dataFolder, "data-folder-file");
+        File.WriteAllText(dataFolderFile, "not a directory");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            [
+                "record",
+                "--count",
+                "9",
+                "--outcome",
+                "partial",
+                "--dry-run",
+                "--data-folder",
+                dataFolderFile
+            ],
+            output,
+            error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal("", output.ToString());
+        Assert.Contains("Command failed:", error.ToString());
+        Assert.Contains(dataFolderFile, error.ToString());
+    }
+
+    [Fact]
     public void Execute_RecordWithGroup_DerivesIsolatedGroupScenarioAndDefaultCount()
     {
         using var output = new StringWriter();
