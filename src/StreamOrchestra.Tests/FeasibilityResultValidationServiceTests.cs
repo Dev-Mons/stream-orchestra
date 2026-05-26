@@ -61,6 +61,25 @@ public sealed class FeasibilityResultValidationServiceTests
     }
 
     [Fact]
+    public void Validate_RejectsSuccessWithoutAccountLabel()
+    {
+        var service = new FeasibilityResultValidationService();
+
+        var error = service.Validate(
+            playbackCount: 9,
+            outcome: "success",
+            sameAccountSession: true,
+            restartSession: true,
+            resourceUsageAcceptable: true,
+            observedCpuPercent: 45,
+            observedGpuPercent: 60,
+            observedMemoryMegabytes: 12000,
+            verifiedProfileGroups: ["A", "B", "C"]);
+
+        Assert.Equal("Same-account evidence requires an account label.", error);
+    }
+
+    [Fact]
     public void Validate_RejectsSameAccountEvidenceWithoutProfileGroups()
     {
         var service = new FeasibilityResultValidationService();

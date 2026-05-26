@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 436 passing tests.
+Current automated test coverage: 438 passing tests.
 
 ## Phase 0 Feasibility Spike
 
