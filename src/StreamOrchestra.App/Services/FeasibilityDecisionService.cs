@@ -138,8 +138,12 @@ public sealed class FeasibilityDecisionService
     {
         var coveredGroups = FeasibilityProfileGroupEvidenceService.GetLatestSameAccountCoveredGroups(results);
         var coveredGroupSet = coveredGroups.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var groupsWithoutLabels = FeasibilityProfileGroupEvidenceService
+            .GetLatestSameAccountCoveredGroupsWithoutAccountLabels(results)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return PlanRequiredProfileGroups.All(coveredGroupSet.Contains) &&
-            !FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(results);
+            !PlanRequiredProfileGroups.Any(groupsWithoutLabels.Contains) &&
+            FeasibilityProfileGroupEvidenceService.GetLatestSameAccountAccountLabels(results).Count == 1;
     }
 }

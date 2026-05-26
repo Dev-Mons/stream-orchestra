@@ -192,6 +192,38 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
             [mainAccountGroups, alternateAccountGroup]));
     }
 
+    [Fact]
+    public void GetLatestSameAccountCoveredGroupsWithoutAccountLabels_UsesLatestCoveredEvidence()
+    {
+        var groupAWithLabel = CreateResult(
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero),
+            scenarioId: "isolated_group_a",
+            groups: ["A"],
+            sameAccount: true,
+            accountLabel: "main_soop");
+        var groupBWithoutLabel = CreateResult(
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero),
+            scenarioId: "isolated_group_b",
+            groups: ["B"],
+            sameAccount: true);
+        var olderGroupCWithoutLabel = CreateResult(
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero),
+            scenarioId: "isolated_group_c",
+            groups: ["C"],
+            sameAccount: true);
+        var newerGroupCWithLabel = CreateResult(
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 45, 0, TimeSpan.Zero),
+            scenarioId: "isolated_group_c",
+            groups: ["C"],
+            sameAccount: true,
+            accountLabel: "main_soop");
+
+        var groups = FeasibilityProfileGroupEvidenceService.GetLatestSameAccountCoveredGroupsWithoutAccountLabels(
+            [groupAWithLabel, groupBWithoutLabel, olderGroupCWithoutLabel, newerGroupCWithLabel]);
+
+        Assert.Equal(["B"], groups);
+    }
+
     private static FeasibilityTestResult CreateResult(
         DateTimeOffset capturedAt,
         string scenarioId,

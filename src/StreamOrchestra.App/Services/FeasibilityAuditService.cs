@@ -232,26 +232,33 @@ public sealed class FeasibilityAuditService
             .Where(group => !coveredGroups.Contains(group, StringComparer.OrdinalIgnoreCase))
             .ToArray();
 
-        if (missingGroups.Length == 0)
+        if (missingGroups.Length > 0)
         {
             return new FeasibilityAuditItem(
                 id,
                 title,
-                "pass",
-                accountLabels.Count == 0
-                    ? $"Same-account evidence covers groups {string.Join("/", PlanRequiredProfileGroups)}."
-                    : $"Same-account evidence covers groups {string.Join("/", PlanRequiredProfileGroups)} with account label {accountLabels[0]}.");
+                "pending",
+                $"Missing same-account profile-group evidence for group(s): {string.Join(", ", missingGroups)}. Covered: {FormatCoveredGroups(coveredGroups)}.");
         }
 
-        var coveredText = coveredGroups.Count == 0
-            ? "n/a"
-            : string.Join("/", coveredGroups);
+        var missingLabelGroups = FeasibilityProfileGroupEvidenceService
+            .GetLatestSameAccountCoveredGroupsWithoutAccountLabels(results)
+            .Where(group => PlanRequiredProfileGroups.Contains(group, StringComparer.OrdinalIgnoreCase))
+            .ToArray();
+        if (missingLabelGroups.Length > 0)
+        {
+            return new FeasibilityAuditItem(
+                id,
+                title,
+                "pending",
+                $"Same-account evidence covers groups {string.Join("/", PlanRequiredProfileGroups)} but is missing account label evidence for group(s): {string.Join(", ", missingLabelGroups)}.");
+        }
 
         return new FeasibilityAuditItem(
             id,
             title,
-            "pending",
-            $"Missing same-account profile-group evidence for group(s): {string.Join(", ", missingGroups)}. Covered: {coveredText}.");
+            "pass",
+            $"Same-account evidence covers groups {string.Join("/", PlanRequiredProfileGroups)} with account label {accountLabels[0]}.");
     }
 
     private static FeasibilityAuditItem CreateLatestNinePlusBooleanAuditItem(
@@ -348,9 +355,13 @@ public sealed class FeasibilityAuditService
     {
         var coveredGroups = GetCoveredSameAccountProfileGroups(results);
         var coveredGroupSet = coveredGroups.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var groupsWithoutLabels = FeasibilityProfileGroupEvidenceService
+            .GetLatestSameAccountCoveredGroupsWithoutAccountLabels(results)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return PlanRequiredProfileGroups.All(coveredGroupSet.Contains) &&
-            !FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(results);
+            !PlanRequiredProfileGroups.Any(groupsWithoutLabels.Contains) &&
+            FeasibilityProfileGroupEvidenceService.GetLatestSameAccountAccountLabels(results).Count == 1;
     }
 
     private static bool IsSuccessfulEmbeddedWebView2Result(FeasibilityTestResult result)
@@ -423,6 +434,13 @@ public sealed class FeasibilityAuditService
     private static string FormatAccountLabel(string? accountLabel)
     {
         return string.IsNullOrWhiteSpace(accountLabel) ? "n/a" : accountLabel.Trim();
+    }
+
+    private static string FormatCoveredGroups(IReadOnlyList<string> coveredGroups)
+    {
+        return coveredGroups.Count == 0
+            ? "n/a"
+            : string.Join("/", coveredGroups);
     }
 
     private static IEnumerable<string> CreateSuggestedRecordShapes(FeasibilityAuditItem auditItem)

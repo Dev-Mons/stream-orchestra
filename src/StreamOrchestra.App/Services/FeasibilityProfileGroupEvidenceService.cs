@@ -109,6 +109,17 @@ public static class FeasibilityProfileGroupEvidenceService
             .ToArray();
     }
 
+    public static IReadOnlyList<string> GetLatestSameAccountCoveredGroupsWithoutAccountLabels(
+        IReadOnlyList<FeasibilityTestResult> results)
+    {
+        return Normalize(
+            GetLatestSameAccountResultByGroup(results)
+                .Where(item => item.Value.IsSameAccountSessionMaintained &&
+                    string.IsNullOrWhiteSpace(item.Value.AccountLabel))
+                .Select(item => item.Key)
+                .ToArray());
+    }
+
     public static bool HasConflictingSameAccountLabels(IReadOnlyList<FeasibilityTestResult> results)
     {
         return GetLatestSameAccountAccountLabels(results).Count > 1;

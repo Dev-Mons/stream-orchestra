@@ -111,6 +111,32 @@ public sealed class FeasibilityDecisionServiceTests
     }
 
     [Fact]
+    public void Decide_ContinuesExperimentsWhenSameAccountLabelsAreMissing()
+    {
+        var service = new FeasibilityDecisionService();
+        var thresholdSuccess = CreateResult(
+            playbackCount: 9,
+            outcome: "success",
+            sameAccountSession: true,
+            restartSession: true,
+            resources: true,
+            accountLabel: "");
+        var groupD = CreateResult(
+            playbackCount: 4,
+            outcome: "partial",
+            sameAccountSession: true,
+            restartSession: false,
+            resources: false,
+            scenarioId: "isolated_group_d",
+            verifiedProfileGroups: ["D"]);
+
+        var decision = service.Decide([thresholdSuccess, groupD]);
+
+        Assert.Equal("continue_webview2_experiments", decision.Code);
+        Assert.Contains("성공 기준 전체", decision.Detail);
+    }
+
+    [Fact]
     public void Decide_ContinuesExperimentsWhenLatestGroupEvidenceContradictsOlderCoverage()
     {
         var service = new FeasibilityDecisionService();
@@ -403,7 +429,7 @@ public sealed class FeasibilityDecisionServiceTests
         double? observedMemoryMegabytes = null,
         string? scenarioId = null,
         IReadOnlyList<string>? verifiedProfileGroups = null,
-        string accountLabel = "")
+        string accountLabel = "main_soop")
     {
         capturedAt ??= new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
         scenarioId ??= playbackCount switch
@@ -430,7 +456,7 @@ public sealed class FeasibilityDecisionServiceTests
                 WebViewPrivateMemoryMegabytes: 800,
                 WebViewCpuPercent: 30),
             IsSameAccountSessionMaintained = sameAccountSession,
-            AccountLabel = accountLabel,
+            AccountLabel = sameAccountSession ? accountLabel : "",
             VerifiedProfileGroups = verifiedProfileGroups ??
                 FeasibilityProfileGroupEvidenceService.GetRequiredGroupsForPlaybackCount(playbackCount),
             IsRestartSessionMaintained = restartSession,

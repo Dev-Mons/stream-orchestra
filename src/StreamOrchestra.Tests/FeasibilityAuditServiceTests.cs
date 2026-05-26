@@ -457,6 +457,37 @@ public sealed class FeasibilityAuditServiceTests
     }
 
     [Fact]
+    public void CreateAudit_KeepsSameAccountGatePendingWhenAccountLabelsAreMissing()
+    {
+        var thresholdSuccess = CreateResult(
+            playbackCount: 9,
+            outcome: "success",
+            account: true,
+            restart: true,
+            resources: true,
+            scenarioId: "groups_a_b_c_9_slot_threshold",
+            verifiedProfileGroups: ["A", "B", "C"]);
+        var groupD = CreateResult(
+            playbackCount: 4,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_d",
+            verifiedProfileGroups: ["D"],
+            accountLabel: "");
+        var decision = new FeasibilityDecisionService().Decide([thresholdSuccess, groupD]);
+
+        var auditItems = new FeasibilityAuditService().CreateAudit([thresholdSuccess, groupD], decision);
+
+        var sameAccountGate = Find(auditItems, "same_account_session");
+        Assert.Equal("continue_webview2_experiments", decision.Code);
+        Assert.Equal("pending", sameAccountGate.Status);
+        Assert.Contains("missing account label evidence for group(s): D", sameAccountGate.Evidence);
+        Assert.Equal("pending", Find(auditItems, "phase0_success_gate").Status);
+    }
+
+    [Fact]
     public void CreateAudit_UsesLatestSameAccountEvidencePerProfileGroup()
     {
         var groupA = CreateResult(
@@ -807,7 +838,7 @@ public sealed class FeasibilityAuditServiceTests
         double? observedMemoryMegabytes = null,
         string scenarioId = "test_scenario",
         IReadOnlyList<string>? verifiedProfileGroups = null,
-        string accountLabel = "")
+        string accountLabel = "main_soop")
     {
         capturedAt ??= new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
         return new FeasibilityTestResult
@@ -825,7 +856,7 @@ public sealed class FeasibilityAuditServiceTests
                 WebViewPrivateMemoryMegabytes: 800,
                 WebViewCpuPercent: 30),
             IsSameAccountSessionMaintained = account,
-            AccountLabel = accountLabel,
+            AccountLabel = account ? accountLabel : "",
             VerifiedProfileGroups = verifiedProfileGroups ??
                 FeasibilityProfileGroupEvidenceService.GetRequiredGroupsForPlaybackCount(playbackCount),
             IsRestartSessionMaintained = restart,
