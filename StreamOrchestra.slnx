@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/StreamOrchestra.App/StreamOrchestra.App.csproj" />
+    <Project Path="src/StreamOrchestra.Tests/StreamOrchestra.Tests.csproj" />
+    <Project Path="src/StreamOrchestra.Tools/StreamOrchestra.Tools.csproj" />
+  </Folder>
+</Solution>

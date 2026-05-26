@@ -1,0 +1,359 @@
+<Window x:Class="StreamOrchestra.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Stream Orchestra Spike"
+        Height="1000"
+        Width="1600"
+        MinHeight="720"
+        MinWidth="1100"
+        Background="#0B0F14">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="#121820"
+                BorderBrush="#2D3642"
+                BorderThickness="0,0,0,1"
+                Padding="10">
+            <StackPanel>
+                <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Right"
+                                Orientation="Horizontal"
+                                Margin="10,0,0,0">
+                        <Button x:Name="ToggleExplorerButton"
+                                Height="30"
+                                MinWidth="86"
+                                Padding="10,0"
+                                Click="ToggleExplorerButton_Click" />
+                        <Button x:Name="ToggleSlotUrlEditorsButton"
+                                Height="30"
+                                MinWidth="86"
+                                Margin="8,0,0,0"
+                                Padding="10,0"
+                                Click="ToggleSlotUrlEditorsButton_Click" />
+                        <Button x:Name="ToggleSlotControlBarsButton"
+                                Height="30"
+                                MinWidth="86"
+                                Margin="8,0,0,0"
+                                Padding="10,0"
+                                Click="ToggleSlotControlBarsButton_Click" />
+                        <ComboBox x:Name="LayoutComboBox"
+                                  Width="170"
+                                  Height="30"
+                                  Margin="8,0,0,0"
+                                  DisplayMemberPath="Name"
+                                  SelectionChanged="LayoutComboBox_SelectionChanged" />
+                        <ComboBox x:Name="LoadScopeComboBox"
+                                  Width="140"
+                                  Height="30"
+                                  Margin="8,0,0,0"
+                                  SelectedIndex="0">
+                            <ComboBoxItem Content="All Groups"
+                                          Tag="All" />
+                            <ComboBoxItem Content="Group A"
+                                          Tag="A" />
+                            <ComboBoxItem Content="Group B"
+                                          Tag="B" />
+                            <ComboBoxItem Content="Group C"
+                                          Tag="C" />
+                            <ComboBoxItem Content="Group D"
+                                          Tag="D" />
+                        </ComboBox>
+                        <Button Content="선택 그룹 로드"
+                                Height="30"
+                                MinWidth="112"
+                                Margin="8,0,0,0"
+                                Padding="10,0"
+                                Click="LoadScopeButton_Click" />
+                        <Button Content="그룹 단독"
+                                Height="30"
+                                MinWidth="86"
+                                Margin="8,0,0,0"
+                                Padding="10,0"
+                                Click="LoadIsolatedScopeButton_Click" />
+                        <Button Content="전체 로드"
+                                Height="30"
+                                MinWidth="84"
+                                Margin="8,0,0,0"
+                                Padding="10,0"
+                                Click="LoadAllButton_Click" />
+                        <Button Content="빈 화면"
+                                Height="30"
+                                MinWidth="76"
+                                Margin="8,0,0,0"
+                                Padding="10,0"
+                                Click="BlankAllButton_Click" />
+                    </StackPanel>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="URL"
+                                   Foreground="#F3F6FA"
+                                   VerticalAlignment="Center"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,8,0" />
+                        <TextBox x:Name="GlobalUrlTextBox"
+                                 Grid.Column="1"
+                                 Height="30"
+                                 Text="https://www.sooplive.co.kr"
+                                 VerticalContentAlignment="Center"
+                                 KeyDown="GlobalUrlTextBox_KeyDown" />
+                    </Grid>
+                </DockPanel>
+
+                <DockPanel Margin="0,8,0,0"
+                           LastChildFill="False">
+                    <TextBlock x:Name="DiagnosticsTextBlock"
+                               DockPanel.Dock="Right"
+                               Foreground="#B9C2CC"
+                               VerticalAlignment="Center"
+                               TextAlignment="Right" />
+                    <WrapPanel>
+                        <TextBlock Text="동시 재생 테스트"
+                                   Foreground="#F3F6FA"
+                                   VerticalAlignment="Center"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,8,0" />
+                        <Button Content="4개"
+                                Tag="4"
+                                Height="28"
+                                MinWidth="48"
+                                Margin="0,0,6,0"
+                                Click="LoadFirstCountButton_Click" />
+                        <Button Content="8개"
+                                Tag="8"
+                                Height="28"
+                                MinWidth="48"
+                                Margin="0,0,6,0"
+                                Click="LoadFirstCountButton_Click" />
+                        <Button Content="9개"
+                                Tag="9"
+                                Height="28"
+                                MinWidth="48"
+                                Margin="0,0,6,0"
+                                Click="LoadFirstCountButton_Click" />
+                        <Button Content="12개"
+                                Tag="12"
+                                Height="28"
+                                MinWidth="54"
+                                Margin="0,0,6,0"
+                                Click="LoadFirstCountButton_Click" />
+                        <Button Content="16개"
+                                Tag="16"
+                                Height="28"
+                                MinWidth="54"
+                                Margin="0,0,12,0"
+                                Click="LoadFirstCountButton_Click" />
+                        <Button Content="진단 갱신"
+                                Height="28"
+                                MinWidth="82"
+                                Click="RefreshDiagnosticsButton_Click" />
+                    </WrapPanel>
+                </DockPanel>
+
+                <DockPanel Margin="0,8,0,0"
+                           LastChildFill="False">
+                    <WrapPanel>
+                        <TextBlock Text="프리셋"
+                                   Foreground="#F3F6FA"
+                                   VerticalAlignment="Center"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,8,0" />
+                        <ComboBox x:Name="WorkspaceComboBox"
+                                  Width="180"
+                                  Height="28"
+                                  DisplayMemberPath="Name"
+                                  Margin="0,0,6,0" />
+                        <Button Content="불러오기"
+                                Height="28"
+                                MinWidth="74"
+                                Margin="0,0,6,0"
+                                Click="LoadWorkspaceButton_Click" />
+                        <Button Content="현재 상태 저장"
+                                Height="28"
+                                MinWidth="106"
+                                Margin="0,0,6,0"
+                                Click="SaveCurrentWorkspaceButton_Click" />
+                        <Button Content="다른 이름으로 저장"
+                                Height="28"
+                                MinWidth="124"
+                                Margin="0,0,6,0"
+                                Click="SaveWorkspaceAsButton_Click" />
+                        <Button Content="되돌리기"
+                                Height="28"
+                                MinWidth="74"
+                                Click="RevertWorkspaceButton_Click" />
+                    </WrapPanel>
+                </DockPanel>
+
+                <DockPanel Margin="0,8,0,0"
+                           LastChildFill="True">
+                    <TextBlock x:Name="FeasibilityResultTextBlock"
+                               DockPanel.Dock="Right"
+                               Foreground="#B9C2CC"
+                               VerticalAlignment="Center"
+                               TextAlignment="Right" />
+                    <WrapPanel>
+                        <TextBlock Text="검증 기록"
+                                   Foreground="#F3F6FA"
+                                   VerticalAlignment="Center"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,8,0" />
+                        <TextBlock x:Name="CurrentFeasibilityScenarioTextBlock"
+                                   Width="260"
+                                   Foreground="#B9C2CC"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="현재 기록 대상 테스트"
+                                   Margin="0,0,8,0" />
+                        <TextBox x:Name="FeasibilityNotesTextBox"
+                                 Width="220"
+                                 Height="28"
+                                 VerticalContentAlignment="Center"
+                                 Margin="0,0,6,0"
+                                 ToolTip="검증 메모" />
+                        <CheckBox x:Name="SameAccountSessionCheckBox"
+                                  Content="계정 유지"
+                                  Foreground="#F3F6FA"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,4,0" />
+                        <CheckBox x:Name="VerifiedGroupACheckBox"
+                                  Content="A"
+                                  Foreground="#F3F6FA"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,4,0"
+                                  ToolTip="Group A same-account session verified" />
+                        <CheckBox x:Name="VerifiedGroupBCheckBox"
+                                  Content="B"
+                                  Foreground="#F3F6FA"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,4,0"
+                                  ToolTip="Group B same-account session verified" />
+                        <CheckBox x:Name="VerifiedGroupCCheckBox"
+                                  Content="C"
+                                  Foreground="#F3F6FA"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,4,0"
+                                  ToolTip="Group C same-account session verified" />
+                        <CheckBox x:Name="VerifiedGroupDCheckBox"
+                                  Content="D"
+                                  Foreground="#F3F6FA"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0"
+                                  ToolTip="Group D same-account session verified" />
+                        <CheckBox x:Name="RestartSessionCheckBox"
+                                  Content="재실행 유지"
+                                  Foreground="#F3F6FA"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0" />
+                        <CheckBox x:Name="ResourceAcceptableCheckBox"
+                                  Content="리소스 OK"
+                                  Foreground="#F3F6FA"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0"
+                                  ToolTip="Requires CPU %, GPU %, and Memory MB values" />
+                        <TextBox x:Name="ObservedCpuTextBox"
+                                 Width="54"
+                                 Height="28"
+                                 VerticalContentAlignment="Center"
+                                 Margin="0,0,4,0"
+                                 ToolTip="CPU %" />
+                        <TextBox x:Name="ObservedGpuTextBox"
+                                 Width="54"
+                                 Height="28"
+                                 VerticalContentAlignment="Center"
+                                 Margin="0,0,4,0"
+                                 ToolTip="GPU %" />
+                        <TextBox x:Name="ObservedMemoryTextBox"
+                                 Width="70"
+                                 Height="28"
+                                 VerticalContentAlignment="Center"
+                                 Margin="0,0,8,0"
+                                 ToolTip="Memory MB" />
+                        <Button Content="성공"
+                                Tag="success"
+                                Height="28"
+                                MinWidth="54"
+                                Margin="0,0,6,0"
+                                Click="RecordFeasibilityResultButton_Click" />
+                        <Button Content="부분"
+                                Tag="partial"
+                                Height="28"
+                                MinWidth="54"
+                                Margin="0,0,6,0"
+                                Click="RecordFeasibilityResultButton_Click" />
+                        <Button Content="실패"
+                                Tag="failure"
+                                Height="28"
+                                MinWidth="54"
+                                Margin="0,0,6,0"
+                                Click="RecordFeasibilityResultButton_Click" />
+                        <Button Content="리포트 저장"
+                                Height="28"
+                                MinWidth="86"
+                                Margin="0,0,6,0"
+                                Click="SaveDiagnosticReportButton_Click" />
+                        <Button Content="브라우저 스크립트"
+                                Height="28"
+                                MinWidth="118"
+                                Margin="0,0,6,0"
+                                Click="SaveExternalBrowserFallbackScriptButton_Click" />
+                        <Button Content="감사 복사"
+                                Height="28"
+                                MinWidth="82"
+                                Click="CopyAuditButton_Click" />
+                    </WrapPanel>
+                </DockPanel>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="ExplorerColumn"
+                                  Width="360" />
+                <ColumnDefinition x:Name="ExplorerSplitterColumn"
+                                  Width="6" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border x:Name="ExplorerBorder"
+                    Grid.Column="0"
+                    Background="#0F141B"
+                    BorderBrush="#2D3642"
+                    BorderThickness="0,0,1,0">
+                <ContentControl x:Name="ExplorerHost" />
+            </Border>
+
+            <GridSplitter x:Name="ExplorerGridSplitter"
+                          Grid.Column="1"
+                          Width="6"
+                          HorizontalAlignment="Stretch"
+                          Background="#1D2733" />
+
+            <Grid x:Name="SlotsGrid"
+                  Grid.Column="2"
+                  Margin="6" />
+        </Grid>
+
+        <Border Grid.Row="2"
+                Background="#121820"
+                BorderBrush="#2D3642"
+                BorderThickness="0,1,0,0"
+                Padding="10,6">
+            <TextBlock x:Name="StatusTextBlock"
+                       Foreground="#B9C2CC"
+                       TextWrapping="Wrap" />
+        </Border>
+    </Grid>
+</Window>

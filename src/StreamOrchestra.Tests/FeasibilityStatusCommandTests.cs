@@ -1,0 +1,1089 @@
+using StreamOrchestra.App.Models;
+using StreamOrchestra.App.Services;
+using StreamOrchestra.Tools;
+
+namespace StreamOrchestra.Tests;
+
+public sealed class FeasibilityStatusCommandTests : IDisposable
+{
+    private readonly string _dataFolder;
+
+    public FeasibilityStatusCommandTests()
+    {
+        _dataFolder = Path.Combine(Path.GetTempPath(), "StreamOrchestra.Tests", Guid.NewGuid().ToString("N"));
+    }
+
+    [Fact]
+    public void Execute_StatusWithNoResults_PrintsPendingDecision()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["status", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Results recorded: 0", output.ToString());
+        Assert.Contains("pending", output.ToString());
+        Assert.Contains("Next action:", output.ToString());
+        Assert.Contains("Plan audit: pass=0, pending=11, fail=0", output.ToString());
+        Assert.Contains("Plan verification: [pending]", output.ToString());
+        Assert.Contains("Success gate: [pending]", output.ToString());
+        Assert.Contains("Suggested record shapes:", output.ToString());
+        Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C", output.ToString());
+        Assert.Contains("Latest result: none", output.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_StatusWithSuccessfulResultMissingGroupD_PrintsExperimentDecisionAndLatestCriteria()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateSuccessfulResult());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["status", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Results recorded: 1", text);
+        Assert.Contains("continue_webview2_experiments", text);
+        Assert.Contains("Next action:", text);
+        Assert.Contains("Plan audit: pass=5, pending=6, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Success gate: [pending]", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
+        Assert.Contains("Latest result: success, 9 slot(s)", text);
+        Assert.Contains("Scenario: Groups A/B/C, 9-slot success threshold (groups_a_b_c_9_slot_threshold)", text);
+        Assert.Contains("Criteria: account=True, restart=True, resources=True", text);
+        Assert.Contains("Profile groups: A/B/C", text);
+        Assert.Contains("Observed resources: cpu=45.5%, gpu=60%, memory=12000 MB", text);
+        Assert.Contains("Notes: manual test passed", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_StatusWithFailedNinePlusResult_PrintsFallbackNextAction()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateFailureResult());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["status", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("switch_external_browser", text);
+        Assert.Contains("Next action:", text);
+        Assert.Contains("fallback", text);
+        Assert.Contains("Success gate: [fail]", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_HistoryWithNoResults_PrintsEmptyHistory()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["history", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra Feasibility History", text);
+        Assert.Contains("Results recorded: 0", text);
+        Assert.Contains("No feasibility results recorded.", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_HistoryWithResults_PrintsRecordedDecisionSnapshots()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        var result = CreateSuccessfulResult();
+        FeasibilityResultStorageService.ApplyDecisionSnapshot(
+            result,
+            new FeasibilityDecisionService().Decide([result]));
+        storage.AppendResult(result);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["history", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra Feasibility History", text);
+        Assert.Contains("Results recorded: 1", text);
+        Assert.Contains("success, 9 slot(s), Groups A/B/C, 9-slot success threshold", text);
+        Assert.Contains("Recorded decision: WebView2 추가 실험 (continue_webview2_experiments)", text);
+        Assert.Contains("Next action at record time:", text);
+        Assert.Contains("Notes: manual test passed", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_Scenarios_PrintsPlaybackAndIsolatedGroupScenarioIds()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["scenarios"], output, error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra Feasibility Scenarios", text);
+        Assert.Contains("groups_a_b_c_9_slot_threshold", text);
+        Assert.Contains("groups_a_b_c_d_16_slots", text);
+        Assert.Contains("isolated_group_a", text);
+        Assert.Contains("record --count 4 --outcome <partial|failure> --account --profile-groups A", text);
+        Assert.Contains("record --count 8 --outcome <partial|failure> --account --profile-groups A,B", text);
+        Assert.Contains("record --count 9 --outcome <partial|failure> --account --profile-groups A,B,C", text);
+        Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value>", text);
+        Assert.Contains("record --count 16 --outcome success --account --profile-groups A,B,C,D --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value>", text);
+        Assert.Contains("record --group A --outcome <partial|failure> --account --profile-groups A", text);
+        Assert.DoesNotContain("record --count 8 --outcome <success|partial|failure>", text);
+        Assert.DoesNotContain("record --count 9 --outcome <success|partial|failure>", text);
+        Assert.Contains("Record `success` only when the 9+ playback", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_Preflight_PrintsRuntimeProfilesLayoutsAndEvidenceStatus()
+    {
+        var profileFolder = Path.Combine(_dataFolder, "Profiles");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["preflight", "--data-folder", _dataFolder, "--profile-folder", profileFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.True(exitCode is 0 or 1);
+        Assert.Contains("Stream Orchestra Feasibility Preflight", text);
+        Assert.Contains($"Data folder: {_dataFolder}", text);
+        Assert.Contains($"Profile root: {profileFolder}", text);
+        Assert.Contains("WebView2 runtime: [", text);
+        Assert.Contains("Layouts: [ready]", text);
+        Assert.Contains("- [ready] Group A:", text);
+        Assert.Contains("- [ready] Group B:", text);
+        Assert.Contains("- [ready] Group C:", text);
+        Assert.Contains("- [ready] Group D:", text);
+        Assert.Contains("Evidence recorded: 0", text);
+        Assert.Contains("Plan audit: pass=0, pending=11, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Success gate: [pending]", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_VerifyWithNoResults_ReturnsFailureAndPendingGate()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Stream Orchestra Plan Verification", text);
+        Assert.Contains("Results recorded: 0", text);
+        Assert.Contains("Plan audit: pass=0, pending=11, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Success gate: [pending]", text);
+        Assert.Contains("Verification: not complete", text);
+        Assert.Contains("Outstanding gates:", text);
+        Assert.Contains("- [pending] Manual feasibility result recorded", text);
+        Assert.Contains("- [pending] SOOP 8-slot split-profile playback", text);
+        Assert.Contains("- [pending] Phase 0 WebView2 success gate", text);
+        Assert.Contains("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Contains("record --group A --outcome partial --account --profile-groups A", text);
+        Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
+        Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100>", text);
+        Assert.Contains("record --count 16 --outcome <success|partial|failure> --account --profile-groups A,B,C,D", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_VerifyWithNullProfileGroupEntries_DoesNotCrash()
+    {
+        Directory.CreateDirectory(_dataFolder);
+        File.WriteAllText(
+            Path.Combine(_dataFolder, "feasibility-results.json"),
+            """
+            [
+              {
+                "id": "result_group_a",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 4,
+                "scenarioId": "isolated_group_a",
+                "scenarioName": "Isolated Group A",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": true,
+                "verifiedProfileGroups": [null, "a"],
+                "isRestartSessionMaintained": false,
+                "isResourceUsageAcceptable": false
+              }
+            ]
+            """);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Results recorded: 1", text);
+        Assert.Contains("Plan audit: pass=2, pending=9, fail=0", text);
+        Assert.Contains("Verification: not complete", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_VerifyWithNullOutcome_DoesNotCrash()
+    {
+        Directory.CreateDirectory(_dataFolder);
+        File.WriteAllText(
+            Path.Combine(_dataFolder, "feasibility-results.json"),
+            """
+            [
+              {
+                "id": "result_null_outcome",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": null,
+                "isSameAccountSessionMaintained": true,
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": true,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000
+              }
+            ]
+            """);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Results recorded: 1", text);
+        Assert.Contains("SOOP 9-slot threshold playback", text);
+        Assert.Contains("Verification: not complete", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_VerifyWithNullScenarioId_DoesNotCrash()
+    {
+        Directory.CreateDirectory(_dataFolder);
+        File.WriteAllText(
+            Path.Combine(_dataFolder, "feasibility-results.json"),
+            """
+            [
+              {
+                "id": "result_null_scenario",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 4,
+                "scenarioId": null,
+                "scenarioName": "Missing scenario",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": true,
+                "verifiedProfileGroups": ["A"],
+                "isRestartSessionMaintained": false,
+                "isResourceUsageAcceptable": false
+              }
+            ]
+            """);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Results recorded: 1", text);
+        Assert.Contains("Plan audit: pass=1, pending=10, fail=0", text);
+        Assert.Contains("Verification: not complete", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_VerifyWithSuccessfulResult_ReturnsSuccessAndPassedGate()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        foreach (var result in CreateCompletePlanResults())
+        {
+            storage.AppendResult(result);
+        }
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra Plan Verification", text);
+        Assert.Contains("Results recorded: 5", text);
+        Assert.Contains("continue_webview2_mvp", text);
+        Assert.Contains("Plan audit: pass=11, pending=0, fail=0", text);
+        Assert.Contains("Plan verification: [pass]", text);
+        Assert.Contains("Success gate: [pass]", text);
+        Assert.Contains("Verification: pass", text);
+        Assert.DoesNotContain("Outstanding gates:", text);
+        Assert.DoesNotContain("Suggested record shapes:", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_VerifyWithPartialNinePlusResult_PrintsOutstandingGateDetails()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreatePartialResult());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Plan audit: pass=3, pending=7, fail=1", text);
+        Assert.Contains("Plan verification: [fail]", text);
+        Assert.Contains("Outstanding gates:", text);
+        Assert.Contains("- [fail] App restart keeps login session", text);
+        Assert.Contains("- [pending] Structured resource observations captured", text);
+        Assert.Contains("- [pending] Phase 0 WebView2 success gate", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_AuditWithNoResults_PrintsPendingGate()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["audit", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra Plan Audit", text);
+        Assert.Contains("Results recorded: 0", text);
+        Assert.Contains("Plan audit: pass=0, pending=11, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Success gate: [pending]", text);
+        Assert.Contains("[pending] Manual feasibility result recorded", text);
+        Assert.Contains("[pending] Phase 0 WebView2 success gate", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Contains("record --group A --outcome partial --account --profile-groups A", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_AuditWithSuccessfulResultMissingGroupD_PrintsPendingSuccessGate()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateSuccessfulResult());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["audit", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("continue_webview2_experiments", text);
+        Assert.Contains("Plan audit: pass=5, pending=6, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Success gate: [pending]", text);
+        Assert.Contains("[pass] SOOP 9-slot threshold playback", text);
+        Assert.Contains("[pending] Same SOOP account session persists across A-D", text);
+        Assert.Contains("[pass] App restart keeps login session", text);
+        Assert.Contains("[pass] CPU/GPU/memory acceptable", text);
+        Assert.Contains("[pass] Structured resource observations captured", text);
+        Assert.Contains("[pending] Phase 0 WebView2 success gate", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_AuditWithOutput_WritesAuditTextFile()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateSuccessfulResult());
+        var auditOutputPath = Path.Combine(_dataFolder, "manual-audit.txt");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["audit", "--data-folder", _dataFolder, "--output", auditOutputPath],
+            output,
+            error);
+
+        var fileText = File.ReadAllText(auditOutputPath);
+        Assert.Equal(0, exitCode);
+        Assert.Contains($"Audit saved: {auditOutputPath}", output.ToString());
+        Assert.Contains("Stream Orchestra Plan Audit", fileText);
+        Assert.Contains("Plan audit: pass=5, pending=6, fail=0", fileText);
+        Assert.Contains("Plan verification: [pending]", fileText);
+        Assert.Contains("Success gate: [pending]", fileText);
+        Assert.Contains("[pending] Phase 0 WebView2 success gate", fileText);
+        Assert.Contains("Suggested record shapes:", fileText);
+        Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", fileText);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_AuditWithOutputFileNameOnly_WritesAuditTextFile()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateSuccessfulResult());
+        var auditOutputPath = $"manual-audit-{Guid.NewGuid():N}.txt";
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        try
+        {
+            var exitCode = FeasibilityStatusCommand.Execute(
+                ["audit", "--data-folder", _dataFolder, "--output", auditOutputPath],
+                output,
+                error);
+
+            Assert.Equal(0, exitCode);
+            Assert.True(File.Exists(auditOutputPath));
+            var fileText = File.ReadAllText(auditOutputPath);
+            Assert.Contains("Plan audit: pass=5, pending=6, fail=0", fileText);
+            Assert.Contains("Plan verification: [pending]", fileText);
+            Assert.Contains("Success gate: [pending]", fileText);
+            Assert.Contains("[pending] Phase 0 WebView2 success gate", fileText);
+            Assert.Contains("Suggested record shapes:", fileText);
+            Assert.Equal("", error.ToString());
+        }
+        finally
+        {
+            if (File.Exists(auditOutputPath))
+            {
+                File.Delete(auditOutputPath);
+            }
+        }
+    }
+
+    [Fact]
+    public void Execute_Browsers_PrintsInstalledCustomBrowserCandidate()
+    {
+        var browserFolder = Path.Combine(_dataFolder, "Browser");
+        Directory.CreateDirectory(browserFolder);
+        var executablePath = Path.Combine(browserFolder, "browser.exe");
+        File.WriteAllText(executablePath, "");
+        new ExternalBrowserCandidateStorageService(_dataFolder).SaveCandidates(
+        [
+            new ExternalBrowserCandidate(
+                "portable_browser",
+                "Portable Browser",
+                [executablePath])
+        ]);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["browsers", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra External Browsers", text);
+        Assert.Contains($"Custom candidates file: {Path.Combine(_dataFolder, "external-browsers.json")}", text);
+        Assert.Contains("[installed] Portable Browser (portable_browser)", text);
+        Assert.Contains(executablePath, text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_FallbackWithNoLastSession_ReturnsUnavailable()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["fallback", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(1, exitCode);
+        Assert.Contains("Stream Orchestra External Browser Fallback", text);
+        Assert.Contains("Last session: none", text);
+        Assert.Contains("External browser fallback script: not available (No last saved session is available.)", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_FallbackWithLaunchableLastSession_WritesScript()
+    {
+        var browserFolder = Path.Combine(_dataFolder, "Browser");
+        Directory.CreateDirectory(browserFolder);
+        var executablePath = Path.Combine(browserFolder, "browser.exe");
+        File.WriteAllText(executablePath, "");
+        new ExternalBrowserCandidateStorageService(_dataFolder).SaveCandidates(
+        [
+            new ExternalBrowserCandidate(
+                "aaa_portable_browser",
+                "AAA Portable Browser",
+                [executablePath])
+        ]);
+        new PresetStorageService(_dataFolder).SaveAppState(new AppState
+        {
+            LastSession = new WorkspacePreset
+            {
+                Id = "last_session",
+                Name = "Last Session",
+                LayoutId = LayoutPresetIds.Default,
+                Slots =
+                [
+                    new WorkspaceSlot
+                    {
+                        SlotId = 1,
+                        StreamName = "Streamer A",
+                        StreamUrl = "https://example.com/live/a",
+                        ProfileGroupId = "A"
+                    },
+                    new WorkspaceSlot
+                    {
+                        SlotId = 2,
+                        StreamName = "Blank",
+                        StreamUrl = "about:blank",
+                        ProfileGroupId = "A"
+                    }
+                ]
+            }
+        });
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["fallback", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var scripts = Directory.GetFiles(_dataFolder, "external-browser-fallback-*.ps1");
+        var text = output.ToString();
+        var scriptText = File.ReadAllText(Assert.Single(scripts));
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Last session: Last Session (last_session)", text);
+        Assert.Contains("Planned slots: 1", text);
+        Assert.Contains("[slot 1] Streamer A -> AAA Portable Browser (aaa_portable_browser), muted=False: https://example.com/live/a", text);
+        Assert.Contains("External browser fallback script:", text);
+        Assert.Contains("Review the script before running it.", text);
+        Assert.Contains(executablePath, scriptText);
+        Assert.Contains("https://example.com/live/a", scriptText);
+        Assert.Contains("Start-Process", scriptText);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_UnknownCommand_ReturnsUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["unknown"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("Unknown command", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_Record_AppendsResultAndPrintsDecision()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            [
+                "record",
+                "--count",
+                "9",
+                "--outcome",
+                "success",
+                "--account",
+                "--profile-groups",
+                "A,B,C",
+                "--restart",
+                "--resources",
+                "--cpu-percent",
+                "45.5",
+                "--gpu-percent",
+                "60",
+                "--memory-mb",
+                "12000",
+                "--scenario",
+                "groups_a_b_c_9_slot_threshold",
+                "--scenario-name",
+                "Groups A/B/C, 9-slot success threshold",
+                "--notes",
+                "manual cli record",
+                "--data-folder",
+                _dataFolder
+            ],
+            output,
+            error);
+
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        var result = Assert.Single(storage.LoadResults());
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(9, result.PlaybackCount);
+        Assert.Equal("groups_a_b_c_9_slot_threshold", result.ScenarioId);
+        Assert.Equal("Groups A/B/C, 9-slot success threshold", result.ScenarioName);
+        Assert.Equal("success", result.Outcome);
+        Assert.True(result.IsSameAccountSessionMaintained);
+        Assert.Equal(["A", "B", "C"], result.VerifiedProfileGroups);
+        Assert.True(result.IsRestartSessionMaintained);
+        Assert.True(result.IsResourceUsageAcceptable);
+        Assert.Equal(45.5, result.ObservedCpuPercent);
+        Assert.Equal(60, result.ObservedGpuPercent);
+        Assert.Equal(12000, result.ObservedMemoryMegabytes);
+        Assert.Equal("manual cli record", result.Notes);
+        Assert.Equal("continue_webview2_experiments", result.DecisionCode);
+        Assert.Equal("WebView2 추가 실험", result.DecisionTitle);
+        Assert.Contains("프로필", result.DecisionNextAction);
+        Assert.Contains("Recorded feasibility result.", text);
+        Assert.Contains("Scenario: Groups A/B/C, 9-slot success threshold (groups_a_b_c_9_slot_threshold)", text);
+        Assert.Contains("Profile groups: A/B/C", text);
+        Assert.Contains("Observed resources: cpu=45.5%, gpu=60%, memory=12000 MB", text);
+        Assert.Contains("continue_webview2_experiments", text);
+        Assert.Contains("Plan audit: pass=5, pending=6, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Success gate: [pending]", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_RecordWithGroup_DerivesIsolatedGroupScenarioAndDefaultCount()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            [
+                "record",
+                "--group",
+                "D",
+                "--outcome",
+                "partial",
+                "--account",
+                "--profile-groups",
+                "D",
+                "--data-folder",
+                _dataFolder
+            ],
+            output,
+            error);
+
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        var result = Assert.Single(storage.LoadResults());
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(4, result.PlaybackCount);
+        Assert.Equal("isolated_group_d", result.ScenarioId);
+        Assert.Equal("Isolated Group D test (4 slot(s))", result.ScenarioName);
+        Assert.Equal("partial", result.Outcome);
+        Assert.True(result.IsSameAccountSessionMaintained);
+        Assert.Equal(["D"], result.VerifiedProfileGroups);
+        Assert.Contains("Scenario: Isolated Group D test (4 slot(s)) (isolated_group_d)", text);
+        Assert.Contains("Profile groups: D", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_RecordWithoutScenario_UsesPlaybackCountScenario()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            [
+                "record",
+                "--count",
+                "12",
+                "--outcome",
+                "partial",
+                "--data-folder",
+                _dataFolder
+            ],
+            output,
+            error);
+
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        var result = Assert.Single(storage.LoadResults());
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(12, result.PlaybackCount);
+        Assert.Equal("groups_a_b_c_12_slots", result.ScenarioId);
+        Assert.Equal("Groups A/B/C, 12 slots", result.ScenarioName);
+        Assert.Contains("Scenario: Groups A/B/C, 12 slots (groups_a_b_c_12_slots)", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_Report_WritesDiagnosticReport()
+    {
+        var profileFolder = Path.Combine(_dataFolder, "Profiles");
+        new FeasibilityResultStorageService(_dataFolder).AppendResult(CreateSuccessfulResult());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["report", "--data-folder", _dataFolder, "--profile-folder", profileFolder],
+            output,
+            error);
+
+        var reports = Directory.GetFiles(_dataFolder, "diagnostic-report-*.json");
+        var text = output.ToString();
+
+        Assert.Equal(0, exitCode);
+        Assert.Single(reports);
+        Assert.Contains("Diagnostic report saved.", text);
+        Assert.Contains("External browser fallback script: not available (No last saved session is available.)", text);
+        Assert.Contains("continue_webview2_experiments", text);
+        Assert.Contains("Results recorded: 1", text);
+        Assert.Contains("Plan audit: pass=5, pending=6, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
+        Assert.Contains("Success gate: [pending]", text);
+        Assert.Contains("Suggested record shapes:", text);
+        Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Theory]
+    [InlineData("record --outcome success", "record requires --count.")]
+    [InlineData("record --count 9", "record requires --outcome.")]
+    [InlineData("record --count 8 --outcome success --account --restart --resources", "Success requires at least 9 simultaneous streams.")]
+    [InlineData("record --count 9 --outcome success --restart --resources", "Success requires same-account session persistence.")]
+    [InlineData("record --count 9 --outcome success --account --profile-groups A,B,C --resources", "Success requires restart session persistence.")]
+    [InlineData("record --count 9 --outcome success --account --profile-groups A,B,C --restart", "Success requires acceptable resource usage.")]
+    [InlineData("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources", "Resource OK requires CPU %, GPU %, and memory MB observations.")]
+    [InlineData("record --count 9 --outcome partial --resources", "Resource OK requires CPU %, GPU %, and memory MB observations.")]
+    [InlineData("record --count 9 --outcome success --account --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000", "Success requires same-account profile group evidence for groups A, B, C.")]
+    [InlineData("record --count 9 --outcome partial --profile-groups A,Z", "Profile groups must be A, B, C, and/or D.")]
+    [InlineData("record --count 17 --outcome success", "--count must be between 1 and 16.")]
+    [InlineData("record --count 9 --outcome unknown", "--outcome must be success, partial, or failure.")]
+    [InlineData("record --count 9 --outcome partial --cpu-percent 101", "--cpu-percent must be between 0 and 100.")]
+    [InlineData("record --count 9 --outcome partial --cpu-percent NaN", "CPU % must be a finite number.")]
+    [InlineData("record --count 9 --outcome partial --gpu-percent bad", "--gpu-percent requires a numeric value.")]
+    [InlineData("record --count 9 --outcome partial --memory-mb -1", "--memory-mb must be 0 or higher.")]
+    [InlineData("record --group Z --outcome partial", "--group must be A, B, C, or D.")]
+    [InlineData("record --group A --count 5 --outcome partial", "--group can only be used with --count 1-4.")]
+    [InlineData("record --group A --outcome partial --scenario manual_group_a", "--group cannot be combined with --scenario or --scenario-name.")]
+    [InlineData("record --group A --outcome partial --profile-groups D", "Profile groups must match scenario groups: A.")]
+    [InlineData("record --count 16 --outcome partial --scenario manual_group_a --profile-groups A", "Scenario manual_group_a requires 1-4 slot(s).")]
+    [InlineData("record --count 12 --outcome partial --scenario groups_a_b_8_slots --profile-groups A,B", "Scenario groups_a_b_8_slots requires 8 slot(s).")]
+    [InlineData("record --count 9 --outcome partial --scenario groups_a_b_c_9_slot_threshold --profile-groups D", "Profile groups must match scenario groups: A, B, C.")]
+    [InlineData("record --count 9 --outcome partial --profile-folder C:\\Temp", "Unknown option: --profile-folder")]
+    public void Execute_RecordValidationErrors_ReturnUsageError(string commandLine, string expectedError)
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(commandLine.Split(' '), output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains(expectedError, error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Theory]
+    [InlineData("--scenario")]
+    [InlineData("--scenario-name")]
+    public void Execute_RecordWithBlankScenarioText_ReturnsUsageError(string option)
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["record", "--count", "9", "--outcome", "partial", option, " ", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains($"{option} requires a value.", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ReportValidationErrors_ReturnUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["report", "--data-folder"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--data-folder requires a value.", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_PreflightValidationErrors_ReturnUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["preflight", "--profile-folder"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--profile-folder requires a value.", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_AuditValidationErrors_ReturnUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["audit", "--output"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--output requires a value.", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_Help_PrintsUsage()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["--help"], output, error);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Usage:", output.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_dataFolder))
+        {
+            Directory.Delete(_dataFolder, recursive: true);
+        }
+    }
+
+    private static FeasibilityTestResult CreateSuccessfulResult()
+    {
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+        return new FeasibilityTestResult
+        {
+            Id = "result_1",
+            CapturedAt = capturedAt,
+            PlaybackCount = 9,
+            ScenarioId = "groups_a_b_c_9_slot_threshold",
+            ScenarioName = "Groups A/B/C, 9-slot success threshold",
+            Outcome = "success",
+            Diagnostics = new RuntimeDiagnosticsSnapshot(
+                capturedAt,
+                WebViewProcessCount: 9,
+                WebViewWorkingSetMegabytes: 1024,
+                WebViewPrivateMemoryMegabytes: 800,
+                WebViewCpuPercent: 30),
+            IsSameAccountSessionMaintained = true,
+            VerifiedProfileGroups = ["A", "B", "C"],
+            IsRestartSessionMaintained = true,
+            IsResourceUsageAcceptable = true,
+            ObservedCpuPercent = 45.5,
+            ObservedGpuPercent = 60,
+            ObservedMemoryMegabytes = 12000,
+            Notes = "manual test passed"
+        };
+    }
+
+    private static IReadOnlyList<FeasibilityTestResult> CreateCompletePlanResults()
+    {
+        return
+        [
+            CreatePassingScenarioResult(
+                "result_group_a",
+                4,
+                "group_a_first_slots",
+                "Group A only (4 slot(s))",
+                new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero)),
+            CreatePassingScenarioResult(
+                "result_8",
+                8,
+                "groups_a_b_8_slots",
+                "Groups A/B split, 8 slots",
+                new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero)),
+            CreatePassingScenarioResult(
+                "result_9",
+                9,
+                "groups_a_b_c_9_slot_threshold",
+                "Groups A/B/C, 9-slot success threshold",
+                new DateTimeOffset(2026, 5, 26, 12, 45, 0, TimeSpan.Zero)),
+            CreatePassingScenarioResult(
+                "result_12",
+                12,
+                "groups_a_b_c_12_slots",
+                "Groups A/B/C, 12 slots",
+                new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero)),
+            CreatePassingScenarioResult(
+                "result_16",
+                16,
+                "groups_a_b_c_d_16_slots",
+                "Groups A/B/C/D, 16 slots",
+                new DateTimeOffset(2026, 5, 26, 13, 30, 0, TimeSpan.Zero))
+        ];
+    }
+
+    private static FeasibilityTestResult CreatePassingScenarioResult(
+        string id,
+        int playbackCount,
+        string scenarioId,
+        string scenarioName,
+        DateTimeOffset capturedAt)
+    {
+        return new FeasibilityTestResult
+        {
+            Id = id,
+            CapturedAt = capturedAt,
+            PlaybackCount = playbackCount,
+            ScenarioId = scenarioId,
+            ScenarioName = scenarioName,
+            Outcome = playbackCount >= 9 ? "success" : "partial",
+            Diagnostics = new RuntimeDiagnosticsSnapshot(
+                capturedAt,
+                WebViewProcessCount: playbackCount,
+                WebViewWorkingSetMegabytes: 1024,
+                WebViewPrivateMemoryMegabytes: 800,
+                WebViewCpuPercent: 30),
+            IsSameAccountSessionMaintained = true,
+            VerifiedProfileGroups = FeasibilityProfileGroupEvidenceService.GetRequiredGroupsForPlaybackCount(playbackCount),
+            IsRestartSessionMaintained = true,
+            IsResourceUsageAcceptable = true,
+            ObservedCpuPercent = 45.5,
+            ObservedGpuPercent = 60,
+            ObservedMemoryMegabytes = 12000,
+            Notes = "manual test passed"
+        };
+    }
+
+    private static FeasibilityTestResult CreateFailureResult()
+    {
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+        return new FeasibilityTestResult
+        {
+            Id = "result_failure",
+            CapturedAt = capturedAt,
+            PlaybackCount = 9,
+            ScenarioId = "groups_a_b_c_9_slot_threshold",
+            ScenarioName = "Groups A/B/C, 9-slot success threshold",
+            Outcome = "failure",
+            Diagnostics = new RuntimeDiagnosticsSnapshot(
+                capturedAt,
+                WebViewProcessCount: 9,
+                WebViewWorkingSetMegabytes: 1024,
+                WebViewPrivateMemoryMegabytes: 800,
+                WebViewCpuPercent: 30),
+            IsSameAccountSessionMaintained = false,
+            IsRestartSessionMaintained = false,
+            IsResourceUsageAcceptable = false,
+            ObservedCpuPercent = 45.5,
+            ObservedGpuPercent = 60,
+            ObservedMemoryMegabytes = 12000,
+            Notes = "manual test failed"
+        };
+    }
+
+    private static FeasibilityTestResult CreatePartialResult()
+    {
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+        return new FeasibilityTestResult
+        {
+            Id = "result_partial",
+            CapturedAt = capturedAt,
+            PlaybackCount = 9,
+            ScenarioId = "groups_a_b_c_9_slot_threshold",
+            ScenarioName = "Groups A/B/C, 9-slot success threshold",
+            Outcome = "partial",
+            Diagnostics = new RuntimeDiagnosticsSnapshot(
+                capturedAt,
+                WebViewProcessCount: 9,
+                WebViewWorkingSetMegabytes: 1024,
+                WebViewPrivateMemoryMegabytes: 800,
+                WebViewCpuPercent: 30),
+            IsSameAccountSessionMaintained = true,
+            VerifiedProfileGroups = ["A", "B", "C"],
+            IsRestartSessionMaintained = false,
+            IsResourceUsageAcceptable = true,
+            ObservedCpuPercent = 45.5,
+            ObservedGpuPercent = null,
+            ObservedMemoryMegabytes = 12000,
+            Notes = "manual test needs restart verification"
+        };
+    }
+}
