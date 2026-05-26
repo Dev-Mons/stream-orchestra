@@ -67,7 +67,8 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
             capturedAt: new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero),
             scenarioId: "isolated_group_d",
             groups: ["D"],
-            sameAccount: false);
+            sameAccount: false,
+            outcome: "failure");
         var groupAPass = CreateResult(
             capturedAt: new DateTimeOffset(2026, 5, 26, 13, 30, 0, TimeSpan.Zero),
             scenarioId: "isolated_group_a",
@@ -92,12 +93,34 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
             capturedAt: new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero),
             scenarioId: "isolated_group_d",
             groups: [],
-            sameAccount: false);
+            sameAccount: false,
+            outcome: "failure");
 
         var groups = FeasibilityProfileGroupEvidenceService.GetLatestSameAccountCoveredGroups(
             [olderGroupDPass, newerGroupDFailureWithoutCheckedGroups]);
 
         Assert.Empty(groups);
+    }
+
+    [Fact]
+    public void GetLatestSameAccountCoveredGroups_IgnoresPartialWithoutSameAccountCheck()
+    {
+        var olderGroupDPass = CreateResult(
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero),
+            scenarioId: "isolated_group_d",
+            groups: ["D"],
+            sameAccount: true);
+        var newerGroupDPlaybackOnlyPartial = CreateResult(
+            capturedAt: new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero),
+            scenarioId: "isolated_group_d",
+            groups: ["D"],
+            sameAccount: false,
+            outcome: "partial");
+
+        var groups = FeasibilityProfileGroupEvidenceService.GetLatestSameAccountCoveredGroups(
+            [olderGroupDPass, newerGroupDPlaybackOnlyPartial]);
+
+        Assert.Equal(["D"], groups);
     }
 
     [Fact]

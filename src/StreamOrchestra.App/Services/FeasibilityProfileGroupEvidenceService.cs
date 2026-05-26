@@ -150,6 +150,11 @@ public static class FeasibilityProfileGroupEvidenceService
             return GetScenarioConsistentGroups(result);
         }
 
+        if (!FeasibilityOutcomeService.IsFailure(result))
+        {
+            return [];
+        }
+
         var checkedGroups = GetScenarioConsistentGroups(result);
         return checkedGroups.Count > 0
             ? checkedGroups
