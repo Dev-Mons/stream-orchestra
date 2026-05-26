@@ -157,9 +157,15 @@ public sealed class FeasibilityAuditService
             new FeasibilityAuditItem(
                 "resource_observations",
                 "Structured resource observations captured",
-                latestResourceObservationEvidenceResult is not null ? "pass" : "pending",
+                latestResourceObservationEvidenceResult is null
+                    ? "pending"
+                    : FeasibilityOutcomeService.IsFailure(latestResourceObservationEvidenceResult)
+                        ? "fail"
+                        : "pass",
                 latestResourceObservationEvidenceResult is not null
-                    ? FormatResourceEvidence(latestResourceObservationEvidenceResult)
+                    ? FeasibilityOutcomeService.IsFailure(latestResourceObservationEvidenceResult)
+                        ? $"Latest 9+ slot attempt failed: {FormatResultEvidence(latestResourceObservationEvidenceResult)}"
+                        : FormatResourceEvidence(latestResourceObservationEvidenceResult)
                     : latestPlanNinePlusResult is not null &&
                         !FeasibilityOutcomeService.IsKnown(latestPlanNinePlusResult)
                             ? "Latest 9+ slot result has invalid outcome."
@@ -303,6 +309,15 @@ public sealed class FeasibilityAuditService
                 pendingEvidence);
         }
 
+        if (FeasibilityOutcomeService.IsFailure(latestEvidenceResult))
+        {
+            return new FeasibilityAuditItem(
+                id,
+                title,
+                "fail",
+                $"Latest 9+ slot attempt failed: {FormatResultEvidence(latestEvidenceResult)}");
+        }
+
         return predicate(latestEvidenceResult)
             ? new FeasibilityAuditItem(id, title, "pass", FormatResultEvidence(latestEvidenceResult))
             : new FeasibilityAuditItem(id, title, "fail", failEvidence);
@@ -340,7 +355,8 @@ public sealed class FeasibilityAuditService
     {
         return planNinePlusResults
             .Where(result => FeasibilityOutcomeService.IsKnown(result) &&
-                HasStructuredResourceObservation(result))
+                (HasStructuredResourceObservation(result) ||
+                    FeasibilityOutcomeService.IsFailure(result)))
             .OrderByDescending(result => result.CapturedAt)
             .FirstOrDefault();
     }

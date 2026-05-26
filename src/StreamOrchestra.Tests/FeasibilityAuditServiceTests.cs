@@ -76,7 +76,30 @@ public sealed class FeasibilityAuditServiceTests
         Assert.Equal("fail", Find(auditItems, "same_account_session").Status);
         Assert.Equal("fail", Find(auditItems, "restart_session").Status);
         Assert.Equal("fail", Find(auditItems, "resource_acceptability").Status);
+        Assert.Equal("fail", Find(auditItems, "resource_observations").Status);
         Assert.Equal("fail", Find(auditItems, "phase0_success_gate").Status);
+    }
+
+    [Fact]
+    public void CreateAudit_WithFailedNineSlotResultHavingCriteria_DoesNotPassCriteriaGates()
+    {
+        var result = CreateResult(
+            playbackCount: 9,
+            outcome: "failure",
+            account: true,
+            restart: true,
+            resources: true,
+            scenarioId: "groups_a_b_c_9_slot_threshold");
+        var decision = new FeasibilityDecisionService().Decide([result]);
+
+        var auditItems = new FeasibilityAuditService().CreateAudit([result], decision);
+
+        Assert.Equal("fail", Find(auditItems, "restart_session").Status);
+        Assert.Equal("fail", Find(auditItems, "resource_acceptability").Status);
+        Assert.Equal("fail", Find(auditItems, "resource_observations").Status);
+        Assert.Contains("Latest 9+ slot attempt failed", Find(auditItems, "restart_session").Evidence);
+        Assert.Contains("Latest 9+ slot attempt failed", Find(auditItems, "resource_acceptability").Evidence);
+        Assert.Contains("Latest 9+ slot attempt failed", Find(auditItems, "resource_observations").Evidence);
     }
 
     [Fact]
