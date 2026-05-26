@@ -61,6 +61,16 @@ public sealed class FeasibilityResourceObservationServiceTests
         Assert.False(FeasibilityResourceObservationService.HasCompleteValidObservation(missingResult));
     }
 
+    [Fact]
+    public void Normalize_DropsInvalidObservationsAndPreservesValidValues()
+    {
+        Assert.Equal(45.5, FeasibilityResourceObservationService.NormalizePercent(45.5));
+        Assert.Null(FeasibilityResourceObservationService.NormalizePercent(101));
+        Assert.Null(FeasibilityResourceObservationService.NormalizePercent(double.NaN));
+        Assert.Equal(12000, FeasibilityResourceObservationService.NormalizeMemoryMegabytes(12000));
+        Assert.Null(FeasibilityResourceObservationService.NormalizeMemoryMegabytes(-1));
+    }
+
     public static IEnumerable<object?[]> NonFiniteResourceValues()
     {
         yield return [double.NaN, 60.0, 12000.0, "CPU % must be a finite number."];

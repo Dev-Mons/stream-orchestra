@@ -44,9 +44,30 @@ public static class FeasibilityResourceObservationService
 
     public static bool HasCompleteValidObservation(FeasibilityTestResult result)
     {
-        return IsValidPercent(result.ObservedCpuPercent) &&
-            IsValidPercent(result.ObservedGpuPercent) &&
-            IsValidMemory(result.ObservedMemoryMegabytes);
+        return HasCompleteValidObservation(
+            result.ObservedCpuPercent,
+            result.ObservedGpuPercent,
+            result.ObservedMemoryMegabytes);
+    }
+
+    public static bool HasCompleteValidObservation(
+        double? observedCpuPercent,
+        double? observedGpuPercent,
+        double? observedMemoryMegabytes)
+    {
+        return IsValidPercent(observedCpuPercent) &&
+            IsValidPercent(observedGpuPercent) &&
+            IsValidMemory(observedMemoryMegabytes);
+    }
+
+    public static double? NormalizePercent(double? value)
+    {
+        return IsValidPercent(value) ? value : null;
+    }
+
+    public static double? NormalizeMemoryMegabytes(double? value)
+    {
+        return IsValidMemory(value) ? value : null;
     }
 
     private static bool IsNonFinite(double? value)

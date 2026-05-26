@@ -430,6 +430,9 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
         Assert.Equal(3, results.Count);
         Assert.False(results[0].IsResourceUsageAcceptable);
         Assert.False(results[1].IsResourceUsageAcceptable);
+        Assert.Equal(45.5, results[1].ObservedCpuPercent);
+        Assert.Null(results[1].ObservedGpuPercent);
+        Assert.Equal(12000, results[1].ObservedMemoryMegabytes);
         Assert.True(results[2].IsResourceUsageAcceptable);
     }
 
@@ -592,15 +595,34 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
                 "decisionTitle": "WebView2 추가 실험",
                 "decisionDetail": "stale",
                 "decisionNextAction": "stale"
+              },
+              {
+                "id": "invalid_resource_observation",
+                "capturedAt": "2026-05-26T12:20:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "isResourceUsageAcceptable": false,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 101,
+                "observedMemoryMegabytes": 12000,
+                "decisionCode": "continue_webview2_experiments",
+                "decisionTitle": "WebView2 추가 실험",
+                "decisionDetail": "stale",
+                "decisionNextAction": "stale"
               }
             ]
             """);
 
         var results = service.LoadResults();
 
-        Assert.Equal(["partial", "failure", "maybe", "partial"], results.Select(result => result.Outcome));
+        Assert.Equal(["partial", "failure", "maybe", "partial", "partial"], results.Select(result => result.Outcome));
         Assert.Equal("unspecified", results[3].ScenarioId);
         Assert.Equal("Unspecified", results[3].ScenarioName);
+        Assert.Equal(45.5, results[4].ObservedCpuPercent);
+        Assert.Null(results[4].ObservedGpuPercent);
+        Assert.Equal(12000, results[4].ObservedMemoryMegabytes);
         Assert.All(results, result =>
         {
             Assert.Equal("", result.DecisionCode);

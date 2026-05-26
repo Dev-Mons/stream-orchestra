@@ -112,12 +112,19 @@ public sealed class FeasibilityResultStorageService
             !string.IsNullOrWhiteSpace(normalizedAccountLabel) &&
             normalizedGroups.Count > 0;
         var isFailureOutcome = FeasibilityOutcomeService.IsFailure(canonicalOutcome);
+        var normalizedObservedCpuPercent = FeasibilityResourceObservationService.NormalizePercent(result.ObservedCpuPercent);
+        var normalizedObservedGpuPercent = FeasibilityResourceObservationService.NormalizePercent(result.ObservedGpuPercent);
+        var normalizedObservedMemoryMegabytes = FeasibilityResourceObservationService.NormalizeMemoryMegabytes(
+            result.ObservedMemoryMegabytes);
         var normalizedRestartSession = result.IsRestartSessionMaintained &&
             hasSameAccountEvidence &&
             !isFailureOutcome;
         var normalizedResourceUsageAcceptable = result.IsResourceUsageAcceptable &&
             !isFailureOutcome &&
-            FeasibilityResourceObservationService.HasCompleteValidObservation(result);
+            FeasibilityResourceObservationService.HasCompleteValidObservation(
+                normalizedObservedCpuPercent,
+                normalizedObservedGpuPercent,
+                normalizedObservedMemoryMegabytes);
         var normalizedOutcome = NormalizeOutcome(
             canonicalOutcome,
             result.PlaybackCount,
@@ -133,7 +140,10 @@ public sealed class FeasibilityResultStorageService
             normalizedGroups,
             hasSameAccountEvidence,
             normalizedRestartSession,
-            normalizedResourceUsageAcceptable);
+            normalizedResourceUsageAcceptable,
+            normalizedObservedCpuPercent,
+            normalizedObservedGpuPercent,
+            normalizedObservedMemoryMegabytes);
 
         return new FeasibilityTestResult
         {
@@ -151,9 +161,9 @@ public sealed class FeasibilityResultStorageService
             IsRestartSessionMaintained = normalizedRestartSession,
             IsResourceUsageAcceptable = normalizedResourceUsageAcceptable,
             VerifiedProfileGroups = normalizedGroups,
-            ObservedCpuPercent = result.ObservedCpuPercent,
-            ObservedGpuPercent = result.ObservedGpuPercent,
-            ObservedMemoryMegabytes = result.ObservedMemoryMegabytes,
+            ObservedCpuPercent = normalizedObservedCpuPercent,
+            ObservedGpuPercent = normalizedObservedGpuPercent,
+            ObservedMemoryMegabytes = normalizedObservedMemoryMegabytes,
             DecisionCode = shouldClearDecisionSnapshot ? "" : result.DecisionCode?.Trim() ?? "",
             DecisionTitle = shouldClearDecisionSnapshot ? "" : result.DecisionTitle?.Trim() ?? "",
             DecisionDetail = shouldClearDecisionSnapshot ? "" : result.DecisionDetail?.Trim() ?? "",
@@ -212,7 +222,10 @@ public sealed class FeasibilityResultStorageService
         IReadOnlyList<string> normalizedGroups,
         bool hasSameAccountEvidence,
         bool normalizedRestartSession,
-        bool normalizedResourceUsageAcceptable)
+        bool normalizedResourceUsageAcceptable,
+        double? normalizedObservedCpuPercent,
+        double? normalizedObservedGpuPercent,
+        double? normalizedObservedMemoryMegabytes)
     {
         if (!FeasibilityOutcomeService.IsKnown(canonicalOutcome))
         {
@@ -236,12 +249,29 @@ public sealed class FeasibilityResultStorageService
             return true;
         }
 
+        if (!NullableDoubleEquals(result.ObservedCpuPercent, normalizedObservedCpuPercent) ||
+            !NullableDoubleEquals(result.ObservedGpuPercent, normalizedObservedGpuPercent) ||
+            !NullableDoubleEquals(result.ObservedMemoryMegabytes, normalizedObservedMemoryMegabytes))
+        {
+            return true;
+        }
+
         var rawHasSameAccountEvidence = result.IsSameAccountSessionMaintained &&
             !string.IsNullOrWhiteSpace(result.AccountLabel) &&
             rawGroups.Count > 0;
         return rawHasSameAccountEvidence != hasSameAccountEvidence ||
             result.IsRestartSessionMaintained != normalizedRestartSession ||
             result.IsResourceUsageAcceptable != normalizedResourceUsageAcceptable;
+    }
+
+    private static bool NullableDoubleEquals(double? left, double? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        return left.Value.Equals(right.Value);
     }
 
     private static RuntimeDiagnosticsSnapshot NormalizeDiagnostics(
