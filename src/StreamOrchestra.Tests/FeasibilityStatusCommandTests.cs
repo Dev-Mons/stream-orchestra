@@ -221,7 +221,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pending] Manual feasibility result recorded", text);
         Assert.Contains("- [pending] SOOP 8-slot split-profile playback", text);
         Assert.Contains("- [pending] Phase 0 WebView2 success gate", text);
-        Assert.Contains("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account", text);
+        Assert.Contains("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account-label", text);
         Assert.Contains("Suggested record shapes:", text);
         Assert.Contains("record --group A --outcome partial --account --profile-groups A", text);
         Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);

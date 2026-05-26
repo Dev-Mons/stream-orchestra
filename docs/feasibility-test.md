@@ -70,7 +70,7 @@ Save the same audit text when you need a file artifact:
 dotnet run --project src\StreamOrchestra.Tools -- audit --output .\plan-audit.txt
 ```
 
-Verify whether the Phase 0 plan verification is complete. This exits `0` only after the recorded evidence covers distinct 4-slot Group A single-profile, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback checks, plus A-D account, restart, resource, CPU, GPU, and memory evidence; when it fails, it prints each outstanding pending/fail gate and suggested `record` shapes for the missing evidence:
+Verify whether the Phase 0 plan verification is complete. This exits `0` only after the recorded evidence covers distinct 4-slot Group A single-profile, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback checks, plus A-D account-label, restart, resource, CPU, GPU, and memory evidence; when it fails, it prints each outstanding pending/fail gate and suggested `record` shapes for the missing evidence:
 
 ```powershell
 dotnet run --project src\StreamOrchestra.Tools -- verify

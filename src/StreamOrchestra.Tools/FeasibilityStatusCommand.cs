@@ -389,7 +389,7 @@ public static class FeasibilityStatusCommand
 
         output.WriteLine("Verification: not complete");
         WriteOutstandingGates(auditItems, output);
-        output.WriteLine("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account, restart, resource, CPU, GPU, and memory evidence.");
+        output.WriteLine("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account-label, restart, resource, CPU, GPU, and memory evidence.");
         WriteSuggestedRecordShapes(auditItems, output);
         return 1;
     }
