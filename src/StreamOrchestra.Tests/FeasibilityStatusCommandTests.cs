@@ -438,6 +438,10 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Input folder: {handoffFolder}", text);
         Assert.Contains("Plan verification: pending", text);
         Assert.Contains("- [pass] phase0-results.json:", text);
+        Assert.Contains("- [pass] phase0-results.json result count: 0", text);
+        Assert.Contains("- [pass] diagnostic report result count: 0", text);
+        Assert.Contains("- [pass] diagnostic report decision: 검증 대기 (pending)", text);
+        Assert.Contains("- [pass] diagnostic report plan gates: pass=0, pending=11, fail=0, outstanding=11, status=pending", text);
         Assert.Contains("Validation: pass", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
@@ -468,6 +472,38 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal(1, exitCode);
         Assert.Contains("phase0-results.json: size mismatch", text);
         Assert.Contains("phase0-results.json: sha256 mismatch", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsManifestSummaryMismatch()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-summary-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var manifestText = File.ReadAllText(manifestPath).Replace("\"resultCount\": 0", "\"resultCount\": 1");
+        File.WriteAllText(manifestPath, manifestText);
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-results.json result count mismatch, expected 1, actual 0", text);
+        Assert.Contains("diagnostic report result count mismatch, expected 1, actual 0", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());

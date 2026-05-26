@@ -72,7 +72,7 @@ Validate the saved bundle before sharing or reviewing it:
 dotnet run --project src\StreamOrchestra.Tools -- validate-handoff --input-folder .\phase0-handoff
 ```
 
-`validate-handoff` exits `0` only when every artifact listed in the manifest exists and still matches its recorded size and SHA-256 hash.
+`validate-handoff` exits `0` only when every artifact listed in the manifest exists, still matches its recorded size and SHA-256 hash, and the results snapshot plus diagnostic report agree with the manifest's result count, decision, and plan-gate summary.
 
 Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
 
@@ -159,7 +159,7 @@ The `checklist` command prints the ordered manual SOOP verification flow from `d
 
 The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, can save the same text with `--output <path>`, and exits non-zero until every Phase 0 plan gate passes.
 
-The `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands. The manifest also records the current decision, plan-gate pass/pending/fail summary, and artifact hashes; `validate-handoff` checks those hashes later.
+The `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one output folder so a manual SOOP run can be reviewed without reconstructing console output from separate commands. The manifest also records the current decision, plan-gate pass/pending/fail summary, and artifact hashes; `validate-handoff` checks those hashes plus result/report/manifest consistency later.
 
 Export a diagnostic report from the CLI:
 

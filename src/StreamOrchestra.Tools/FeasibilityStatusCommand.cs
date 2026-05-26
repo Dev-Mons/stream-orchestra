@@ -455,9 +455,118 @@ public static class FeasibilityStatusCommand
             }
         }
 
+        var resultsPath = Path.Combine(inputFolder, "phase0-results.json");
+        if (File.Exists(resultsPath))
+        {
+            try
+            {
+                var results = JsonSerializer.Deserialize<FeasibilityTestResult[]>(
+                    File.ReadAllText(resultsPath),
+                    HandoffJsonOptions) ?? [];
+                if (results.Length == manifest.ResultCount)
+                {
+                    validationLines.Add($"- [pass] phase0-results.json result count: {results.Length}");
+                }
+                else
+                {
+                    isValid = false;
+                    validationLines.Add(
+                        $"- [fail] phase0-results.json result count mismatch, expected {manifest.ResultCount}, actual {results.Length}.");
+                }
+            }
+            catch (JsonException ex)
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] phase0-results.json JSON is invalid: {ex.Message}");
+            }
+        }
+
+        var diagnosticReportPath = Path.Combine(inputFolder, "phase0-diagnostic-report.json");
+        if (File.Exists(diagnosticReportPath))
+        {
+            try
+            {
+                var report = JsonSerializer.Deserialize<DiagnosticReport>(
+                    File.ReadAllText(diagnosticReportPath),
+                    HandoffJsonOptions);
+                if (report is null)
+                {
+                    isValid = false;
+                    validationLines.Add("- [fail] phase0-diagnostic-report.json is empty.");
+                }
+                else
+                {
+                    isValid &= ValidateHandoffDiagnosticReport(report, manifest, validationLines);
+                }
+            }
+            catch (JsonException ex)
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] phase0-diagnostic-report.json JSON is invalid: {ex.Message}");
+            }
+        }
+
         validationLines.Add(isValid ? "Validation: pass" : "Validation: fail");
         WriteLines(validationLines, output);
         return isValid ? 0 : 1;
+    }
+
+    private static bool ValidateHandoffDiagnosticReport(
+        DiagnosticReport report,
+        HandoffManifest manifest,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        if (report.FeasibilityResultCount == manifest.ResultCount)
+        {
+            validationLines.Add($"- [pass] diagnostic report result count: {report.FeasibilityResultCount}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report result count mismatch, expected {manifest.ResultCount}, actual {report.FeasibilityResultCount}.");
+        }
+
+        var decision = report.FeasibilityDecision;
+        if (decision is null)
+        {
+            isValid = false;
+            validationLines.Add("- [fail] diagnostic report decision is missing.");
+        }
+        else if (string.Equals(decision.Code, manifest.DecisionCode, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(decision.Title, manifest.DecisionTitle, StringComparison.Ordinal))
+        {
+            validationLines.Add(
+                $"- [pass] diagnostic report decision: {decision.Title} ({decision.Code})");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report decision mismatch, expected {manifest.DecisionTitle} ({manifest.DecisionCode}), actual {decision.Title} ({decision.Code}).");
+        }
+
+        var auditService = new FeasibilityAuditService();
+        var auditItems = report.FeasibilityAudit ?? Array.Empty<FeasibilityAuditItem>();
+        var auditSummary = auditService.CreateSummary(auditItems);
+        var planVerificationStatus = auditService.CreatePlanVerificationStatus(auditItems);
+        var outstandingGateCount = auditItems.Count(
+            item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase));
+        if (auditSummary.PassCount == manifest.PassingGateCount &&
+            auditSummary.PendingCount == manifest.PendingGateCount &&
+            auditSummary.FailCount == manifest.FailingGateCount &&
+            outstandingGateCount == manifest.OutstandingGateCount &&
+            planVerificationStatus.Equals(manifest.PlanVerificationStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            validationLines.Add(
+                $"- [pass] diagnostic report plan gates: pass={auditSummary.PassCount}, pending={auditSummary.PendingCount}, fail={auditSummary.FailCount}, outstanding={outstandingGateCount}, status={planVerificationStatus}");
+            return isValid;
+        }
+
+        validationLines.Add(
+            $"- [fail] diagnostic report plan gates mismatch, expected pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}, outstanding={manifest.OutstandingGateCount}, status={manifest.PlanVerificationStatus}; actual pass={auditSummary.PassCount}, pending={auditSummary.PendingCount}, fail={auditSummary.FailCount}, outstanding={outstandingGateCount}, status={planVerificationStatus}.");
+        return false;
     }
 
     private static int PrintChecklist(ParseResult parseResult, TextWriter output)
