@@ -90,7 +90,7 @@ public static class FeasibilityStatusCommand
         var storage = new FeasibilityResultStorageService(dataFolder);
         var results = storage.LoadResults();
         var decision = new FeasibilityDecisionService().Decide(results);
-        var latest = results.OrderByDescending(result => result.CapturedAt).FirstOrDefault();
+        var latest = FeasibilityResultOrderingService.LatestOrDefault(results);
         var auditService = new FeasibilityAuditService();
         var auditItems = auditService.CreateAudit(results, decision);
 
@@ -143,19 +143,17 @@ public static class FeasibilityStatusCommand
     private static IReadOnlyList<string> CreateHistoryLines(string? dataFolder)
     {
         var storage = new FeasibilityResultStorageService(dataFolder);
-        var results = storage.LoadResults()
-            .OrderByDescending(result => result.CapturedAt)
-            .ToArray();
+        var results = FeasibilityResultOrderingService.OrderLatestFirst(storage.LoadResults());
 
         var lines = new List<string>
         {
             "Stream Orchestra Feasibility History",
             $"Data folder: {storage.DataFolder}",
             $"Results file: {storage.ResultsFilePath}",
-            $"Results recorded: {results.Length}"
+            $"Results recorded: {results.Count}"
         };
 
-        if (results.Length == 0)
+        if (results.Count == 0)
         {
             lines.Add("No feasibility results recorded.");
             return lines;
@@ -438,9 +436,7 @@ public static class FeasibilityStatusCommand
             WorkspaceDiagnostics = new WorkspaceDiagnostics(0, 0, false, null, null, null, 0, 0),
             ExternalBrowsers = [],
             FeasibilityResultCount = dataContext.Results.Count,
-            LatestFeasibilityResult = dataContext.Results
-                .OrderByDescending(result => result.CapturedAt)
-                .FirstOrDefault(),
+            LatestFeasibilityResult = FeasibilityResultOrderingService.LatestOrDefault(dataContext.Results),
             FeasibilitySameAccountLabels =
                 FeasibilityProfileGroupEvidenceService.GetLatestSameAccountAccountLabels(dataContext.Results),
             HasConflictingFeasibilityAccountLabels =
@@ -1692,18 +1688,16 @@ public static class FeasibilityStatusCommand
         HandoffManifest manifest,
         IReadOnlyList<FeasibilityTestResult> results)
     {
-        var orderedResults = results
-            .OrderByDescending(result => result.CapturedAt)
-            .ToArray();
+        var orderedResults = FeasibilityResultOrderingService.OrderLatestFirst(results);
         var lines = new List<string>
         {
             "Stream Orchestra Feasibility History",
             $"Data folder: {manifest.DataFolder}",
             $"Results file: {manifest.ResultsFilePath}",
-            $"Results recorded: {orderedResults.Length}"
+            $"Results recorded: {orderedResults.Count}"
         };
 
-        if (orderedResults.Length == 0)
+        if (orderedResults.Count == 0)
         {
             lines.Add("No feasibility results recorded.");
             return lines;
@@ -2636,9 +2630,7 @@ public static class FeasibilityStatusCommand
                 $"- [fail] diagnostic report audit items mismatch at item {mismatchIndex + 1}, expected {FormatAuditItem(summary.AuditItems, mismatchIndex)}, actual {FormatAuditItem(actualAuditItems, mismatchIndex)}.");
         }
 
-        var expectedLatestResult = summary.Results
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        var expectedLatestResult = FeasibilityResultOrderingService.LatestOrDefault(summary.Results);
         if (AreEquivalentResults(report.LatestFeasibilityResult, expectedLatestResult))
         {
             validationLines.Add(

@@ -129,10 +129,9 @@ public static class FeasibilityProfileGroupEvidenceService
         IReadOnlyList<FeasibilityTestResult> results)
     {
         var latestResultByGroup = new Dictionary<string, FeasibilityTestResult>(StringComparer.OrdinalIgnoreCase);
-        foreach (var result in results
-                     .Where(result => FeasibilityScenarioService.IsPlaybackCountConsistent(result) &&
-                         FeasibilityOutcomeService.IsKnown(result))
-                     .OrderBy(result => result.CapturedAt))
+        foreach (var result in FeasibilityResultOrderingService.OrderOldestFirst(
+                     results.Where(result => FeasibilityScenarioService.IsPlaybackCountConsistent(result) &&
+                         FeasibilityOutcomeService.IsKnown(result))))
         {
             foreach (var group in GetSameAccountEvidenceGroups(result))
             {

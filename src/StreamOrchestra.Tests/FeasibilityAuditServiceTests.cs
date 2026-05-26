@@ -796,6 +796,34 @@ public sealed class FeasibilityAuditServiceTests
     }
 
     [Fact]
+    public void CreateAudit_UsesLaterRecordedNinePlusResultWhenTimestampsMatch()
+    {
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+        var success = CreateResult(
+            playbackCount: 9,
+            outcome: "success",
+            account: true,
+            restart: true,
+            resources: true,
+            capturedAt: capturedAt,
+            scenarioId: "groups_a_b_c_9_slot_threshold");
+        var failure = CreateResult(
+            playbackCount: 9,
+            outcome: "failure",
+            account: false,
+            restart: false,
+            resources: false,
+            capturedAt: capturedAt,
+            scenarioId: "groups_a_b_c_9_slot_threshold");
+        var decision = new FeasibilityDecisionService().Decide([success, failure]);
+
+        var auditItems = new FeasibilityAuditService().CreateAudit([success, failure], decision);
+
+        Assert.Equal("fail", Find(auditItems, "nine_plus_playback").Status);
+        Assert.Equal("fail", Find(auditItems, "phase0_success_gate").Status);
+    }
+
+    [Fact]
     public void CreateAudit_WithCompletePlanCoverage_MarksAllPlanGatesPassed()
     {
         var groupA = CreateResult(

@@ -42,9 +42,7 @@ public sealed class DiagnosticReportService
         IReadOnlyList<LayoutPreset>? layouts = null)
     {
         var feasibilityResults = feasibilityResultStorageService.LoadResults();
-        var latestResult = feasibilityResults
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        var latestResult = FeasibilityResultOrderingService.LatestOrDefault(feasibilityResults);
         var appState = presetStorageService.LoadAppState();
         var workspaces = presetStorageService.LoadWorkspaces();
         var favorites = favoriteStorageService.LoadFavorites();

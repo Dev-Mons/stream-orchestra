@@ -29,10 +29,8 @@ public sealed class FeasibilityDecisionService
                 "시나리오와 슬롯 수가 일치하도록 SOOP 테스트 결과를 다시 기록하세요.");
         }
 
-        var latestNinePlusResult = consistentResults
-            .Where(result => result.PlaybackCount >= 9)
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        var latestNinePlusResult = FeasibilityResultOrderingService.LatestOrDefault(
+            consistentResults.Where(result => result.PlaybackCount >= 9));
 
         if (latestNinePlusResult is not null)
         {
@@ -86,10 +84,13 @@ public sealed class FeasibilityDecisionService
         }
 
         var bestPlayableResult = consistentResults
-            .Where(result => FeasibilityOutcomeService.IsSuccess(result) ||
-                FeasibilityOutcomeService.IsPartial(result))
-            .OrderByDescending(result => result.PlaybackCount)
-            .ThenByDescending(result => result.CapturedAt)
+            .Select((result, index) => new { Result = result, Index = index })
+            .Where(item => FeasibilityOutcomeService.IsSuccess(item.Result) ||
+                FeasibilityOutcomeService.IsPartial(item.Result))
+            .OrderByDescending(item => item.Result.PlaybackCount)
+            .ThenByDescending(item => item.Result.CapturedAt)
+            .ThenByDescending(item => item.Index)
+            .Select(item => item.Result)
             .FirstOrDefault();
 
         if (bestPlayableResult is not null)

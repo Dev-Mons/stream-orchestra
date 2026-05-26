@@ -75,15 +75,11 @@ public sealed class FeasibilityAuditService
             .Where(result => result.PlaybackCount >= 9 &&
                 FeasibilityScenarioService.IsPlaybackCountConsistent(result))
             .ToArray();
-        var latestNinePlusResult = ninePlusResults
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        var latestNinePlusResult = FeasibilityResultOrderingService.LatestOrDefault(ninePlusResults);
         var planNinePlusResults = ninePlusResults
             .Where(FeasibilityScenarioService.IsPlanNinePlusPlaybackScenario)
             .ToArray();
-        var latestPlanNinePlusResult = planNinePlusResults
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        var latestPlanNinePlusResult = FeasibilityResultOrderingService.LatestOrDefault(planNinePlusResults);
         var latestRestartEvidenceResult = GetLatestNinePlusBooleanEvidenceResult(
             planNinePlusResults,
             HasRestartSessionEvidence);
@@ -186,11 +182,10 @@ public sealed class FeasibilityAuditService
 
     private static FeasibilityAuditItem CreateGroupAPlaybackAuditItem(IReadOnlyList<FeasibilityTestResult> results)
     {
-        var latestGroupAResult = results
-            .Where(result => result.PlaybackCount == GroupAPlanPlaybackCount)
-            .Where(IsGroupAPlaybackResult)
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        var latestGroupAResult = FeasibilityResultOrderingService.LatestOrDefault(
+            results
+                .Where(result => result.PlaybackCount == GroupAPlanPlaybackCount)
+                .Where(IsGroupAPlaybackResult));
         var consistencyError = latestGroupAResult is null
             ? null
             : FeasibilityScenarioService.ValidatePlaybackCountConsistency(
@@ -327,11 +322,10 @@ public sealed class FeasibilityAuditService
         IReadOnlyList<FeasibilityTestResult> planNinePlusResults,
         Func<FeasibilityTestResult, bool> predicate)
     {
-        return planNinePlusResults
-            .Where(FeasibilityOutcomeService.IsKnown)
-            .Where(result => predicate(result) || FeasibilityOutcomeService.IsFailure(result))
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        return FeasibilityResultOrderingService.LatestOrDefault(
+            planNinePlusResults
+                .Where(FeasibilityOutcomeService.IsKnown)
+                .Where(result => predicate(result) || FeasibilityOutcomeService.IsFailure(result)));
     }
 
     private static bool HasRestartSessionEvidence(FeasibilityTestResult result)
@@ -353,12 +347,11 @@ public sealed class FeasibilityAuditService
     private static FeasibilityTestResult? GetLatestNinePlusResourceObservationEvidenceResult(
         IReadOnlyList<FeasibilityTestResult> planNinePlusResults)
     {
-        return planNinePlusResults
-            .Where(result => FeasibilityOutcomeService.IsKnown(result) &&
-                (HasStructuredResourceObservation(result) ||
-                    FeasibilityOutcomeService.IsFailure(result)))
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        return FeasibilityResultOrderingService.LatestOrDefault(
+            planNinePlusResults
+                .Where(result => FeasibilityOutcomeService.IsKnown(result) &&
+                    (HasStructuredResourceObservation(result) ||
+                        FeasibilityOutcomeService.IsFailure(result))));
     }
 
     private static FeasibilityAuditItem CreateExactPlaybackAuditItem(
@@ -369,10 +362,8 @@ public sealed class FeasibilityAuditService
         string expectedScenarioId,
         string pendingEvidence)
     {
-        var latestRelevantResult = results
-            .Where(result => result.PlaybackCount == playbackCount)
-            .OrderByDescending(result => result.CapturedAt)
-            .FirstOrDefault();
+        var latestRelevantResult = FeasibilityResultOrderingService.LatestOrDefault(
+            results.Where(result => result.PlaybackCount == playbackCount));
         var consistencyError = latestRelevantResult is null
             ? null
             : ValidateExactPlaybackGateScenario(latestRelevantResult, expectedScenarioId);

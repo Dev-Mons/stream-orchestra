@@ -351,6 +351,31 @@ public sealed class FeasibilityDecisionServiceTests
     }
 
     [Fact]
+    public void Decide_UsesLaterRecordedNinePlusResultWhenTimestampsMatch()
+    {
+        var service = new FeasibilityDecisionService();
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+        var success = CreateResult(
+            playbackCount: 9,
+            outcome: "success",
+            sameAccountSession: true,
+            restartSession: true,
+            resources: true,
+            capturedAt: capturedAt);
+        var failure = CreateResult(
+            playbackCount: 9,
+            outcome: "failure",
+            sameAccountSession: false,
+            restartSession: false,
+            resources: false,
+            capturedAt: capturedAt);
+
+        var decision = service.Decide([success, failure]);
+
+        Assert.Equal("switch_external_browser", decision.Code);
+    }
+
+    [Fact]
     public void Decide_ContinuesWebView2MvpWhenNewerNinePlusSuccessSupersedesOlderFailure()
     {
         var service = new FeasibilityDecisionService();
