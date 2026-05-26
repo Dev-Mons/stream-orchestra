@@ -559,6 +559,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-verification.txt content matches results snapshot.", text);
         Assert.Contains("- [pass] phase0-history.txt content matches results snapshot.", text);
         Assert.Contains("- [pass] diagnostic report result count: 0", text);
+        Assert.Contains("- [pass] phase0-diagnostic-report.json generatedAt:", text);
         Assert.Contains("- [pass] diagnostic report data folder:", text);
         Assert.Contains("- [pass] diagnostic report data files standard entries.", text);
         Assert.Contains("- [pass] diagnostic report results file:", text);
@@ -573,6 +574,44 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report account label conflict: False", text);
         Assert.Contains("- [pass] diagnostic report suggested records:", text);
         Assert.Contains("Validation: pass", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsDiagnosticGeneratedAtMismatch()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-diagnostic-generated-at-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var diagnosticReportPath = Path.Combine(handoffFolder, "phase0-diagnostic-report.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var diagnosticReport = JsonNode.Parse(File.ReadAllText(diagnosticReportPath))!.AsObject();
+        diagnosticReport["generatedAt"] = JsonValue.Create("2000-01-01T00:00:00+00:00");
+        File.WriteAllText(
+            diagnosticReportPath,
+            diagnosticReport.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-diagnostic-report.json");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-diagnostic-report.json generatedAt outside handoff window", text);
+        Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
     }

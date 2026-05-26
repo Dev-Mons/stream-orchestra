@@ -740,8 +740,9 @@ public static class FeasibilityStatusCommand
         {
             try
             {
+                var diagnosticReportText = File.ReadAllText(diagnosticReportPath);
                 var report = JsonSerializer.Deserialize<DiagnosticReport>(
-                    File.ReadAllText(diagnosticReportPath),
+                    diagnosticReportText,
                     HandoffJsonOptions);
                 if (report is null)
                 {
@@ -751,6 +752,7 @@ public static class FeasibilityStatusCommand
                 else
                 {
                     isValid &= ValidateHandoffDiagnosticReport(
+                        diagnosticReportText,
                         report,
                         manifest,
                         resultsSummary,
@@ -1814,12 +1816,14 @@ public static class FeasibilityStatusCommand
     }
 
     private static bool ValidateHandoffDiagnosticReport(
+        string reportText,
         DiagnosticReport report,
         HandoffManifest manifest,
         HandoffResultsSummary? summary,
         List<string> validationLines)
     {
         var isValid = true;
+        isValid &= ValidateHandoffDiagnosticReportGeneratedAt(reportText, report, manifest, validationLines);
         isValid &= ValidateHandoffDiagnosticReportContext(report, manifest, validationLines);
 
         if (report.FeasibilityResultCount == manifest.ResultCount)
@@ -1880,6 +1884,72 @@ public static class FeasibilityStatusCommand
         }
 
         return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticReportGeneratedAt(
+        string reportText,
+        DiagnosticReport report,
+        HandoffManifest manifest,
+        List<string> validationLines)
+    {
+        using var document = JsonDocument.Parse(reportText);
+        if (!document.RootElement.TryGetProperty("generatedAt", out var generatedAtElement) ||
+            generatedAtElement.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            validationLines.Add($"- [fail] {HandoffDiagnosticReportFileName} generatedAt is missing.");
+            return false;
+        }
+
+        if (generatedAtElement.ValueKind != JsonValueKind.String ||
+            !generatedAtElement.TryGetDateTimeOffset(out var generatedAt))
+        {
+            validationLines.Add($"- [fail] {HandoffDiagnosticReportFileName} generatedAt is invalid.");
+            return false;
+        }
+
+        if (report.GeneratedAt != generatedAt)
+        {
+            validationLines.Add(
+                $"- [fail] {HandoffDiagnosticReportFileName} generatedAt parse mismatch, expected {generatedAt:O}, actual {report.GeneratedAt:O}.");
+            return false;
+        }
+
+        if (generatedAt == default)
+        {
+            validationLines.Add($"- [fail] {HandoffDiagnosticReportFileName} generatedAt is missing or default.");
+            return false;
+        }
+
+        if (manifest.GeneratedAt == default)
+        {
+            validationLines.Add(
+                $"- [fail] {HandoffDiagnosticReportFileName} generatedAt cannot be checked because manifest generatedAt is missing or default.");
+            return false;
+        }
+
+        DateTimeOffset earliestExpected;
+        DateTimeOffset latestExpected;
+        try
+        {
+            earliestExpected = manifest.GeneratedAt.AddMinutes(-1);
+            latestExpected = manifest.GeneratedAt.AddMinutes(5);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            validationLines.Add(
+                $"- [fail] {HandoffDiagnosticReportFileName} generatedAt cannot be checked because manifest generatedAt is out of range: {manifest.GeneratedAt:O}.");
+            return false;
+        }
+
+        if (generatedAt < earliestExpected || generatedAt > latestExpected)
+        {
+            validationLines.Add(
+                $"- [fail] {HandoffDiagnosticReportFileName} generatedAt outside handoff window, expected between {earliestExpected:O} and {latestExpected:O}, actual {generatedAt:O}.");
+            return false;
+        }
+
+        validationLines.Add($"- [pass] {HandoffDiagnosticReportFileName} generatedAt: {generatedAt:O}");
+        return true;
     }
 
     private static bool ValidateHandoffDiagnosticReportContext(
