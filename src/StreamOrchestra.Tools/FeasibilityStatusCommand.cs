@@ -98,50 +98,59 @@ public static class FeasibilityStatusCommand
 
     private static int PrintHistory(string? dataFolder, TextWriter output)
     {
+        WriteLines(CreateHistoryLines(dataFolder), output);
+        return 0;
+    }
+
+    private static IReadOnlyList<string> CreateHistoryLines(string? dataFolder)
+    {
         var storage = new FeasibilityResultStorageService(dataFolder);
         var results = storage.LoadResults()
             .OrderByDescending(result => result.CapturedAt)
             .ToArray();
 
-        output.WriteLine("Stream Orchestra Feasibility History");
-        output.WriteLine($"Data folder: {storage.DataFolder}");
-        output.WriteLine($"Results file: {storage.ResultsFilePath}");
-        output.WriteLine($"Results recorded: {results.Length}");
+        var lines = new List<string>
+        {
+            "Stream Orchestra Feasibility History",
+            $"Data folder: {storage.DataFolder}",
+            $"Results file: {storage.ResultsFilePath}",
+            $"Results recorded: {results.Length}"
+        };
 
         if (results.Length == 0)
         {
-            output.WriteLine("No feasibility results recorded.");
-            return 0;
+            lines.Add("No feasibility results recorded.");
+            return lines;
         }
 
         foreach (var result in results)
         {
-            output.WriteLine(
+            lines.Add(
                 $"[{result.CapturedAt:yyyy-MM-dd HH:mm:ss}] {result.Outcome}, {result.PlaybackCount} slot(s), {result.ScenarioName} ({result.ScenarioId})");
-            output.WriteLine($"  Id: {result.Id}");
-            output.WriteLine(
+            lines.Add($"  Id: {result.Id}");
+            lines.Add(
                 $"  Criteria: account={result.IsSameAccountSessionMaintained}, restart={result.IsRestartSessionMaintained}, resources={result.IsResourceUsageAcceptable}");
-            output.WriteLine($"  Account label: {FormatAccountLabel(result.AccountLabel)}");
-            output.WriteLine($"  Profile groups: {FeasibilityProfileGroupEvidenceService.FormatGroups(result.VerifiedProfileGroups)}");
-            output.WriteLine(
+            lines.Add($"  Account label: {FormatAccountLabel(result.AccountLabel)}");
+            lines.Add($"  Profile groups: {FeasibilityProfileGroupEvidenceService.FormatGroups(result.VerifiedProfileGroups)}");
+            lines.Add(
                 $"  Observed resources: cpu={FormatNullable(result.ObservedCpuPercent)}%, gpu={FormatNullable(result.ObservedGpuPercent)}%, memory={FormatNullable(result.ObservedMemoryMegabytes)} MB");
-            output.WriteLine(
+            lines.Add(
                 string.IsNullOrWhiteSpace(result.DecisionCode)
                     ? "  Recorded decision: n/a"
                     : $"  Recorded decision: {result.DecisionTitle} ({result.DecisionCode})");
 
             if (!string.IsNullOrWhiteSpace(result.DecisionNextAction))
             {
-                output.WriteLine($"  Next action at record time: {result.DecisionNextAction}");
+                lines.Add($"  Next action at record time: {result.DecisionNextAction}");
             }
 
             if (!string.IsNullOrWhiteSpace(result.Notes))
             {
-                output.WriteLine($"  Notes: {result.Notes}");
+                lines.Add($"  Notes: {result.Notes}");
             }
         }
 
-        return 0;
+        return lines;
     }
 
     private static int PrintAudit(ParseResult parseResult, TextWriter output)
@@ -260,12 +269,14 @@ public static class FeasibilityStatusCommand
         var checklistLines = CreateChecklistLines(parseResult.DataFolder);
         var auditLines = CreateAuditLines(parseResult.DataFolder);
         var (verificationLines, isVerified) = CreateVerificationLines(parseResult.DataFolder);
+        var historyLines = CreateHistoryLines(parseResult.DataFolder);
         var artifacts = new[]
         {
             SaveHandoffArtifact(outputFolder, "phase0-preflight.txt", preflightLines),
             SaveHandoffArtifact(outputFolder, "phase0-checklist.txt", checklistLines),
             SaveHandoffArtifact(outputFolder, "phase0-audit.txt", auditLines),
             SaveHandoffArtifact(outputFolder, "phase0-verification.txt", verificationLines),
+            SaveHandoffArtifact(outputFolder, "phase0-history.txt", historyLines),
             SaveHandoffResultsSnapshot(outputFolder, results)
         };
         var manifestPath = SaveHandoffManifest(
