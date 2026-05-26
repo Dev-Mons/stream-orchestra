@@ -565,7 +565,12 @@ public static class FeasibilityStatusCommand
                 }
                 else
                 {
-                    isValid &= ValidateHandoffDiagnosticReport(report, manifest, resultsSummary, validationLines);
+                    isValid &= ValidateHandoffDiagnosticReport(
+                        report,
+                        manifest,
+                        inputFolder,
+                        resultsSummary,
+                        validationLines);
                 }
             }
             catch (JsonException ex)
@@ -1037,13 +1042,23 @@ public static class FeasibilityStatusCommand
             : null;
     }
 
+    private static string? ReadLineValue(IEnumerable<string> lines, string prefix)
+    {
+        var line = lines.FirstOrDefault(
+            candidate => candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        return line is null ? null : line[prefix.Length..].Trim();
+    }
+
     private static bool ValidateHandoffDiagnosticReport(
         DiagnosticReport report,
         HandoffManifest manifest,
+        string inputFolder,
         HandoffResultsSummary? summary,
         List<string> validationLines)
     {
         var isValid = true;
+        isValid &= ValidateHandoffDiagnosticReportContext(report, manifest, inputFolder, validationLines);
+
         if (report.FeasibilityResultCount == manifest.ResultCount)
         {
             validationLines.Add($"- [pass] diagnostic report result count: {report.FeasibilityResultCount}");
@@ -1102,6 +1117,71 @@ public static class FeasibilityStatusCommand
         }
 
         return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticReportContext(
+        DiagnosticReport report,
+        HandoffManifest manifest,
+        string inputFolder,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        if (AreEquivalentPaths(report.DataFolder, manifest.DataFolder))
+        {
+            validationLines.Add($"- [pass] diagnostic report data folder: {FormatPathForValidation(report.DataFolder)}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report data folder mismatch, expected {FormatPathForValidation(manifest.DataFolder)}, actual {FormatPathForValidation(report.DataFolder)}.");
+        }
+
+        var dataFiles = report.DataFiles?
+            .Where(file => file is not null)
+            .Select(file => file!)
+            .ToArray() ?? [];
+        var resultsFile = dataFiles.FirstOrDefault(
+            file => string.Equals(file.Name, "feasibility-results", StringComparison.OrdinalIgnoreCase));
+        if (resultsFile is null)
+        {
+            isValid = false;
+            validationLines.Add("- [fail] diagnostic report results file entry is missing.");
+        }
+        else if (AreEquivalentPaths(resultsFile.Path, manifest.ResultsFilePath))
+        {
+            validationLines.Add(
+                $"- [pass] diagnostic report results file: {FormatPathForValidation(resultsFile.Path)} (exists={resultsFile.Exists}, size={resultsFile.SizeBytes})");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report results file mismatch, expected {FormatPathForValidation(manifest.ResultsFilePath)}, actual {FormatPathForValidation(resultsFile.Path)}.");
+        }
+
+        var preflightPath = Path.Combine(inputFolder, HandoffPreflightFileName);
+        if (!File.Exists(preflightPath))
+        {
+            return isValid;
+        }
+
+        var profileRoot = ReadLineValue(File.ReadAllLines(preflightPath), "Profile root:");
+        if (string.IsNullOrWhiteSpace(profileRoot))
+        {
+            validationLines.Add($"- [fail] {HandoffPreflightFileName} profile root line is missing.");
+            return false;
+        }
+
+        if (AreEquivalentPaths(report.ProfileRootFolder, profileRoot))
+        {
+            validationLines.Add($"- [pass] diagnostic report profile root: {FormatPathForValidation(report.ProfileRootFolder)}");
+            return isValid;
+        }
+
+        validationLines.Add(
+            $"- [fail] diagnostic report profile root mismatch, expected {FormatPathForValidation(profileRoot)}, actual {FormatPathForValidation(report.ProfileRootFolder)}.");
+        return false;
     }
 
     private static bool ValidateHandoffDiagnosticReportSnapshot(
@@ -1248,6 +1328,40 @@ public static class FeasibilityStatusCommand
             (!actual.HasValue || actual.Value.Equals(expected!.Value));
     }
 
+    private static bool AreEquivalentPaths(string? actual, string? expected)
+    {
+        if (string.IsNullOrWhiteSpace(actual) || string.IsNullOrWhiteSpace(expected))
+        {
+            return string.IsNullOrWhiteSpace(actual) && string.IsNullOrWhiteSpace(expected);
+        }
+
+        return string.Equals(
+            NormalizePathForComparison(actual),
+            NormalizePathForComparison(expected),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizePathForComparison(string path)
+    {
+        var trimmedPath = path.Trim();
+        try
+        {
+            return Path.GetFullPath(trimmedPath);
+        }
+        catch (ArgumentException)
+        {
+            return trimmedPath;
+        }
+        catch (NotSupportedException)
+        {
+            return trimmedPath;
+        }
+        catch (PathTooLongException)
+        {
+            return trimmedPath;
+        }
+    }
+
     private static int FindFirstAuditItemMismatch(
         IReadOnlyList<FeasibilityAuditItem> expected,
         IReadOnlyList<FeasibilityAuditItem> actual)
@@ -1276,6 +1390,11 @@ public static class FeasibilityStatusCommand
         return result is null
             ? "n/a"
             : $"{result.Id} ({result.Outcome}, {result.PlaybackCount} slot(s), {result.CapturedAt:yyyy-MM-dd HH:mm:ss})";
+    }
+
+    private static string FormatPathForValidation(string? path)
+    {
+        return string.IsNullOrWhiteSpace(path) ? "n/a" : path.Trim();
     }
 
     private static string FormatAuditItem(IReadOnlyList<FeasibilityAuditItem> auditItems, int index)
