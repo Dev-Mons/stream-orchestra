@@ -206,6 +206,35 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_ChecklistWithOutput_WritesChecklistTextFile()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateSuccessfulResult());
+        var checklistOutputPath = Path.Combine(_dataFolder, "phase0-checklist.txt");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["checklist", "--data-folder", _dataFolder, "--output", checklistOutputPath],
+            output,
+            error);
+
+        var fileText = File.ReadAllText(checklistOutputPath);
+        Assert.Equal(0, exitCode);
+        Assert.Contains($"Checklist saved: {checklistOutputPath}", output.ToString());
+        Assert.Contains("Stream Orchestra Phase 0 Manual Checklist", fileText);
+        Assert.Contains("Results recorded: 1", fileText);
+        Assert.Contains("Plan audit: pass=5, pending=6, fail=0", fileText);
+        Assert.Contains("Plan verification: [pending]", fileText);
+        Assert.Contains("Outstanding gates:", fileText);
+        Assert.Contains("- [pending] Phase 0 WebView2 success gate", fileText);
+        Assert.Contains("Safety: use normal SOOP login/player behavior only", fileText);
+        Assert.Contains("Suggested record shapes:", fileText);
+        Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", fileText);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_Preflight_PrintsRuntimeProfilesLayoutsAndEvidenceStatus()
     {
         var profileFolder = Path.Combine(_dataFolder, "Profiles");
@@ -989,6 +1018,19 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         using var error = new StringWriter();
 
         var exitCode = FeasibilityStatusCommand.Execute(["audit", "--output"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--output requires a value.", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ChecklistValidationErrors_ReturnUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["checklist", "--output"], output, error);
 
         Assert.Equal(2, exitCode);
         Assert.Contains("--output requires a value.", error.ToString());

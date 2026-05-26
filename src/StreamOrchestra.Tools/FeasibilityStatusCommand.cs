@@ -27,7 +27,7 @@ public static class FeasibilityStatusCommand
         {
             "audit" => PrintAudit(parseResult, output),
             "browsers" => PrintBrowsers(parseResult.DataFolder, output),
-            "checklist" => PrintChecklist(parseResult.DataFolder, output),
+            "checklist" => PrintChecklist(parseResult, output),
             "fallback" => SaveFallbackScript(parseResult.DataFolder, output),
             "history" => PrintHistory(parseResult.DataFolder, output),
             "preflight" => PrintPreflight(parseResult, output),
@@ -178,10 +178,10 @@ public static class FeasibilityStatusCommand
             output.WriteLine(line);
         }
 
-        if (!string.IsNullOrWhiteSpace(parseResult.AuditOutputPath))
+        if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
         {
-            SaveTextFile(parseResult.AuditOutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
-            output.WriteLine($"Audit saved: {parseResult.AuditOutputPath}");
+            SaveTextFile(parseResult.OutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            output.WriteLine($"Audit saved: {parseResult.OutputPath}");
         }
 
         return 0;
@@ -235,38 +235,84 @@ public static class FeasibilityStatusCommand
         return 0;
     }
 
-    private static int PrintChecklist(string? dataFolder, TextWriter output)
+    private static int PrintChecklist(ParseResult parseResult, TextWriter output)
+    {
+        var lines = CreateChecklistLines(parseResult.DataFolder);
+        foreach (var line in lines)
+        {
+            output.WriteLine(line);
+        }
+
+        if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
+        {
+            SaveTextFile(parseResult.OutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            output.WriteLine($"Checklist saved: {parseResult.OutputPath}");
+        }
+
+        return 0;
+    }
+
+    private static IReadOnlyList<string> CreateChecklistLines(string? dataFolder)
     {
         var storage = new FeasibilityResultStorageService(dataFolder);
         var results = storage.LoadResults();
         var decision = new FeasibilityDecisionService().Decide(results);
         var auditService = new FeasibilityAuditService();
         var auditItems = auditService.CreateAudit(results, decision);
+        var lines = new List<string>
+        {
+            "Stream Orchestra Phase 0 Manual Checklist",
+            $"Data folder: {storage.DataFolder}",
+            $"Results file: {storage.ResultsFilePath}",
+            $"Results recorded: {results.Count}",
+            $"Decision: {decision.Title} ({decision.Code})"
+        };
 
-        output.WriteLine("Stream Orchestra Phase 0 Manual Checklist");
-        output.WriteLine($"Data folder: {storage.DataFolder}");
-        output.WriteLine($"Results file: {storage.ResultsFilePath}");
-        output.WriteLine($"Results recorded: {results.Count}");
-        output.WriteLine($"Decision: {decision.Title} ({decision.Code})");
-        WriteNextAction(decision, output);
-        WriteAuditSummary(auditItems, output);
-        WritePlanVerificationStatus(auditItems, output);
-        WritePhase0SuccessGate(auditItems, output);
-        WriteOutstandingGates(auditItems, output);
-        output.WriteLine("Safety: use normal SOOP login/player behavior only; do not bypass DRM, authentication, or security behavior.");
-        output.WriteLine("1. Run `preflight` and confirm WebView2 Runtime, A-D profile folders, and 4/8/9/12/16 layout coverage are ready.");
-        output.WriteLine("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, and D.");
-        output.WriteLine("3. Restart the app and confirm the SOOP login session persists in the required profile groups.");
-        output.WriteLine("4. Run the isolated Group A test and record whether slots 1-4 visibly play.");
-        output.WriteLine("5. Run the 8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests and record each visible playback result.");
-        output.WriteLine("6. After playback stabilizes, record Task Manager CPU %, GPU %, and memory MB, plus whether resource usage is acceptable.");
-        output.WriteLine("7. Use one shared non-sensitive account label for every same-account evidence record across A-D.");
-        output.WriteLine("8. Record lower-count playback evidence as `partial` when the requested slots visibly play but success-only evidence is incomplete, or `failure` when they do not work.");
-        output.WriteLine("9. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
-        output.WriteLine("10. Run `verify`; Phase 0 is not complete until every plan gate passes.");
-        output.WriteLine("Helpful commands: `scenarios`, `audit`, `verify`.");
-        WriteSuggestedRecordShapes(auditItems, output);
-        return 0;
+        if (!string.IsNullOrWhiteSpace(decision.NextAction))
+        {
+            lines.Add($"Next action: {decision.NextAction}");
+        }
+
+        var summary = auditService.CreateSummary(auditItems);
+        lines.Add($"Plan audit: {summary.ToCompactText()}");
+        lines.Add($"Plan verification: [{auditService.CreatePlanVerificationStatus(auditItems)}]");
+
+        var successGate = auditItems.FirstOrDefault(item => item.Id == "phase0_success_gate");
+        if (successGate is not null)
+        {
+            lines.Add($"Success gate: [{successGate.Status}] {successGate.Evidence}");
+        }
+
+        var outstandingItems = auditItems
+            .Where(item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (outstandingItems.Length > 0)
+        {
+            lines.Add("Outstanding gates:");
+            lines.AddRange(outstandingItems.Select(item => $"- [{item.Status}] {item.Title}: {item.Evidence}"));
+        }
+
+        lines.Add("Safety: use normal SOOP login/player behavior only; do not bypass DRM, authentication, or security behavior.");
+        lines.Add("1. Run `preflight` and confirm WebView2 Runtime, A-D profile folders, and 4/8/9/12/16 layout coverage are ready.");
+        lines.Add("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, and D.");
+        lines.Add("3. Restart the app and confirm the SOOP login session persists in the required profile groups.");
+        lines.Add("4. Run the isolated Group A test and record whether slots 1-4 visibly play.");
+        lines.Add("5. Run the 8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests and record each visible playback result.");
+        lines.Add("6. After playback stabilizes, record Task Manager CPU %, GPU %, and memory MB, plus whether resource usage is acceptable.");
+        lines.Add("7. Use one shared non-sensitive account label for every same-account evidence record across A-D.");
+        lines.Add("8. Record lower-count playback evidence as `partial` when the requested slots visibly play but success-only evidence is incomplete, or `failure` when they do not work.");
+        lines.Add("9. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
+        lines.Add("10. Run `verify`; Phase 0 is not complete until every plan gate passes.");
+        lines.Add("Helpful commands: `scenarios`, `audit`, `verify`.");
+
+        var suggestions = auditService.CreateSuggestedRecordShapes(auditItems);
+        if (suggestions.Count > 0)
+        {
+            lines.Add("Suggested record shapes:");
+            lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
+        }
+
+        return lines;
     }
 
     private static int PrintScenarios(TextWriter output)
@@ -575,7 +621,7 @@ public static class FeasibilityStatusCommand
 
         if (command.Equals("audit", StringComparison.OrdinalIgnoreCase))
         {
-            return ParseAuditArgs(args);
+            return ParseTextOutputArgs("audit", args);
         }
 
         if (command.Equals("browsers", StringComparison.OrdinalIgnoreCase))
@@ -585,7 +631,7 @@ public static class FeasibilityStatusCommand
 
         if (command.Equals("checklist", StringComparison.OrdinalIgnoreCase))
         {
-            return ParseDataFolderOnlyArgs("checklist", args);
+            return ParseTextOutputArgs("checklist", args);
         }
 
         if (command.Equals("fallback", StringComparison.OrdinalIgnoreCase))
@@ -639,10 +685,10 @@ public static class FeasibilityStatusCommand
         return ParseResult.Valid(command, dataFolder);
     }
 
-    private static ParseResult ParseAuditArgs(string[] args)
+    private static ParseResult ParseTextOutputArgs(string command, string[] args)
     {
         string? dataFolder = null;
-        string? auditOutputPath = null;
+        string? outputPath = null;
 
         for (var index = 1; index < args.Length; index++)
         {
@@ -665,8 +711,8 @@ public static class FeasibilityStatusCommand
                     return ParseResult.Invalid("--output requires a value.");
                 }
 
-                auditOutputPath = args[++index];
-                if (string.IsNullOrWhiteSpace(auditOutputPath))
+                outputPath = args[++index];
+                if (string.IsNullOrWhiteSpace(outputPath))
                 {
                     return ParseResult.Invalid("--output requires a value.");
                 }
@@ -677,7 +723,7 @@ public static class FeasibilityStatusCommand
             return ParseResult.Invalid($"Unknown option: {arg}");
         }
 
-        return ParseResult.Audit(dataFolder, auditOutputPath);
+        return ParseResult.TextOutput(command, dataFolder, outputPath);
     }
 
     private static ParseResult ParseRecordArgs(string[] args)
@@ -1055,7 +1101,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools status [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools audit [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools browsers [--data-folder <path>]");
-        writer.WriteLine("  StreamOrchestra.Tools checklist [--data-folder <path>]");
+        writer.WriteLine("  StreamOrchestra.Tools checklist [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools fallback [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools history [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>]");
@@ -1229,7 +1275,7 @@ public static class FeasibilityStatusCommand
         string Command,
         string? DataFolder,
         string? ProfileFolder,
-        string? AuditOutputPath,
+        string? OutputPath,
         int? PlaybackCount,
         string? Outcome,
         bool SameAccountSession,
@@ -1250,9 +1296,9 @@ public static class FeasibilityStatusCommand
             return new ParseResult(true, false, command, dataFolder, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
         }
 
-        public static ParseResult Audit(string? dataFolder, string? auditOutputPath)
+        public static ParseResult TextOutput(string command, string? dataFolder, string? outputPath)
         {
-            return new ParseResult(true, false, "audit", dataFolder, null, auditOutputPath, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
+            return new ParseResult(true, false, command, dataFolder, null, outputPath, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, "");
         }
 
         public static ParseResult Record(
