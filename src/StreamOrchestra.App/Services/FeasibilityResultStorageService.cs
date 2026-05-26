@@ -129,6 +129,7 @@ public sealed class FeasibilityResultStorageService
             result,
             canonicalOutcome,
             normalizedOutcome,
+            normalizedScenarioId,
             normalizedGroups,
             hasSameAccountEvidence,
             normalizedRestartSession,
@@ -207,6 +208,7 @@ public sealed class FeasibilityResultStorageService
         FeasibilityTestResult result,
         string canonicalOutcome,
         string normalizedOutcome,
+        string normalizedScenarioId,
         IReadOnlyList<string> normalizedGroups,
         bool hasSameAccountEvidence,
         bool normalizedRestartSession,
@@ -218,6 +220,12 @@ public sealed class FeasibilityResultStorageService
         }
 
         if (!string.Equals(canonicalOutcome, normalizedOutcome, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(result.ScenarioId) &&
+            normalizedScenarioId.Equals("unspecified", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }

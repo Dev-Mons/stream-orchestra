@@ -580,13 +580,27 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
                 "decisionTitle": "WebView2 MVP 계속",
                 "decisionDetail": "stale",
                 "decisionNextAction": "stale"
+              },
+              {
+                "id": "missing_scenario",
+                "capturedAt": "2026-05-26T12:15:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": " ",
+                "scenarioName": " ",
+                "outcome": "partial",
+                "decisionCode": "continue_webview2_experiments",
+                "decisionTitle": "WebView2 추가 실험",
+                "decisionDetail": "stale",
+                "decisionNextAction": "stale"
               }
             ]
             """);
 
         var results = service.LoadResults();
 
-        Assert.Equal(["partial", "failure", "maybe"], results.Select(result => result.Outcome));
+        Assert.Equal(["partial", "failure", "maybe", "partial"], results.Select(result => result.Outcome));
+        Assert.Equal("unspecified", results[3].ScenarioId);
+        Assert.Equal("Unspecified", results[3].ScenarioName);
         Assert.All(results, result =>
         {
             Assert.Equal("", result.DecisionCode);
