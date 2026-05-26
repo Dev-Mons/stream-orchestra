@@ -109,13 +109,20 @@ public sealed class ExternalBrowserLaunchScriptService
         if (slot is null ||
             slot.SlotId is < 1 or > PlaybackTestPlanService.MaxSlotCount ||
             string.IsNullOrWhiteSpace(slot.ExecutablePath) ||
-            string.IsNullOrWhiteSpace(slot.UserDataFolder) ||
-            string.IsNullOrWhiteSpace(slot.StreamUrl))
+            string.IsNullOrWhiteSpace(slot.UserDataFolder))
         {
             return null;
         }
 
-        var streamUrl = slot.StreamUrl.Trim();
+        var streamUrl = NavigationService.NormalizeUrl(slot.StreamUrl ?? "");
+        if (streamUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase) ||
+            !Uri.TryCreate(streamUrl, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https"))
+        {
+            return null;
+        }
+
+        var userDataFolder = slot.UserDataFolder.Trim();
         var browserId = string.IsNullOrWhiteSpace(slot.BrowserId)
             ? "browser"
             : slot.BrowserId.Trim();
@@ -125,7 +132,7 @@ public sealed class ExternalBrowserLaunchScriptService
         var streamName = string.IsNullOrWhiteSpace(slot.StreamName)
             ? NavigationService.CreateDisplayName(streamUrl)
             : slot.StreamName.Trim();
-        var arguments = NormalizeArguments(slot, streamUrl);
+        var arguments = NormalizeArguments(userDataFolder, streamUrl, slot.IsMuted);
 
         return new ExternalBrowserSlotLaunchPlan(
             slot.SlotId,
@@ -134,31 +141,29 @@ public sealed class ExternalBrowserLaunchScriptService
             browserId,
             browserName,
             slot.ExecutablePath.Trim(),
-            slot.UserDataFolder.Trim(),
+            userDataFolder,
             arguments,
             IsValidWindowLayout(slot.WindowLayout) ? slot.WindowLayout : null,
             slot.IsMuted);
     }
 
-    private static IReadOnlyList<string> NormalizeArguments(ExternalBrowserSlotLaunchPlan slot, string streamUrl)
+    private static IReadOnlyList<string> NormalizeArguments(
+        string userDataFolder,
+        string streamUrl,
+        bool isMuted)
     {
-        var arguments = (slot.Arguments ?? [])
-            .Where(argument => !string.IsNullOrWhiteSpace(argument))
-            .Select(argument => argument!.Trim())
-            .ToList();
-
-        if (arguments.Count == 0)
+        var arguments = new List<string>
         {
-            arguments.Add($"--user-data-dir={slot.UserDataFolder.Trim()}");
-            arguments.Add("--new-window");
-            if (slot.IsMuted)
-            {
-                arguments.Add("--mute-audio");
-            }
+            $"--user-data-dir={userDataFolder}",
+            "--new-window"
+        };
 
-            arguments.Add(streamUrl);
+        if (isMuted)
+        {
+            arguments.Add("--mute-audio");
         }
 
+        arguments.Add(streamUrl);
         return arguments;
     }
 

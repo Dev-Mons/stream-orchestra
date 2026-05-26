@@ -219,6 +219,82 @@ public sealed class ExternalBrowserLaunchScriptServiceTests : IDisposable
     }
 
     [Fact]
+    public void CreateScript_NormalizesBareDomainUrlAndRebuildsStaleArguments()
+    {
+        var service = new ExternalBrowserLaunchScriptService();
+        var plan = new ExternalBrowserFallbackPlan(
+            true,
+            "Prepared 1 browser launch plan(s).",
+            1,
+            1,
+            [
+                new ExternalBrowserSlotLaunchPlan(
+                    1,
+                    " ",
+                    " example.com/live ",
+                    "edge",
+                    "Edge",
+                    "C:\\Program Files\\Browser\\browser.exe",
+                    " C:\\Data Root\\Profiles\\Slot1 ",
+                    [
+                        "--new-window",
+                        "javascript:alert(1)",
+                        "https://stale.example/old"
+                    ],
+                    IsMuted: true)
+            ]);
+
+        var script = service.CreateScript(plan);
+
+        Assert.Contains("# Slot 1: live", script);
+        Assert.Contains("# URL: https://example.com/live", script);
+        Assert.Contains("'\"--user-data-dir=C:\\Data Root\\Profiles\\Slot1\"'", script);
+        Assert.Contains("'--new-window'", script);
+        Assert.Contains("'--mute-audio'", script);
+        Assert.Contains("'\"https://example.com/live\"'", script);
+        Assert.DoesNotContain("javascript:alert", script);
+        Assert.DoesNotContain("stale.example", script);
+    }
+
+    [Fact]
+    public void CreateScript_SkipsNonWebSlotUrls()
+    {
+        var service = new ExternalBrowserLaunchScriptService();
+        var plan = new ExternalBrowserFallbackPlan(
+            true,
+            "Prepared 2 browser launch plan(s).",
+            1,
+            2,
+            [
+                new ExternalBrowserSlotLaunchPlan(
+                    1,
+                    "Script",
+                    "javascript:alert(1)",
+                    "edge",
+                    "Edge",
+                    "C:\\Program Files\\Browser\\browser.exe",
+                    "C:\\Data Root\\Profiles\\Slot1",
+                    ["javascript:alert(1)"]),
+                new ExternalBrowserSlotLaunchPlan(
+                    2,
+                    "Valid",
+                    "https://example.com/valid",
+                    "edge",
+                    "Edge",
+                    "C:\\Program Files\\Browser\\browser.exe",
+                    "C:\\Data Root\\Profiles\\Slot2",
+                    ["https://example.com/valid"])
+            ]);
+
+        var script = service.CreateScript(plan);
+
+        Assert.Contains("# Planned slots: 1", script);
+        Assert.Contains("# Slot 2: Valid", script);
+        Assert.DoesNotContain("# Slot 1: Script", script);
+        Assert.DoesNotContain("javascript:alert", script);
+    }
+
+    [Fact]
     public void CreateScript_RejectsLaunchablePlanWhenNoSlotCanBeScripted()
     {
         var service = new ExternalBrowserLaunchScriptService();
