@@ -88,6 +88,82 @@ public sealed class WorkspaceSlotVisibilityServiceTests
         Assert.Contains(visibleWorkspace.Slots, slot => slot.SlotId == 10 && slot.StreamUrl == "about:blank");
     }
 
+    [Fact]
+    public void BlankHiddenSlots_TreatsNullLayoutSlotCollectionAsNoVisibleSlots()
+    {
+        var service = new WorkspaceSlotVisibilityService();
+        var workspace = new WorkspacePreset
+        {
+            Id = "workspace_test",
+            Name = "Test",
+            LayoutId = LayoutPresetIds.Default,
+            Slots =
+            [
+                CreateSlot(1, "https://example.com/1", muted: false, profileGroupId: "A"),
+                CreateSlot(9, "https://example.com/9", muted: true, profileGroupId: "C")
+            ]
+        };
+        var layout = new LayoutPreset
+        {
+            Id = LayoutPresetIds.Default,
+            Name = "Malformed",
+            GridColumns = 4,
+            GridRows = 3,
+            Slots = null!
+        };
+
+        var visibleWorkspace = service.BlankHiddenSlots(workspace, layout);
+
+        Assert.All(visibleWorkspace.Slots, slot => Assert.Equal("about:blank", slot.StreamUrl));
+        Assert.Contains(visibleWorkspace.Slots, slot =>
+            slot.SlotId == 9 &&
+            slot.StreamName == "Empty" &&
+            slot.Muted &&
+            slot.ProfileGroupId == "C");
+    }
+
+    [Fact]
+    public void BlankHiddenSlots_IgnoresNullAndInvalidLayoutSlotEntries()
+    {
+        var service = new WorkspaceSlotVisibilityService();
+        var workspace = new WorkspacePreset
+        {
+            Id = "workspace_test",
+            Name = "Test",
+            LayoutId = LayoutPresetIds.Default,
+            Slots =
+            [
+                CreateSlot(1, "https://example.com/1", muted: false, profileGroupId: "A"),
+                CreateSlot(2, "https://example.com/2", muted: false, profileGroupId: "A"),
+                CreateSlot(16, "https://example.com/16", muted: true, profileGroupId: "D")
+            ]
+        };
+        var layout = new LayoutPreset
+        {
+            Id = LayoutPresetIds.Default,
+            Name = "Malformed",
+            GridColumns = 4,
+            GridRows = 3,
+            Slots =
+            [
+                null!,
+                new LayoutSlot { SlotId = 0, X = 0, Y = 0, W = 1, H = 1 },
+                new LayoutSlot { SlotId = 2, X = 1, Y = 0, W = 1, H = 1 },
+                new LayoutSlot { SlotId = 17, X = 2, Y = 0, W = 1, H = 1 }
+            ]
+        };
+
+        var visibleWorkspace = service.BlankHiddenSlots(workspace, layout);
+
+        Assert.Contains(visibleWorkspace.Slots, slot => slot.SlotId == 2 && slot.StreamUrl == "https://example.com/2");
+        Assert.Contains(visibleWorkspace.Slots, slot => slot.SlotId == 1 && slot.StreamUrl == "about:blank");
+        Assert.Contains(visibleWorkspace.Slots, slot =>
+            slot.SlotId == 16 &&
+            slot.StreamUrl == "about:blank" &&
+            slot.Muted &&
+            slot.ProfileGroupId == "D");
+    }
+
     private static LayoutPreset CreateDefaultLayout()
     {
         return new LayoutPreset

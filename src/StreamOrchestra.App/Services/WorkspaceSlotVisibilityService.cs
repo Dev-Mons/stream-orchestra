@@ -6,7 +6,10 @@ public sealed class WorkspaceSlotVisibilityService
 {
     public WorkspacePreset BlankHiddenSlots(WorkspacePreset workspace, LayoutPreset layout)
     {
-        var visibleSlotIds = layout.Slots
+        IEnumerable<LayoutSlot?> sourceLayoutSlots = layout.Slots ?? [];
+        var visibleSlotIds = sourceLayoutSlots
+            .OfType<LayoutSlot>()
+            .Where(slot => slot.SlotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount)
             .Select(slot => slot.SlotId)
             .ToHashSet();
         IEnumerable<WorkspaceSlot?> sourceSlots = workspace.Slots ?? [];

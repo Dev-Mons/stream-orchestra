@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 442 passing tests.
+Current automated test coverage: 444 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -74,7 +74,7 @@ Current automated test coverage: 442 passing tests.
 | Slot profile group persists | Implemented | Profile group is slot-derived and stays with slot |
 | Malformed workspace resilience | Implemented | `WorkspacePresetNormalizationService` normalizes slot range, URLs, duplicate slots, missing/null slots, blank-slot names, and profile groups; diagnostic reports and external-browser fallback planning also tolerate null last-session slot lists and entries |
 | Workspace restore safety | Implemented | `WorkspaceRestoreService` prepares presets and last sessions by normalizing data, resolving the layout, and blanking slots outside that layout before WebViews are loaded |
-| Hidden slot background playback prevention | Implemented | `WorkspaceSlotVisibilityService` blanks slots outside the active layout, tolerates null saved slot collections/entries, and hidden slots are cleared without initializing WebViews when possible |
+| Hidden slot background playback prevention | Implemented | `WorkspaceSlotVisibilityService` blanks slots outside the active layout, tolerates null saved slot collections/entries plus malformed layout slot entries, and hidden slots are cleared without initializing WebViews when possible |
 | Broadcast click passes to WebView/player | Implemented | `StreamSlotView.xaml` keeps `ControlBar` and `SlotUrlEditor` outside the WebView content row, and `StreamSlotViewLayoutTests` locks that structure |
 | Named preset not auto-overwritten by temporary edits | Implemented | Last session is stored separately from `workspaces.json`, and tests verify saving `appstate.json` does not modify saved workspace presets |
 
