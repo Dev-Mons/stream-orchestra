@@ -187,6 +187,40 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_NormalizesMalformedRuntimeDiagnostics()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "malformed_diagnostics",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "diagnostics": {
+                  "capturedAt": "2026-05-26T12:00:01+00:00",
+                  "webViewProcessCount": -3,
+                  "webViewWorkingSetMegabytes": -1024,
+                  "webViewPrivateMemoryMegabytes": -512,
+                  "webViewCpuPercent": 150
+                }
+              }
+            ]
+            """);
+
+        var result = Assert.Single(service.LoadResults());
+
+        Assert.Equal(0, result.Diagnostics.WebViewProcessCount);
+        Assert.Equal(0, result.Diagnostics.WebViewWorkingSetMegabytes);
+        Assert.Equal(0, result.Diagnostics.WebViewPrivateMemoryMegabytes);
+        Assert.Null(result.Diagnostics.WebViewCpuPercent);
+    }
+
+    [Fact]
     public void LoadResults_NormalizesDuplicateResultIds()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);
@@ -791,6 +825,42 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
         Assert.Contains("\"decisionDetail\": \"detail\"", savedJson);
         Assert.Contains("\"decisionNextAction\": \"\"", savedJson);
         Assert.Contains("\"notes\": \"\"", savedJson);
+    }
+
+    [Fact]
+    public void SaveResults_NormalizesInvalidRuntimeDiagnosticsBeforeWriting()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+
+        service.SaveResults(
+        [
+            new FeasibilityTestResult
+            {
+                Id = "invalid_diagnostics",
+                CapturedAt = capturedAt,
+                PlaybackCount = 9,
+                ScenarioId = "groups_a_b_c_9_slot_threshold",
+                ScenarioName = "Groups A/B/C, 9-slot success threshold",
+                Outcome = "partial",
+                Diagnostics = new RuntimeDiagnosticsSnapshot(
+                    capturedAt,
+                    WebViewProcessCount: -1,
+                    WebViewWorkingSetMegabytes: double.NaN,
+                    WebViewPrivateMemoryMegabytes: double.NegativeInfinity,
+                    WebViewCpuPercent: double.PositiveInfinity)
+            }
+        ]);
+
+        var result = Assert.Single(service.LoadResults());
+        var savedJson = File.ReadAllText(service.ResultsFilePath);
+
+        Assert.Equal(0, result.Diagnostics.WebViewProcessCount);
+        Assert.Equal(0, result.Diagnostics.WebViewWorkingSetMegabytes);
+        Assert.Equal(0, result.Diagnostics.WebViewPrivateMemoryMegabytes);
+        Assert.Null(result.Diagnostics.WebViewCpuPercent);
+        Assert.DoesNotContain("NaN", savedJson);
+        Assert.DoesNotContain("Infinity", savedJson);
     }
 
     [Fact]

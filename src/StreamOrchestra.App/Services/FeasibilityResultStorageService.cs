@@ -326,6 +326,16 @@ public sealed class FeasibilityResultStorageService
                 WebViewCpuPercent: null);
         }
 
-        return diagnostics;
+        return new RuntimeDiagnosticsSnapshot(
+            diagnostics.CapturedAt,
+            WebViewProcessCount: Math.Max(0, diagnostics.WebViewProcessCount),
+            WebViewWorkingSetMegabytes: NormalizeNonNegativeMegabytes(diagnostics.WebViewWorkingSetMegabytes),
+            WebViewPrivateMemoryMegabytes: NormalizeNonNegativeMegabytes(diagnostics.WebViewPrivateMemoryMegabytes),
+            WebViewCpuPercent: FeasibilityResourceObservationService.NormalizePercent(diagnostics.WebViewCpuPercent));
+    }
+
+    private static double NormalizeNonNegativeMegabytes(double value)
+    {
+        return double.IsFinite(value) && value >= 0 ? value : 0;
     }
 }
