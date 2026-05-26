@@ -511,6 +511,8 @@ public static class FeasibilityStatusCommand
             }
         }
 
+        isValid &= ValidateHandoffPreflightArtifact(inputFolder, manifest, validationLines);
+
         HandoffResultsSummary? resultsSummary = null;
         var resultsPath = Path.Combine(inputFolder, HandoffResultsFileName);
         if (File.Exists(resultsPath))
@@ -542,6 +544,7 @@ public static class FeasibilityStatusCommand
         if (resultsSummary is not null)
         {
             isValid &= ValidateHandoffResultsSummary(resultsSummary, manifest, validationLines);
+            isValid &= ValidateHandoffVerificationArtifact(inputFolder, resultsSummary, validationLines);
         }
 
         var diagnosticReportPath = Path.Combine(inputFolder, HandoffDiagnosticReportFileName);
@@ -638,6 +641,7 @@ public static class FeasibilityStatusCommand
         List<string> validationLines)
     {
         var isValid = true;
+        var isExpectedVerified = summary.PlanVerificationStatus.Equals("pass", StringComparison.OrdinalIgnoreCase);
         if (string.Equals(summary.Decision.Code, manifest.DecisionCode, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(summary.Decision.Title, manifest.DecisionTitle, StringComparison.Ordinal))
         {
@@ -649,6 +653,17 @@ public static class FeasibilityStatusCommand
             isValid = false;
             validationLines.Add(
                 $"- [fail] {HandoffResultsFileName} decision mismatch, expected {summary.Decision.Title} ({summary.Decision.Code}), actual {manifest.DecisionTitle} ({manifest.DecisionCode}).");
+        }
+
+        if (manifest.IsVerified == isExpectedVerified)
+        {
+            validationLines.Add($"- [pass] {HandoffManifestFileName} isVerified: {manifest.IsVerified}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffManifestFileName} isVerified mismatch, expected {isExpectedVerified} from results, actual {manifest.IsVerified}.");
         }
 
         if (summary.AuditSummary.PassCount == manifest.PassingGateCount &&
@@ -665,6 +680,108 @@ public static class FeasibilityStatusCommand
         validationLines.Add(
             $"- [fail] {HandoffResultsFileName} plan gates mismatch, expected pass={summary.AuditSummary.PassCount}, pending={summary.AuditSummary.PendingCount}, fail={summary.AuditSummary.FailCount}, outstanding={summary.OutstandingGateCount}, status={summary.PlanVerificationStatus}; actual pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}, outstanding={manifest.OutstandingGateCount}, status={manifest.PlanVerificationStatus}.");
         return false;
+    }
+
+    private static bool ValidateHandoffPreflightArtifact(
+        string inputFolder,
+        HandoffManifest manifest,
+        List<string> validationLines)
+    {
+        var preflightPath = Path.Combine(inputFolder, HandoffPreflightFileName);
+        if (!File.Exists(preflightPath))
+        {
+            return true;
+        }
+
+        var lines = File.ReadAllLines(preflightPath);
+        var runtimeLine = lines.FirstOrDefault(
+            line => line.StartsWith("WebView2 runtime:", StringComparison.OrdinalIgnoreCase));
+        var layoutsLine = lines.FirstOrDefault(
+            line => line.StartsWith("Layouts:", StringComparison.OrdinalIgnoreCase));
+        if (runtimeLine is null || layoutsLine is null)
+        {
+            validationLines.Add($"- [fail] {HandoffPreflightFileName} readiness lines are missing.");
+            return false;
+        }
+
+        var isReady = runtimeLine.Contains("[available]", StringComparison.OrdinalIgnoreCase) &&
+            layoutsLine.Contains("[ready]", StringComparison.OrdinalIgnoreCase);
+        if (manifest.IsPreflightReady == isReady)
+        {
+            validationLines.Add($"- [pass] {HandoffPreflightFileName} readiness: {isReady}");
+            return true;
+        }
+
+        validationLines.Add(
+            $"- [fail] {HandoffPreflightFileName} readiness mismatch, expected {isReady} from artifact, actual {manifest.IsPreflightReady} in manifest.");
+        return false;
+    }
+
+    private static bool ValidateHandoffVerificationArtifact(
+        string inputFolder,
+        HandoffResultsSummary summary,
+        List<string> validationLines)
+    {
+        var verificationPath = Path.Combine(inputFolder, HandoffVerificationFileName);
+        if (!File.Exists(verificationPath))
+        {
+            return true;
+        }
+
+        var lines = File.ReadAllLines(verificationPath);
+        var planVerificationStatus = ReadBracketedStatus(lines, "Plan verification:");
+        if (string.IsNullOrWhiteSpace(planVerificationStatus))
+        {
+            validationLines.Add($"- [fail] {HandoffVerificationFileName} plan verification line is missing.");
+            return false;
+        }
+
+        var isValid = true;
+        if (planVerificationStatus.Equals(summary.PlanVerificationStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            validationLines.Add($"- [pass] {HandoffVerificationFileName} plan status: {planVerificationStatus}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffVerificationFileName} plan status mismatch, expected {summary.PlanVerificationStatus} from results, actual {planVerificationStatus}.");
+        }
+
+        var isExpectedVerified = summary.PlanVerificationStatus.Equals("pass", StringComparison.OrdinalIgnoreCase);
+        var isArtifactVerified = lines.Any(line => line.Equals("Verification: pass", StringComparison.OrdinalIgnoreCase));
+        var isArtifactIncomplete = lines.Any(line => line.Equals("Verification: not complete", StringComparison.OrdinalIgnoreCase));
+        if (!isArtifactVerified && !isArtifactIncomplete)
+        {
+            validationLines.Add($"- [fail] {HandoffVerificationFileName} completion line is missing.");
+            return false;
+        }
+
+        if (isArtifactVerified == isExpectedVerified)
+        {
+            validationLines.Add($"- [pass] {HandoffVerificationFileName} completion: {isArtifactVerified}");
+            return isValid;
+        }
+
+        validationLines.Add(
+            $"- [fail] {HandoffVerificationFileName} completion mismatch, expected {isExpectedVerified} from results, actual {isArtifactVerified}.");
+        return false;
+    }
+
+    private static string? ReadBracketedStatus(IEnumerable<string> lines, string prefix)
+    {
+        var line = lines.FirstOrDefault(
+            candidate => candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        if (line is null)
+        {
+            return null;
+        }
+
+        var openBracketIndex = line.IndexOf('[', StringComparison.Ordinal);
+        var closeBracketIndex = line.IndexOf(']', StringComparison.Ordinal);
+        return openBracketIndex >= 0 && closeBracketIndex > openBracketIndex
+            ? line[(openBracketIndex + 1)..closeBracketIndex]
+            : null;
     }
 
     private static bool ValidateHandoffDiagnosticReport(

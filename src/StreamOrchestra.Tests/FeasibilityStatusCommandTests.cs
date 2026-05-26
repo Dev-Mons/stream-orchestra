@@ -440,7 +440,11 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Input folder: {handoffFolder}", text);
         Assert.Contains("Plan verification: pending", text);
         Assert.Contains("- [pass] phase0-results.json:", text);
+        Assert.Contains("- [pass] phase0-preflight.txt readiness:", text);
         Assert.Contains("- [pass] phase0-results.json result count: 0", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json isVerified: False", text);
+        Assert.Contains("- [pass] phase0-verification.txt plan status: pending", text);
+        Assert.Contains("- [pass] phase0-verification.txt completion: False", text);
         Assert.Contains("- [pass] diagnostic report result count: 0", text);
         Assert.Contains("- [pass] diagnostic report decision: 검증 대기 (pending)", text);
         Assert.Contains("- [pass] diagnostic report plan gates: pass=0, pending=11, fail=0, outstanding=11, status=pending", text);
@@ -602,6 +606,50 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains(
             "phase0-results.json plan gates mismatch, expected pass=0, pending=11, fail=0, outstanding=11, status=pending; actual pass=11, pending=0, fail=0, outstanding=0, status=pass.",
             text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsReadinessAndVerificationMismatches()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-boolean-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var verificationPath = Path.Combine(handoffFolder, "phase0-verification.txt");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var isPreflightReady = manifest["isPreflightReady"]!.GetValue<bool>();
+        manifest["isPreflightReady"] = JsonValue.Create(!isPreflightReady);
+        manifest["isVerified"] = JsonValue.Create(true);
+        File.WriteAllText(
+            verificationPath,
+            File.ReadAllText(verificationPath)
+                .Replace("Plan verification: [pending]", "Plan verification: [pass]")
+                .Replace("Verification: not complete", "Verification: pass"));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-verification.txt");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-preflight.txt readiness mismatch", text);
+        Assert.Contains("phase0-handoff-manifest.json isVerified mismatch, expected False from results, actual True.", text);
+        Assert.Contains("phase0-verification.txt plan status mismatch, expected pending from results, actual pass.", text);
+        Assert.Contains("phase0-verification.txt completion mismatch, expected False from results, actual True.", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
