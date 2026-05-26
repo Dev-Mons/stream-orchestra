@@ -438,6 +438,27 @@ public partial class MainWindow : Window
         return groups;
     }
 
+    private void SameAccountSessionCheckBox_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (!IsInitialized ||
+            AccountLabelTextBox is null ||
+            VerifiedGroupACheckBox is null ||
+            VerifiedGroupBCheckBox is null ||
+            VerifiedGroupCCheckBox is null ||
+            VerifiedGroupDCheckBox is null ||
+            RestartSessionCheckBox is null)
+        {
+            return;
+        }
+
+        AccountLabelTextBox.Clear();
+        VerifiedGroupACheckBox.IsChecked = false;
+        VerifiedGroupBCheckBox.IsChecked = false;
+        VerifiedGroupCCheckBox.IsChecked = false;
+        VerifiedGroupDCheckBox.IsChecked = false;
+        RestartSessionCheckBox.IsChecked = false;
+    }
+
     private bool TryReadOptionalNonNegativeNumber(TextBox textBox, string label, out double? value)
     {
         if (!TryReadOptionalNumber(textBox.Text, label, out value))

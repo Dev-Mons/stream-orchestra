@@ -234,7 +234,8 @@
                                   Content="계정 유지"
                                   Foreground="#F3F6FA"
                                   VerticalAlignment="Center"
-                                  Margin="0,0,4,0" />
+                                  Margin="0,0,4,0"
+                                  Unchecked="SameAccountSessionCheckBox_Unchecked" />
                         <CheckBox x:Name="VerifiedGroupACheckBox"
                                   Content="A"
                                   Foreground="#F3F6FA"

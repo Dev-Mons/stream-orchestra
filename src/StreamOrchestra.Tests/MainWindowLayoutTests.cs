@@ -94,7 +94,9 @@ public sealed class MainWindowLayoutTests
         var accountLabelTextBox = FindElementByName(document, "AccountLabelTextBox");
         Assert.Equal("SOOP account label for evidence", GetAttribute(accountLabelTextBox, "ToolTip"));
         Assert.Equal(accountEvidenceBinding, GetAttribute(accountLabelTextBox, "IsEnabled"));
-        Assert.Equal("계정 유지", GetAttribute(FindElementByName(document, "SameAccountSessionCheckBox"), "Content"));
+        var sameAccountCheckBox = FindElementByName(document, "SameAccountSessionCheckBox");
+        Assert.Equal("계정 유지", GetAttribute(sameAccountCheckBox, "Content"));
+        Assert.Equal("SameAccountSessionCheckBox_Unchecked", GetAttribute(sameAccountCheckBox, "Unchecked"));
         Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupACheckBox"), "IsEnabled"));
         Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupBCheckBox"), "IsEnabled"));
         Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupCCheckBox"), "IsEnabled"));
@@ -103,6 +105,32 @@ public sealed class MainWindowLayoutTests
         Assert.Equal("CPU %", GetAttribute(FindElementByName(document, "ObservedCpuTextBox"), "ToolTip"));
         Assert.Equal("GPU %", GetAttribute(FindElementByName(document, "ObservedGpuTextBox"), "ToolTip"));
         Assert.Equal("Memory MB", GetAttribute(FindElementByName(document, "ObservedMemoryTextBox"), "ToolTip"));
+    }
+
+    [Fact]
+    public void CodeBehind_ClearsSameAccountEvidenceWhenAccountEvidenceIsUnchecked()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "MainWindow.xaml.cs"));
+        var text = File.ReadAllText(path);
+        var handlerStart = text.IndexOf(
+            "private void SameAccountSessionCheckBox_Unchecked",
+            StringComparison.Ordinal);
+
+        Assert.True(handlerStart >= 0);
+        Assert.Contains("if (!IsInitialized ||", text[handlerStart..]);
+        Assert.Contains("AccountLabelTextBox.Clear();", text[handlerStart..]);
+        Assert.Contains("VerifiedGroupACheckBox.IsChecked = false;", text[handlerStart..]);
+        Assert.Contains("VerifiedGroupBCheckBox.IsChecked = false;", text[handlerStart..]);
+        Assert.Contains("VerifiedGroupCCheckBox.IsChecked = false;", text[handlerStart..]);
+        Assert.Contains("VerifiedGroupDCheckBox.IsChecked = false;", text[handlerStart..]);
+        Assert.Contains("RestartSessionCheckBox.IsChecked = false;", text[handlerStart..]);
     }
 
     private static XDocument LoadMainWindowDocument()
