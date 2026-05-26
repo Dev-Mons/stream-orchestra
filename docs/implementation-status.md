@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 362 passing tests.
+Current automated test coverage: 363 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -88,7 +88,7 @@ Runtime data is stored under `%LOCALAPPDATA%\StreamOrchestra\Data`.
 | `favorites.json` | App-local stream favorites |
 | `feasibility-results.json` | Phase 0 test outcomes, scenario, account label, verified profile groups, resource observations, criteria, and decision snapshots |
 | `external-browsers.json` | Optional custom Chromium-compatible fallback browser candidates |
-| `diagnostic-report-*.json` | Exported report with profile folders, data file status, workspace/favorite/last-session diagnostics, external browser discovery, latest decision, plan-gate audit, and suggested record shapes |
+| `diagnostic-report-*.json` | Exported report with profile folders, data file status, workspace/favorite/last-session diagnostics, external browser discovery, latest decision, account-label summary/conflict status, plan-gate audit, and suggested record shapes |
 | `external-browser-fallback-*.ps1` | Reviewable fallback script generated only when active stream URLs and installed external browsers are available |
 
 JSON saves write a same-folder `*.tmp.*` file first and then replace the target file. If a JSON file is corrupt, the app quarantines it as `*.corrupt.*` and starts with an empty/default state.

@@ -98,6 +98,7 @@ public sealed class DiagnosticReportServiceTests : IDisposable
                 WebViewPrivateMemoryMegabytes: 400,
                 WebViewCpuPercent: 25),
             IsSameAccountSessionMaintained = true,
+            AccountLabel = "main_soop",
             VerifiedProfileGroups = ["A", "B", "C"],
             IsRestartSessionMaintained = true,
             IsResourceUsageAcceptable = true,
@@ -159,6 +160,8 @@ public sealed class DiagnosticReportServiceTests : IDisposable
         Assert.Single(report.ExternalBrowserFallbackPlan.Slots);
         Assert.Equal(1, report.FeasibilityResultCount);
         Assert.Equal("result_1", report.LatestFeasibilityResult?.Id);
+        Assert.Equal(["main_soop"], report.FeasibilitySameAccountLabels);
+        Assert.False(report.HasConflictingFeasibilityAccountLabels);
         Assert.Equal("continue_webview2_experiments", report.FeasibilityDecision.Code);
         Assert.Contains(report.FeasibilityAudit, item => item.Id == "phase0_success_gate" && item.Status == "pending");
         Assert.Contains(report.FeasibilityAudit, item => item.Id == "nine_plus_playback" && item.Status == "pass");
@@ -195,6 +198,48 @@ public sealed class DiagnosticReportServiceTests : IDisposable
 
         Assert.Contains(report.ExternalBrowsers, browser => browser.Id == "portable_browser" && browser.IsInstalled);
         Assert.Contains(report.DataFiles, file => file.Name == "external-browsers" && file.Exists && file.SizeBytes > 0);
+    }
+
+    [Fact]
+    public void CreateReport_SummarizesConflictingSameAccountLabels()
+    {
+        var profileService = new WebViewProfileService(_profileFolder);
+        var presetStorage = new PresetStorageService(_dataFolder);
+        var favoriteStorage = new FavoriteStorageService(_dataFolder);
+        var feasibilityStorage = new FeasibilityResultStorageService(_dataFolder);
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+        feasibilityStorage.SaveResults(
+        [
+            CreateAccountResult(
+                "result_abc",
+                capturedAt,
+                playbackCount: 9,
+                scenarioId: "groups_a_b_c_9_slot_threshold",
+                profileGroups: ["A", "B", "C"],
+                accountLabel: "main_soop"),
+            CreateAccountResult(
+                "result_d",
+                capturedAt.AddMinutes(15),
+                playbackCount: 4,
+                scenarioId: "isolated_group_d",
+                profileGroups: ["D"],
+                accountLabel: "alt_soop")
+        ]);
+        var decision = new FeasibilityDecision("continue_webview2_experiments", "실험", "계정 라벨 충돌");
+
+        var report = new DiagnosticReportService().CreateReport(
+            profileService,
+            presetStorage,
+            favoriteStorage,
+            feasibilityStorage,
+            decision);
+
+        Assert.Equal(["alt_soop", "main_soop"], report.FeasibilitySameAccountLabels);
+        Assert.True(report.HasConflictingFeasibilityAccountLabels);
+        Assert.Contains(report.FeasibilityAudit, item =>
+            item.Id == "same_account_session" &&
+            item.Status == "fail" &&
+            item.Evidence.Contains("conflicting account labels"));
     }
 
     [Fact]
@@ -332,6 +377,33 @@ public sealed class DiagnosticReportServiceTests : IDisposable
         var path = service.SaveExternalBrowserFallbackScript(new DiagnosticReport(), _dataFolder);
 
         Assert.Null(path);
+    }
+
+    private static FeasibilityTestResult CreateAccountResult(
+        string id,
+        DateTimeOffset capturedAt,
+        int playbackCount,
+        string scenarioId,
+        IReadOnlyList<string> profileGroups,
+        string accountLabel)
+    {
+        return new FeasibilityTestResult
+        {
+            Id = id,
+            CapturedAt = capturedAt,
+            PlaybackCount = playbackCount,
+            ScenarioId = scenarioId,
+            ScenarioName = scenarioId,
+            Outcome = playbackCount >= 9 ? "success" : "partial",
+            IsSameAccountSessionMaintained = true,
+            AccountLabel = accountLabel,
+            VerifiedProfileGroups = profileGroups,
+            IsRestartSessionMaintained = playbackCount >= 9,
+            IsResourceUsageAcceptable = playbackCount >= 9,
+            ObservedCpuPercent = playbackCount >= 9 ? 45 : null,
+            ObservedGpuPercent = playbackCount >= 9 ? 60 : null,
+            ObservedMemoryMegabytes = playbackCount >= 9 ? 12000 : null
+        };
     }
 
     public void Dispose()

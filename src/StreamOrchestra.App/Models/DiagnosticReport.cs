@@ -30,6 +30,10 @@ public sealed class DiagnosticReport
 
     public FeasibilityTestResult? LatestFeasibilityResult { get; init; }
 
+    public IReadOnlyList<string> FeasibilitySameAccountLabels { get; init; } = [];
+
+    public bool HasConflictingFeasibilityAccountLabels { get; init; }
+
     public FeasibilityDecision FeasibilityDecision { get; init; } = new(
         "pending",
         "검증 대기",

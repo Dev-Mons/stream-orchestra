@@ -80,6 +80,10 @@ public sealed class DiagnosticReportService
                     layouts),
             FeasibilityResultCount = feasibilityResults.Count,
             LatestFeasibilityResult = latestResult,
+            FeasibilitySameAccountLabels =
+                FeasibilityProfileGroupEvidenceService.GetLatestSameAccountAccountLabels(feasibilityResults),
+            HasConflictingFeasibilityAccountLabels =
+                FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(feasibilityResults),
             FeasibilityDecision = feasibilityDecision,
             FeasibilityAudit = feasibilityAudit,
             FeasibilitySuggestedRecordShapes = _feasibilityAuditService.CreateSuggestedRecordShapes(feasibilityAudit)
