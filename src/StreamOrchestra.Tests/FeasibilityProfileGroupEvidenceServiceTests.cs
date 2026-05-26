@@ -167,13 +167,39 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
         Assert.Equal(["A", "C"], groups);
     }
 
+    [Fact]
+    public void GetLatestSameAccountAccountLabels_ReturnsDistinctLabelsFromCoveredGroups()
+    {
+        var mainAccountGroups = CreateResult(
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero),
+            scenarioId: "groups_a_b_c_9_slot_threshold",
+            playbackCount: 9,
+            groups: ["A", "B", "C"],
+            sameAccount: true,
+            accountLabel: " main_soop ");
+        var alternateAccountGroup = CreateResult(
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero),
+            scenarioId: "isolated_group_d",
+            groups: ["D"],
+            sameAccount: true,
+            accountLabel: "alt_soop");
+
+        var labels = FeasibilityProfileGroupEvidenceService.GetLatestSameAccountAccountLabels(
+            [mainAccountGroups, alternateAccountGroup]);
+
+        Assert.Equal(["alt_soop", "main_soop"], labels);
+        Assert.True(FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(
+            [mainAccountGroups, alternateAccountGroup]));
+    }
+
     private static FeasibilityTestResult CreateResult(
         DateTimeOffset capturedAt,
         string scenarioId,
         int playbackCount,
         IReadOnlyList<string> groups,
         bool sameAccount,
-        string outcome = "partial")
+        string outcome = "partial",
+        string accountLabel = "")
     {
         return new FeasibilityTestResult
         {
@@ -182,7 +208,8 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
             ScenarioId = scenarioId,
             Outcome = outcome,
             VerifiedProfileGroups = groups,
-            IsSameAccountSessionMaintained = sameAccount
+            IsSameAccountSessionMaintained = sameAccount,
+            AccountLabel = accountLabel
         };
     }
 
@@ -191,8 +218,9 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
         string scenarioId,
         IReadOnlyList<string> groups,
         bool sameAccount,
-        string outcome = "partial")
+        string outcome = "partial",
+        string accountLabel = "")
     {
-        return CreateResult(capturedAt, scenarioId, 4, groups, sameAccount, outcome);
+        return CreateResult(capturedAt, scenarioId, 4, groups, sameAccount, outcome, accountLabel);
     }
 }

@@ -218,6 +218,16 @@ public sealed class FeasibilityAuditService
         }
 
         var coveredGroups = GetCoveredSameAccountProfileGroups(results);
+        var accountLabels = FeasibilityProfileGroupEvidenceService.GetLatestSameAccountAccountLabels(results);
+        if (accountLabels.Count > 1)
+        {
+            return new FeasibilityAuditItem(
+                id,
+                title,
+                "fail",
+                $"Same-account evidence has conflicting account labels: {string.Join(", ", accountLabels)}.");
+        }
+
         var missingGroups = PlanRequiredProfileGroups
             .Where(group => !coveredGroups.Contains(group, StringComparer.OrdinalIgnoreCase))
             .ToArray();
@@ -228,7 +238,9 @@ public sealed class FeasibilityAuditService
                 id,
                 title,
                 "pass",
-                $"Same-account evidence covers groups {string.Join("/", PlanRequiredProfileGroups)}.");
+                accountLabels.Count == 0
+                    ? $"Same-account evidence covers groups {string.Join("/", PlanRequiredProfileGroups)}."
+                    : $"Same-account evidence covers groups {string.Join("/", PlanRequiredProfileGroups)} with account label {accountLabels[0]}.");
         }
 
         var coveredText = coveredGroups.Count == 0
@@ -337,7 +349,8 @@ public sealed class FeasibilityAuditService
         var coveredGroups = GetCoveredSameAccountProfileGroups(results);
         var coveredGroupSet = coveredGroups.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        return PlanRequiredProfileGroups.All(coveredGroupSet.Contains);
+        return PlanRequiredProfileGroups.All(coveredGroupSet.Contains) &&
+            !FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(results);
     }
 
     private static bool IsSuccessfulEmbeddedWebView2Result(FeasibilityTestResult result)

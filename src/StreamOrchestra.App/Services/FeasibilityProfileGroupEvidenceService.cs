@@ -87,6 +87,36 @@ public static class FeasibilityProfileGroupEvidenceService
 
     public static IReadOnlyList<string> GetLatestSameAccountCoveredGroups(IReadOnlyList<FeasibilityTestResult> results)
     {
+        var latestResultByGroup = GetLatestSameAccountResultByGroup(results);
+
+        return Normalize(
+            latestResultByGroup
+                .Where(item => item.Value.IsSameAccountSessionMaintained)
+                .Select(item => item.Key)
+                .ToArray());
+    }
+
+    public static IReadOnlyList<string> GetLatestSameAccountAccountLabels(IReadOnlyList<FeasibilityTestResult> results)
+    {
+        return GetLatestSameAccountResultByGroup(results)
+            .Values
+            .Where(result => result.IsSameAccountSessionMaintained)
+            .Select(result => result.AccountLabel?.Trim())
+            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .Select(label => label!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(label => label, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static bool HasConflictingSameAccountLabels(IReadOnlyList<FeasibilityTestResult> results)
+    {
+        return GetLatestSameAccountAccountLabels(results).Count > 1;
+    }
+
+    private static Dictionary<string, FeasibilityTestResult> GetLatestSameAccountResultByGroup(
+        IReadOnlyList<FeasibilityTestResult> results)
+    {
         var latestResultByGroup = new Dictionary<string, FeasibilityTestResult>(StringComparer.OrdinalIgnoreCase);
         foreach (var result in results
                      .Where(result => FeasibilityScenarioService.IsPlaybackCountConsistent(result) &&
@@ -99,11 +129,7 @@ public static class FeasibilityProfileGroupEvidenceService
             }
         }
 
-        return Normalize(
-            latestResultByGroup
-                .Where(item => item.Value.IsSameAccountSessionMaintained)
-                .Select(item => item.Key)
-                .ToArray());
+        return latestResultByGroup;
     }
 
     private static IReadOnlyList<string> GetSameAccountEvidenceGroups(FeasibilityTestResult result)

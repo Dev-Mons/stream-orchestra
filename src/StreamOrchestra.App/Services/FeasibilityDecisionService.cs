@@ -139,6 +139,7 @@ public sealed class FeasibilityDecisionService
         var coveredGroups = FeasibilityProfileGroupEvidenceService.GetLatestSameAccountCoveredGroups(results);
         var coveredGroupSet = coveredGroups.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        return PlanRequiredProfileGroups.All(coveredGroupSet.Contains);
+        return PlanRequiredProfileGroups.All(coveredGroupSet.Contains) &&
+            !FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(results);
     }
 }
