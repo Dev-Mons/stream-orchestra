@@ -1903,6 +1903,7 @@ public static class FeasibilityStatusCommand
             .Where(file => file is not null)
             .Select(file => file!)
             .ToArray() ?? [];
+        isValid &= ValidateHandoffDiagnosticDataFiles(dataFiles, manifest, validationLines);
         var resultsFile = dataFiles.FirstOrDefault(
             file => string.Equals(file.Name, "feasibility-results", StringComparison.OrdinalIgnoreCase));
         if (resultsFile is null)
@@ -1934,6 +1935,102 @@ public static class FeasibilityStatusCommand
         }
 
         isValid &= ValidateHandoffDiagnosticProfileGroups(report, manifest, validationLines);
+        return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticDataFiles(
+        IReadOnlyList<DiagnosticDataFile> dataFiles,
+        HandoffManifest manifest,
+        List<string> validationLines)
+    {
+        if (string.IsNullOrWhiteSpace(manifest.DataFolder) ||
+            string.IsNullOrWhiteSpace(manifest.ResultsFilePath))
+        {
+            validationLines.Add("- [fail] diagnostic report data files cannot be checked because manifest data paths are missing.");
+            return false;
+        }
+
+        var expectedDataFiles = new[]
+        {
+            new ExpectedDiagnosticDataFile("appstate", Path.Combine(manifest.DataFolder, "appstate.json")),
+            new ExpectedDiagnosticDataFile("workspaces", Path.Combine(manifest.DataFolder, "workspaces.json")),
+            new ExpectedDiagnosticDataFile("favorites", Path.Combine(manifest.DataFolder, "favorites.json")),
+            new ExpectedDiagnosticDataFile("feasibility-results", manifest.ResultsFilePath),
+            new ExpectedDiagnosticDataFile("external-browsers", Path.Combine(manifest.DataFolder, "external-browsers.json"))
+        };
+        var expectedNames = expectedDataFiles
+            .Select(file => file.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var filesByName = new Dictionary<string, List<DiagnosticDataFile>>(StringComparer.OrdinalIgnoreCase);
+        var isValid = true;
+        foreach (var dataFile in dataFiles)
+        {
+            var name = dataFile.Name?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                isValid = false;
+                validationLines.Add("- [fail] diagnostic report data file name is missing.");
+                continue;
+            }
+
+            if (!expectedNames.Contains(name))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] diagnostic report data file {name} is unexpected.");
+            }
+
+            if (dataFile.SizeBytes < 0)
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] diagnostic report data file {name} has negative size {dataFile.SizeBytes}.");
+            }
+
+            if (!filesByName.TryGetValue(name, out var matchingFiles))
+            {
+                matchingFiles = [];
+                filesByName[name] = matchingFiles;
+            }
+
+            matchingFiles.Add(dataFile);
+        }
+
+        foreach (var duplicateName in filesByName
+            .Where(item => item.Value.Count > 1)
+            .Select(item => item.Key)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] diagnostic report data file {duplicateName} is duplicated.");
+        }
+
+        foreach (var expectedDataFile in expectedDataFiles)
+        {
+            if (!filesByName.TryGetValue(expectedDataFile.Name, out var matchingFiles) ||
+                matchingFiles.Count == 0)
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] diagnostic report data file {expectedDataFile.Name} is missing.");
+                continue;
+            }
+
+            var dataFile = matchingFiles[0];
+            if (AreEquivalentPaths(dataFile.Path, expectedDataFile.Path))
+            {
+                validationLines.Add(
+                    $"- [pass] diagnostic report data file {expectedDataFile.Name}: {FormatPathForValidation(dataFile.Path)}");
+                continue;
+            }
+
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report data file {expectedDataFile.Name} path mismatch, expected {FormatPathForValidation(expectedDataFile.Path)}, actual {FormatPathForValidation(dataFile.Path)}.");
+        }
+
+        if (isValid)
+        {
+            validationLines.Add("- [pass] diagnostic report data files standard entries.");
+        }
+
         return isValid;
     }
 
@@ -3794,6 +3891,10 @@ public static class FeasibilityStatusCommand
         string FileName,
         long SizeBytes,
         string Sha256);
+
+    private sealed record ExpectedDiagnosticDataFile(
+        string Name,
+        string Path);
 
     private sealed record HandoffResultsSummary(
         IReadOnlyList<FeasibilityTestResult> Results,

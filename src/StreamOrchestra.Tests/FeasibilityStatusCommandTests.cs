@@ -560,6 +560,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-history.txt content matches results snapshot.", text);
         Assert.Contains("- [pass] diagnostic report result count: 0", text);
         Assert.Contains("- [pass] diagnostic report data folder:", text);
+        Assert.Contains("- [pass] diagnostic report data files standard entries.", text);
         Assert.Contains("- [pass] diagnostic report results file:", text);
         Assert.Contains("- [pass] diagnostic report profile root:", text);
         Assert.Contains("- [pass] diagnostic report profile groups: 4", text);
@@ -572,6 +573,77 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report account label conflict: False", text);
         Assert.Contains("- [pass] diagnostic report suggested records:", text);
         Assert.Contains("Validation: pass", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsDiagnosticDataFileMismatches()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-diagnostic-data-file-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var diagnosticReportPath = Path.Combine(handoffFolder, "phase0-diagnostic-report.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var diagnosticReport = JsonNode.Parse(File.ReadAllText(diagnosticReportPath))!.AsObject();
+        var dataFiles = diagnosticReport["dataFiles"]!.AsArray();
+        for (var index = dataFiles.Count - 1; index >= 0; index--)
+        {
+            var dataFileObject = dataFiles[index]!.AsObject();
+            var name = dataFileObject["name"]?.GetValue<string>();
+            if (name == "appstate")
+            {
+                dataFileObject["path"] = JsonValue.Create(@"C:\tampered-data\appstate.json");
+                dataFileObject["sizeBytes"] = JsonValue.Create(-1);
+                dataFiles.Add(new JsonObject
+                {
+                    ["name"] = "appstate",
+                    ["path"] = JsonValue.Create(Path.Combine(_dataFolder, "duplicate-appstate.json")),
+                    ["exists"] = JsonValue.Create(false),
+                    ["sizeBytes"] = JsonValue.Create(0)
+                });
+            }
+            else if (name == "favorites")
+            {
+                dataFiles.RemoveAt(index);
+            }
+        }
+
+        dataFiles.Add(new JsonObject
+        {
+            ["name"] = "unexpected",
+            ["path"] = JsonValue.Create(Path.Combine(_dataFolder, "unexpected.json")),
+            ["exists"] = JsonValue.Create(false),
+            ["sizeBytes"] = JsonValue.Create(0)
+        });
+        File.WriteAllText(
+            diagnosticReportPath,
+            diagnosticReport.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-diagnostic-report.json");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("diagnostic report data file appstate has negative size -1.", text);
+        Assert.Contains("diagnostic report data file appstate is duplicated.", text);
+        Assert.Contains("diagnostic report data file appstate path mismatch", text);
+        Assert.Contains("diagnostic report data file favorites is missing.", text);
+        Assert.Contains("diagnostic report data file unexpected is unexpected.", text);
+        Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
     }
