@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 472 passing tests.
+Current automated test coverage: 474 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -61,7 +61,7 @@ Current automated test coverage: 472 passing tests.
 | Slot display names from page title | Implemented | `StreamSlotView` uses WebView2 document titles when no explicit stream name was supplied |
 | Slot stream name display/storage | Implemented | `WorkspaceSlot.StreamName`, `StreamSlotView` control bar |
 | Last state restore on launch | Implemented | `PresetStorageService`, `MainWindow_Loaded`; saved window placement is rejected for non-finite or invalid sizes and clamped to the current virtual screen before restore |
-| Preset save/load/revert | Implemented | Preset toolbar includes load, current-state save, save-as, and revert-to-active-preset actions; the save-as dialog requires a preset name and supports Enter-to-save plus cancel; `workspaces.json` and `appstate.json` keep saved presets separate from transient last sessions; JSON list loads ignore null entries, normalize blank/duplicate workspace IDs and blank names, save normalized workspace metadata, and write a same-folder temporary file before replacing the target; diagnostic reports include saved workspace count, favorite count, last-session presence, selected slot, layout, slot count, and active stream URL count |
+| Preset save/load/revert | Implemented | Preset toolbar includes load, current-state save, save-as, and revert-to-active-preset actions; the save-as dialog requires a preset name and supports Enter-to-save plus cancel; `workspaces.json` and `appstate.json` keep saved presets separate from transient last sessions; JSON list loads ignore null entries, normalize blank/duplicate workspace IDs and blank names, normalize app-state workspace IDs, selected slots, null windows, and transient session metadata, save normalized workspace/app-state metadata, and write a same-folder temporary file before replacing the target; diagnostic reports include saved workspace count, favorite count, last-session presence, selected slot, layout, slot count, and active stream URL count |
 | Slot top control bar | Implemented | `StreamSlotView` uses compact drag, mute, refresh, and menu controls with title trimming; XAML tests verify the individual URL load controls, drag handle, drop target, mute, refresh, and slot menu actions |
 | Slot control bar auto-hide | Implemented | `ToggleSlotControlBarsButton`, `AppState.AreSlotControlBarsAlwaysVisible`; XAML tests also verify explorer, slot URL editor, and control-bar visibility toggles |
 | Drag handle slot swap | Implemented | `SlotSwapService`, `⋮⋮` drag handle, and XAML tests verify swap dragging starts from the handle while the slot border is the drop target; stream URL/name identity is normalized at the swap boundary while mute state and profile group remain attached to the slot |

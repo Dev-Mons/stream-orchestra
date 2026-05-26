@@ -41,12 +41,14 @@ public sealed class PresetStorageService
 
     public AppState? LoadAppState()
     {
-        return JsonFileStorage.LoadSingle<AppState>(AppStateFilePath, SerializerOptions);
+        var appState = JsonFileStorage.LoadSingle<AppState>(AppStateFilePath, SerializerOptions);
+
+        return appState is null ? null : NormalizeAppState(appState);
     }
 
     public void SaveAppState(AppState appState)
     {
-        JsonFileStorage.Save(AppStateFilePath, appState, SerializerOptions);
+        JsonFileStorage.Save(AppStateFilePath, NormalizeAppState(appState), SerializerOptions);
     }
 
     public static string CreateWorkspaceId(string name, IReadOnlyCollection<WorkspacePreset> existingWorkspaces)
@@ -100,21 +102,54 @@ public sealed class PresetStorageService
                 continue;
             }
 
-            var id = CreateUniqueWorkspaceId(workspace.Id, usedIds);
-            var name = string.IsNullOrWhiteSpace(workspace.Name)
-                ? "Imported Workspace"
-                : workspace.Name.Trim();
-
-            normalizedWorkspaces.Add(new WorkspacePreset
-            {
-                Id = id,
-                Name = name,
-                LayoutId = workspace.LayoutId?.Trim() ?? "",
-                Slots = workspace.Slots ?? []
-            });
+            normalizedWorkspaces.Add(NormalizeWorkspace(workspace, usedIds));
         }
 
         return normalizedWorkspaces;
+    }
+
+    private static AppState NormalizeAppState(AppState appState)
+    {
+        return new AppState
+        {
+            LastWorkspaceId = NormalizeOptionalText(appState.LastWorkspaceId),
+            Window = appState.Window ?? new AppWindowState(),
+            SelectedSlotId = NormalizeSelectedSlotId(appState.SelectedSlotId),
+            LastSession = appState.LastSession is null
+                ? null
+                : NormalizeWorkspace(appState.LastSession, new HashSet<string>(StringComparer.OrdinalIgnoreCase)),
+            IsExplorerPanelVisible = appState.IsExplorerPanelVisible,
+            AreSlotUrlEditorsVisible = appState.AreSlotUrlEditorsVisible,
+            AreSlotControlBarsAlwaysVisible = appState.AreSlotControlBarsAlwaysVisible
+        };
+    }
+
+    private static WorkspacePreset NormalizeWorkspace(WorkspacePreset workspace, HashSet<string> usedIds)
+    {
+        var id = CreateUniqueWorkspaceId(workspace.Id, usedIds);
+        var name = string.IsNullOrWhiteSpace(workspace.Name)
+            ? "Imported Workspace"
+            : workspace.Name.Trim();
+
+        return new WorkspacePreset
+        {
+            Id = id,
+            Name = name,
+            LayoutId = workspace.LayoutId?.Trim() ?? "",
+            Slots = workspace.Slots ?? []
+        };
+    }
+
+    private static string? NormalizeOptionalText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static int? NormalizeSelectedSlotId(int? selectedSlotId)
+    {
+        return selectedSlotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount
+            ? selectedSlotId
+            : null;
     }
 
     private static string CreateUniqueWorkspaceId(string? requestedId, HashSet<string> usedIds)

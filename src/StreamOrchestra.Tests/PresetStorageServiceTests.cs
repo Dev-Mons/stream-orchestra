@@ -184,6 +184,73 @@ public sealed class PresetStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadAppState_NormalizesHandEditedStateMetadata()
+    {
+        var service = new PresetStorageService(_dataFolder);
+        File.WriteAllText(
+            service.AppStateFilePath,
+            """
+            {
+              "lastWorkspaceId": " workspace_weekday ",
+              "window": null,
+              "selectedSlotId": 17,
+              "lastSession": {
+                "id": " ",
+                "name": " ",
+                "layoutId": null,
+                "slots": null
+              }
+            }
+            """);
+
+        var appState = service.LoadAppState();
+
+        Assert.NotNull(appState);
+        Assert.Equal("workspace_weekday", appState.LastWorkspaceId);
+        Assert.NotNull(appState.Window);
+        Assert.Equal(1600, appState.Window.Width);
+        Assert.Null(appState.SelectedSlotId);
+        Assert.NotNull(appState.LastSession);
+        Assert.Equal("workspace_imported", appState.LastSession.Id);
+        Assert.Equal("Imported Workspace", appState.LastSession.Name);
+        Assert.Equal("", appState.LastSession.LayoutId);
+        Assert.Empty(appState.LastSession.Slots);
+    }
+
+    [Fact]
+    public void SaveAppState_NormalizesStateMetadataBeforeWriting()
+    {
+        var service = new PresetStorageService(_dataFolder);
+
+        service.SaveAppState(new AppState
+        {
+            LastWorkspaceId = " ",
+            Window = null!,
+            SelectedSlotId = 99,
+            LastSession = new WorkspacePreset
+            {
+                Id = " last_session ",
+                Name = " Last Session ",
+                LayoutId = " layout_4x4 ",
+                Slots = null!
+            }
+        });
+
+        var loadedAppState = service.LoadAppState();
+
+        Assert.NotNull(loadedAppState);
+        Assert.Null(loadedAppState.LastWorkspaceId);
+        Assert.NotNull(loadedAppState.Window);
+        Assert.Null(loadedAppState.SelectedSlotId);
+        Assert.NotNull(loadedAppState.LastSession);
+        Assert.Equal("last_session", loadedAppState.LastSession.Id);
+        Assert.Equal("Last Session", loadedAppState.LastSession.Name);
+        Assert.Equal("layout_4x4", loadedAppState.LastSession.LayoutId);
+        Assert.Empty(loadedAppState.LastSession.Slots);
+        Assert.Contains("\"selectedSlotId\": null", File.ReadAllText(service.AppStateFilePath));
+    }
+
+    [Fact]
     public void SaveAppState_OverwritesExistingStateWithoutLeavingTemporaryFiles()
     {
         var service = new PresetStorageService(_dataFolder);
