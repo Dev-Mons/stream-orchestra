@@ -522,6 +522,81 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_ClearsDecisionSnapshotWhenDecisionEvidenceIsNormalized()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "success_without_restart",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "success",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": false,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000,
+                "decisionCode": "continue_webview2_mvp",
+                "decisionTitle": "WebView2 MVP 계속",
+                "decisionDetail": "stale",
+                "decisionNextAction": "stale"
+              },
+              {
+                "id": "failure_with_criteria_flags",
+                "capturedAt": "2026-05-26T12:05:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "failure",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": true,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000,
+                "decisionCode": "switch_external_browser",
+                "decisionTitle": "외부 브라우저 제어 검토",
+                "decisionDetail": "stale",
+                "decisionNextAction": "stale"
+              },
+              {
+                "id": "malformed_outcome",
+                "capturedAt": "2026-05-26T12:10:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "maybe",
+                "decisionCode": "continue_webview2_mvp",
+                "decisionTitle": "WebView2 MVP 계속",
+                "decisionDetail": "stale",
+                "decisionNextAction": "stale"
+              }
+            ]
+            """);
+
+        var results = service.LoadResults();
+
+        Assert.Equal(["partial", "failure", "maybe"], results.Select(result => result.Outcome));
+        Assert.All(results, result =>
+        {
+            Assert.Equal("", result.DecisionCode);
+            Assert.Equal("", result.DecisionTitle);
+            Assert.Equal("", result.DecisionDetail);
+            Assert.Equal("", result.DecisionNextAction);
+        });
+    }
+
+    [Fact]
     public void LoadResults_DowngradesSuccessOutcomeWhenSuccessEvidenceIsIncomplete()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);

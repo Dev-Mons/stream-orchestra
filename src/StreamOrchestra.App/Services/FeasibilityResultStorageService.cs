@@ -125,6 +125,14 @@ public sealed class FeasibilityResultStorageService
             hasSameAccountEvidence,
             normalizedRestartSession,
             normalizedResourceUsageAcceptable);
+        var shouldClearDecisionSnapshot = ShouldClearDecisionSnapshot(
+            result,
+            canonicalOutcome,
+            normalizedOutcome,
+            normalizedGroups,
+            hasSameAccountEvidence,
+            normalizedRestartSession,
+            normalizedResourceUsageAcceptable);
 
         return new FeasibilityTestResult
         {
@@ -145,10 +153,10 @@ public sealed class FeasibilityResultStorageService
             ObservedCpuPercent = result.ObservedCpuPercent,
             ObservedGpuPercent = result.ObservedGpuPercent,
             ObservedMemoryMegabytes = result.ObservedMemoryMegabytes,
-            DecisionCode = result.DecisionCode?.Trim() ?? "",
-            DecisionTitle = result.DecisionTitle?.Trim() ?? "",
-            DecisionDetail = result.DecisionDetail?.Trim() ?? "",
-            DecisionNextAction = result.DecisionNextAction?.Trim() ?? "",
+            DecisionCode = shouldClearDecisionSnapshot ? "" : result.DecisionCode?.Trim() ?? "",
+            DecisionTitle = shouldClearDecisionSnapshot ? "" : result.DecisionTitle?.Trim() ?? "",
+            DecisionDetail = shouldClearDecisionSnapshot ? "" : result.DecisionDetail?.Trim() ?? "",
+            DecisionNextAction = shouldClearDecisionSnapshot ? "" : result.DecisionNextAction?.Trim() ?? "",
             Notes = result.Notes?.Trim() ?? ""
         };
     }
@@ -193,6 +201,39 @@ public sealed class FeasibilityResultStorageService
         return FeasibilityOutcomeService.IsFailure(outcome)
             ? "failure"
             : outcome;
+    }
+
+    private static bool ShouldClearDecisionSnapshot(
+        FeasibilityTestResult result,
+        string canonicalOutcome,
+        string normalizedOutcome,
+        IReadOnlyList<string> normalizedGroups,
+        bool hasSameAccountEvidence,
+        bool normalizedRestartSession,
+        bool normalizedResourceUsageAcceptable)
+    {
+        if (!FeasibilityOutcomeService.IsKnown(canonicalOutcome))
+        {
+            return true;
+        }
+
+        if (!string.Equals(canonicalOutcome, normalizedOutcome, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rawGroups = FeasibilityProfileGroupEvidenceService.Normalize(result.VerifiedProfileGroups);
+        if (!rawGroups.SequenceEqual(normalizedGroups, StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rawHasSameAccountEvidence = result.IsSameAccountSessionMaintained &&
+            !string.IsNullOrWhiteSpace(result.AccountLabel) &&
+            rawGroups.Count > 0;
+        return rawHasSameAccountEvidence != hasSameAccountEvidence ||
+            result.IsRestartSessionMaintained != normalizedRestartSession ||
+            result.IsResourceUsageAcceptable != normalizedResourceUsageAcceptable;
     }
 
     private static RuntimeDiagnosticsSnapshot NormalizeDiagnostics(
