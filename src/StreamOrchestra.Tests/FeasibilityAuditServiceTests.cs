@@ -482,6 +482,48 @@ public sealed class FeasibilityAuditServiceTests
     }
 
     [Fact]
+    public void CreateAudit_KeepsRestartAndResourceGatesPassedWhenLatestNinePlusPartialHasNoEvidence()
+    {
+        var thresholdSuccess = CreateResult(
+            playbackCount: 9,
+            outcome: "success",
+            account: true,
+            restart: true,
+            resources: true,
+            scenarioId: "groups_a_b_c_9_slot_threshold",
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero));
+        var groupD = CreateResult(
+            playbackCount: 4,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_d",
+            verifiedProfileGroups: ["D"],
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero));
+        var playbackOnlyPartial = CreateResult(
+            playbackCount: 16,
+            outcome: "partial",
+            account: false,
+            restart: false,
+            resources: false,
+            scenarioId: "groups_a_b_c_d_16_slots",
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero));
+        var decision = new FeasibilityDecisionService().Decide(
+            [thresholdSuccess, groupD, playbackOnlyPartial]);
+
+        var auditItems = new FeasibilityAuditService().CreateAudit(
+            [thresholdSuccess, groupD, playbackOnlyPartial],
+            decision);
+
+        Assert.Equal("pass", Find(auditItems, "same_account_session").Status);
+        Assert.Equal("pass", Find(auditItems, "restart_session").Status);
+        Assert.Equal("pass", Find(auditItems, "resource_acceptability").Status);
+        Assert.Equal("pass", Find(auditItems, "resource_observations").Status);
+        Assert.Equal("pending", Find(auditItems, "phase0_success_gate").Status);
+    }
+
+    [Fact]
     public void CreateAudit_FailsSameAccountGateWhenAccountLabelsConflict()
     {
         var thresholdSuccess = CreateResult(

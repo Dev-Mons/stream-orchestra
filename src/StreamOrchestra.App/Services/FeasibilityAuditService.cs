@@ -78,10 +78,20 @@ public sealed class FeasibilityAuditService
         var latestNinePlusResult = ninePlusResults
             .OrderByDescending(result => result.CapturedAt)
             .FirstOrDefault();
-        var latestPlanNinePlusResult = ninePlusResults
+        var planNinePlusResults = ninePlusResults
             .Where(FeasibilityScenarioService.IsPlanNinePlusPlaybackScenario)
+            .ToArray();
+        var latestPlanNinePlusResult = planNinePlusResults
             .OrderByDescending(result => result.CapturedAt)
             .FirstOrDefault();
+        var latestRestartEvidenceResult = GetLatestNinePlusBooleanEvidenceResult(
+            planNinePlusResults,
+            result => result.IsRestartSessionMaintained);
+        var latestResourceAcceptabilityEvidenceResult = GetLatestNinePlusBooleanEvidenceResult(
+            planNinePlusResults,
+            result => result.IsResourceUsageAcceptable);
+        var latestResourceObservationEvidenceResult = GetLatestNinePlusResourceObservationEvidenceResult(
+            planNinePlusResults);
         var latestNinePlusIsFailure = latestNinePlusResult is not null &&
             FeasibilityOutcomeService.IsFailure(latestNinePlusResult) &&
             FeasibilityScenarioService.IsPlanNinePlusPlaybackScenario(latestNinePlusResult);
@@ -131,6 +141,7 @@ public sealed class FeasibilityAuditService
             CreateLatestNinePlusBooleanAuditItem(
                 "restart_session",
                 "App restart keeps login session",
+                latestRestartEvidenceResult,
                 latestPlanNinePlusResult,
                 result => result.IsRestartSessionMaintained,
                 "No 9+ slot result has restart=True.",
@@ -138,6 +149,7 @@ public sealed class FeasibilityAuditService
             CreateLatestNinePlusBooleanAuditItem(
                 "resource_acceptability",
                 "CPU/GPU/memory acceptable",
+                latestResourceAcceptabilityEvidenceResult,
                 latestPlanNinePlusResult,
                 result => result.IsResourceUsageAcceptable,
                 "No 9+ slot result has resources=True.",
@@ -145,13 +157,9 @@ public sealed class FeasibilityAuditService
             new FeasibilityAuditItem(
                 "resource_observations",
                 "Structured resource observations captured",
-                latestPlanNinePlusResult is not null &&
-                    FeasibilityOutcomeService.IsKnown(latestPlanNinePlusResult) &&
-                    HasStructuredResourceObservation(latestPlanNinePlusResult) ? "pass" : "pending",
-                latestPlanNinePlusResult is not null &&
-                    FeasibilityOutcomeService.IsKnown(latestPlanNinePlusResult) &&
-                    HasStructuredResourceObservation(latestPlanNinePlusResult)
-                    ? FormatResourceEvidence(latestPlanNinePlusResult)
+                latestResourceObservationEvidenceResult is not null ? "pass" : "pending",
+                latestResourceObservationEvidenceResult is not null
+                    ? FormatResourceEvidence(latestResourceObservationEvidenceResult)
                     : latestPlanNinePlusResult is not null &&
                         !FeasibilityOutcomeService.IsKnown(latestPlanNinePlusResult)
                             ? "Latest 9+ slot result has invalid outcome."
@@ -270,28 +278,55 @@ public sealed class FeasibilityAuditService
     private static FeasibilityAuditItem CreateLatestNinePlusBooleanAuditItem(
         string id,
         string title,
-        FeasibilityTestResult? latestNinePlusResult,
+        FeasibilityTestResult? latestEvidenceResult,
+        FeasibilityTestResult? latestPlanNinePlusResult,
         Func<FeasibilityTestResult, bool> predicate,
         string failEvidence,
         string pendingEvidence)
     {
-        if (latestNinePlusResult is null)
+        if (latestEvidenceResult is null)
         {
-            return new FeasibilityAuditItem(id, title, "pending", pendingEvidence);
-        }
+            if (latestPlanNinePlusResult is not null &&
+                !FeasibilityOutcomeService.IsKnown(latestPlanNinePlusResult))
+            {
+                return new FeasibilityAuditItem(
+                    id,
+                    title,
+                    "pending",
+                    "Latest 9+ slot result has invalid outcome.");
+            }
 
-        if (!FeasibilityOutcomeService.IsKnown(latestNinePlusResult))
-        {
             return new FeasibilityAuditItem(
                 id,
                 title,
                 "pending",
-                "Latest 9+ slot result has invalid outcome.");
+                pendingEvidence);
         }
 
-        return predicate(latestNinePlusResult)
-            ? new FeasibilityAuditItem(id, title, "pass", FormatResultEvidence(latestNinePlusResult))
+        return predicate(latestEvidenceResult)
+            ? new FeasibilityAuditItem(id, title, "pass", FormatResultEvidence(latestEvidenceResult))
             : new FeasibilityAuditItem(id, title, "fail", failEvidence);
+    }
+
+    private static FeasibilityTestResult? GetLatestNinePlusBooleanEvidenceResult(
+        IReadOnlyList<FeasibilityTestResult> planNinePlusResults,
+        Func<FeasibilityTestResult, bool> predicate)
+    {
+        return planNinePlusResults
+            .Where(FeasibilityOutcomeService.IsKnown)
+            .Where(result => predicate(result) || FeasibilityOutcomeService.IsFailure(result))
+            .OrderByDescending(result => result.CapturedAt)
+            .FirstOrDefault();
+    }
+
+    private static FeasibilityTestResult? GetLatestNinePlusResourceObservationEvidenceResult(
+        IReadOnlyList<FeasibilityTestResult> planNinePlusResults)
+    {
+        return planNinePlusResults
+            .Where(result => FeasibilityOutcomeService.IsKnown(result) &&
+                HasStructuredResourceObservation(result))
+            .OrderByDescending(result => result.CapturedAt)
+            .FirstOrDefault();
     }
 
     private static FeasibilityAuditItem CreateExactPlaybackAuditItem(

@@ -1668,10 +1668,10 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         var text = output.ToString();
 
         Assert.Equal(1, exitCode);
-        Assert.Contains("Plan audit: pass=3, pending=7, fail=1", text);
-        Assert.Contains("Plan verification: [fail]", text);
+        Assert.Contains("Plan audit: pass=3, pending=8, fail=0", text);
+        Assert.Contains("Plan verification: [pending]", text);
         Assert.Contains("Outstanding gates:", text);
-        Assert.Contains("- [fail] App restart keeps login session", text);
+        Assert.Contains("- [pending] App restart keeps login session", text);
         Assert.Contains("- [pending] Structured resource observations captured", text);
         Assert.Contains("- [pending] Phase 0 WebView2 success gate", text);
         Assert.Contains("Suggested record shapes:", text);
