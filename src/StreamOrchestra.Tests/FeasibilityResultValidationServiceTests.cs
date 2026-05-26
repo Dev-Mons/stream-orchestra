@@ -76,6 +76,22 @@ public sealed class FeasibilityResultValidationServiceTests
         Assert.Equal("Same-account evidence requires at least one verified profile group.", error);
     }
 
+    [Fact]
+    public void Validate_RejectsAccountLabelWithoutSameAccountEvidence()
+    {
+        var service = new FeasibilityResultValidationService();
+
+        var error = service.Validate(
+            playbackCount: 4,
+            outcome: "partial",
+            sameAccountSession: false,
+            restartSession: false,
+            resourceUsageAcceptable: false,
+            accountLabel: "main_soop");
+
+        Assert.Equal("Account label requires same-account evidence.", error);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

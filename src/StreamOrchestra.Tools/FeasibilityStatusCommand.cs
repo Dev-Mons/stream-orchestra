@@ -2433,7 +2433,7 @@ public static class FeasibilityStatusCommand
             Outcome = parseResult.Outcome!,
             Diagnostics = diagnostics,
             IsSameAccountSessionMaintained = parseResult.SameAccountSession,
-            AccountLabel = parseResult.AccountLabel ?? "",
+            AccountLabel = parseResult.SameAccountSession ? parseResult.AccountLabel ?? "" : "",
             VerifiedProfileGroups = parseResult.VerifiedProfileGroups,
             IsRestartSessionMaintained = parseResult.RestartSession,
             IsResourceUsageAcceptable = parseResult.ResourceUsageAcceptable,

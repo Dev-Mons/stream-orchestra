@@ -2169,6 +2169,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     [InlineData("record --count 9 --outcome partial --gpu-percent bad", "--gpu-percent requires a numeric value.")]
     [InlineData("record --count 9 --outcome partial --memory-mb -1", "--memory-mb must be 0 or higher.")]
     [InlineData("record --count 9 --outcome partial --account-label", "--account-label requires a value.")]
+    [InlineData("record --count 9 --outcome partial --account-label main_soop", "Account label requires same-account evidence.")]
     [InlineData("record --count 9 --outcome partial --account --account-label main_soop", "Same-account evidence requires at least one verified profile group.")]
     [InlineData("record --group D --outcome partial --account --profile-groups D", "Same-account evidence requires an account label.")]
     [InlineData("record --group Z --outcome partial", "--group must be A, B, C, or D.")]

@@ -94,6 +94,9 @@ public sealed class FeasibilityResultStorageService
 
         var diagnostics = NormalizeDiagnostics(result.Diagnostics, result.CapturedAt);
         var normalizedOutcome = result.Outcome?.Trim() ?? "";
+        var normalizedAccountLabel = result.IsSameAccountSessionMaintained
+            ? result.AccountLabel?.Trim() ?? ""
+            : "";
 
         return new FeasibilityTestResult
         {
@@ -107,7 +110,7 @@ public sealed class FeasibilityResultStorageService
             Outcome = normalizedOutcome,
             Diagnostics = diagnostics,
             IsSameAccountSessionMaintained = result.IsSameAccountSessionMaintained,
-            AccountLabel = result.AccountLabel?.Trim() ?? "",
+            AccountLabel = normalizedAccountLabel,
             IsRestartSessionMaintained = result.IsRestartSessionMaintained,
             IsResourceUsageAcceptable = result.IsResourceUsageAcceptable,
             VerifiedProfileGroups = FeasibilityProfileGroupEvidenceService.Normalize(result.VerifiedProfileGroups),

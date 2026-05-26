@@ -122,7 +122,9 @@ public sealed class FeasibilityResultValidationService
     {
         if (!sameAccountSession)
         {
-            return null;
+            return string.IsNullOrWhiteSpace(accountLabel)
+                ? null
+                : "Account label requires same-account evidence.";
         }
 
         if (FeasibilityProfileGroupEvidenceService.Normalize(verifiedProfileGroups).Count == 0)

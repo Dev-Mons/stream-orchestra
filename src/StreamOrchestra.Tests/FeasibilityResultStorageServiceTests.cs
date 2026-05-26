@@ -187,6 +187,35 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_DropsAccountLabelWhenSameAccountEvidenceIsFalse()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "playback_only",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": false,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"]
+              }
+            ]
+            """);
+
+        var results = service.LoadResults();
+
+        var result = Assert.Single(results);
+        Assert.False(result.IsSameAccountSessionMaintained);
+        Assert.Equal("", result.AccountLabel);
+    }
+
+    [Fact]
     public void SaveResults_NormalizesResultsBeforeWriting()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);
