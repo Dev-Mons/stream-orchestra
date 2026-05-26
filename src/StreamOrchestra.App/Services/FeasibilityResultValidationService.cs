@@ -52,6 +52,10 @@ public sealed class FeasibilityResultValidationService
         var restartEvidenceValidationError = ValidateRestartSessionEvidence(
             restartSession,
             sameAccountSession);
+        var failureCriteriaEvidenceValidationError = ValidateFailureCriteriaEvidence(
+            normalizedOutcome,
+            restartSession,
+            resourceUsageAcceptable);
 
         if (normalizedOutcome != "success")
         {
@@ -61,7 +65,10 @@ public sealed class FeasibilityResultValidationService
                 observedGpuPercent,
                 observedMemoryMegabytes);
 
-            return resourceObservationError ?? accountEvidenceValidationError ?? restartEvidenceValidationError;
+            return failureCriteriaEvidenceValidationError
+                ?? resourceObservationError
+                ?? accountEvidenceValidationError
+                ?? restartEvidenceValidationError;
         }
 
         if (playbackCount < 9)
@@ -105,6 +112,26 @@ public sealed class FeasibilityResultValidationService
     {
         return restartSession && !sameAccountSession
             ? "Restart evidence requires same-account evidence."
+            : null;
+    }
+
+    private static string? ValidateFailureCriteriaEvidence(
+        string normalizedOutcome,
+        bool restartSession,
+        bool resourceUsageAcceptable)
+    {
+        if (normalizedOutcome != "failure")
+        {
+            return null;
+        }
+
+        if (restartSession)
+        {
+            return "Failure records cannot include restart evidence.";
+        }
+
+        return resourceUsageAcceptable
+            ? "Failure records cannot include resource OK evidence."
             : null;
     }
 

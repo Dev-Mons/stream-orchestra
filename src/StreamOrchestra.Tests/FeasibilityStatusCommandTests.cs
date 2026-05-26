@@ -2161,6 +2161,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     [InlineData("record --count 9 --outcome success --account --profile-groups A,B,C --restart", "Success requires acceptable resource usage.")]
     [InlineData("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources", "Resource OK requires CPU %, GPU %, and memory MB observations.")]
     [InlineData("record --count 9 --outcome partial --resources", "Resource OK requires CPU %, GPU %, and memory MB observations.")]
+    [InlineData("record --count 9 --outcome failure --account --profile-groups A,B,C --account-label main_soop --restart", "Failure records cannot include restart evidence.")]
+    [InlineData("record --count 9 --outcome failure --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000", "Failure records cannot include resource OK evidence.")]
     [InlineData("record --count 9 --outcome success --account --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000", "Success requires same-account profile group evidence for groups A, B, C.")]
     [InlineData("record --count 9 --outcome partial --profile-groups A,Z", "Profile groups must be A, B, C, and/or D.")]
     [InlineData("record --count 17 --outcome success", "--count must be between 1 and 16.")]

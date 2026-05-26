@@ -164,7 +164,6 @@ public sealed class FeasibilityResultValidationServiceTests
     [InlineData("success", 45.0, 60.0, null)]
     [InlineData("partial", null, 60.0, 12000.0)]
     [InlineData("partial", 45.0, null, 12000.0)]
-    [InlineData("failure", 45.0, 60.0, null)]
     public void Validate_RejectsResourceOkWhenStructuredResourceObservationIsMissing(
         string outcome,
         double? observedCpuPercent,
@@ -185,6 +184,41 @@ public sealed class FeasibilityResultValidationServiceTests
             verifiedProfileGroups: ["A", "B", "C"]);
 
         Assert.Equal("Resource OK requires CPU %, GPU %, and memory MB observations.", error);
+    }
+
+    [Fact]
+    public void Validate_RejectsFailureWithRestartEvidence()
+    {
+        var service = new FeasibilityResultValidationService();
+
+        var error = service.Validate(
+            playbackCount: 9,
+            outcome: "failure",
+            sameAccountSession: true,
+            restartSession: true,
+            resourceUsageAcceptable: false,
+            verifiedProfileGroups: ["A", "B", "C"],
+            accountLabel: "main_soop");
+
+        Assert.Equal("Failure records cannot include restart evidence.", error);
+    }
+
+    [Fact]
+    public void Validate_RejectsFailureWithResourceOkEvidence()
+    {
+        var service = new FeasibilityResultValidationService();
+
+        var error = service.Validate(
+            playbackCount: 9,
+            outcome: "failure",
+            sameAccountSession: false,
+            restartSession: false,
+            resourceUsageAcceptable: true,
+            observedCpuPercent: 45,
+            observedGpuPercent: 60,
+            observedMemoryMegabytes: 12000);
+
+        Assert.Equal("Failure records cannot include resource OK evidence.", error);
     }
 
     [Fact]
