@@ -360,28 +360,56 @@ public static class FeasibilityStatusCommand
         var auditItems = auditService.CreateAudit(results, decision);
         var runtimeStatus = GetWebView2RuntimeStatus();
         var layoutStatus = GetPlaybackLayoutStatus();
-
-        output.WriteLine("Stream Orchestra Feasibility Preflight");
-        output.WriteLine($"Data folder: {feasibilityStorage.DataFolder}");
-        output.WriteLine($"Results file: {feasibilityStorage.ResultsFilePath}");
-        output.WriteLine($"Profile root: {profileService.BaseProfileFolder}");
-        output.WriteLine($"WebView2 runtime: {runtimeStatus}");
-        output.WriteLine("Profile groups:");
+        var lines = new List<string>
+        {
+            "Stream Orchestra Feasibility Preflight",
+            $"Data folder: {feasibilityStorage.DataFolder}",
+            $"Results file: {feasibilityStorage.ResultsFilePath}",
+            $"Profile root: {profileService.BaseProfileFolder}",
+            $"WebView2 runtime: {runtimeStatus}",
+            "Profile groups:"
+        };
 
         foreach (var group in profileService.Groups.OrderBy(group => group.Id, StringComparer.OrdinalIgnoreCase))
         {
             var status = Directory.Exists(group.UserDataFolder) ? "ready" : "missing";
-            output.WriteLine($"- [{status}] Group {group.Id}: {group.UserDataFolder}");
+            lines.Add($"- [{status}] Group {group.Id}: {group.UserDataFolder}");
         }
 
-        output.WriteLine($"Layouts: {layoutStatus}");
-        output.WriteLine($"Evidence recorded: {results.Count}");
-        output.WriteLine($"Decision: {decision.Title} ({decision.Code})");
-        WriteNextAction(decision, output);
-        WriteAuditSummary(auditItems, output);
-        WritePlanVerificationStatus(auditItems, output);
-        WritePhase0SuccessGate(auditItems, output);
-        WriteSuggestedRecordShapes(auditItems, output);
+        lines.Add($"Layouts: {layoutStatus}");
+        lines.Add($"Evidence recorded: {results.Count}");
+        lines.Add($"Decision: {decision.Title} ({decision.Code})");
+        if (!string.IsNullOrWhiteSpace(decision.NextAction))
+        {
+            lines.Add($"Next action: {decision.NextAction}");
+        }
+
+        var summary = auditService.CreateSummary(auditItems);
+        lines.Add($"Plan audit: {summary.ToCompactText()}");
+        lines.Add($"Plan verification: [{auditService.CreatePlanVerificationStatus(auditItems)}]");
+        var successGate = auditItems.FirstOrDefault(item => item.Id == "phase0_success_gate");
+        if (successGate is not null)
+        {
+            lines.Add($"Success gate: [{successGate.Status}] {successGate.Evidence}");
+        }
+
+        var suggestions = auditService.CreateSuggestedRecordShapes(auditItems);
+        if (suggestions.Count > 0)
+        {
+            lines.Add("Suggested record shapes:");
+            lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
+        }
+
+        foreach (var line in lines)
+        {
+            output.WriteLine(line);
+        }
+
+        if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
+        {
+            SaveTextFile(parseResult.OutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            output.WriteLine($"Preflight saved: {parseResult.OutputPath}");
+        }
 
         return runtimeStatus.StartsWith("[available]", StringComparison.OrdinalIgnoreCase) &&
             layoutStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase)
@@ -1124,6 +1152,7 @@ public static class FeasibilityStatusCommand
     {
         string? dataFolder = null;
         string? profileFolder = null;
+        string? outputPath = null;
 
         for (var index = 1; index < args.Length; index++)
         {
@@ -1150,10 +1179,21 @@ public static class FeasibilityStatusCommand
                 continue;
             }
 
+            if (arg.Equals("--output", StringComparison.OrdinalIgnoreCase))
+            {
+                if (index + 1 >= args.Length)
+                {
+                    return ParseResult.Invalid("--output requires a value.");
+                }
+
+                outputPath = args[++index];
+                continue;
+            }
+
             return ParseResult.Invalid($"Unknown option: {arg}");
         }
 
-        return ParseResult.Preflight(dataFolder, profileFolder);
+        return ParseResult.Preflight(dataFolder, profileFolder, outputPath);
     }
 
     private static void WriteUsage(TextWriter writer)
@@ -1165,7 +1205,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools checklist [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools fallback [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools history [--data-folder <path>]");
-        writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>]");
+        writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--dry-run] [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools report [--data-folder <path>] [--profile-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools scenarios");
@@ -1409,9 +1449,9 @@ public static class FeasibilityStatusCommand
             return new ParseResult(true, false, "report", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
         }
 
-        public static ParseResult Preflight(string? dataFolder, string? profileFolder)
+        public static ParseResult Preflight(string? dataFolder, string? profileFolder, string? outputPath)
         {
-            return new ParseResult(true, false, "preflight", dataFolder, profileFolder, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
+            return new ParseResult(true, false, "preflight", dataFolder, profileFolder, outputPath, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, "");
         }
 
         public static ParseResult Help()

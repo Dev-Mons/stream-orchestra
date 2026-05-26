@@ -267,6 +267,41 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_PreflightWithOutput_WritesPreflightTextFile()
+    {
+        var profileFolder = Path.Combine(_dataFolder, "Profiles");
+        var preflightOutputPath = Path.Combine(_dataFolder, "phase0-preflight.txt");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            [
+                "preflight",
+                "--data-folder",
+                _dataFolder,
+                "--profile-folder",
+                profileFolder,
+                "--output",
+                preflightOutputPath
+            ],
+            output,
+            error);
+
+        var fileText = File.ReadAllText(preflightOutputPath);
+        Assert.True(exitCode is 0 or 1);
+        Assert.Contains($"Preflight saved: {preflightOutputPath}", output.ToString());
+        Assert.Contains("Stream Orchestra Feasibility Preflight", fileText);
+        Assert.Contains($"Data folder: {_dataFolder}", fileText);
+        Assert.Contains($"Profile root: {profileFolder}", fileText);
+        Assert.Contains("WebView2 runtime: [", fileText);
+        Assert.Contains("Layouts: [ready]", fileText);
+        Assert.Contains("Evidence recorded: 0", fileText);
+        Assert.Contains("Plan verification: [pending]", fileText);
+        Assert.Contains("Suggested record shapes:", fileText);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_VerifyWithNoResults_ReturnsFailureAndPendingGate()
     {
         using var output = new StringWriter();
@@ -1111,16 +1146,18 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Usage:", error.ToString());
     }
 
-    [Fact]
-    public void Execute_PreflightValidationErrors_ReturnUsageError()
+    [Theory]
+    [InlineData("--profile-folder", "--profile-folder requires a value.")]
+    [InlineData("--output", "--output requires a value.")]
+    public void Execute_PreflightValidationErrors_ReturnUsageError(string option, string expectedError)
     {
         using var output = new StringWriter();
         using var error = new StringWriter();
 
-        var exitCode = FeasibilityStatusCommand.Execute(["preflight", "--profile-folder"], output, error);
+        var exitCode = FeasibilityStatusCommand.Execute(["preflight", option], output, error);
 
         Assert.Equal(2, exitCode);
-        Assert.Contains("--profile-folder requires a value.", error.ToString());
+        Assert.Contains(expectedError, error.ToString());
         Assert.Contains("Usage:", error.ToString());
     }
 

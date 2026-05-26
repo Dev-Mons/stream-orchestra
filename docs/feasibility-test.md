@@ -56,13 +56,15 @@ Before live SOOP testing, run a local preflight check. It verifies that the CLI 
 dotnet run --project src\StreamOrchestra.Tools -- preflight
 ```
 
+Add `--output .\phase0-preflight.txt` to save the exact preflight text as the setup artifact for the manual verification run.
+
 Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
 
 ```powershell
 dotnet run --project src\StreamOrchestra.Tools -- checklist
 ```
 
-`checklist` keeps the manual run aligned with the plan and prints the current evidence status, outstanding gates, and suggested records before the steps: preflight, A-D same-account login, restart persistence, Group A isolation, 8/9/12/16 playback, Task Manager CPU/GPU/memory observations, shared account label use, final 9+ success evidence, and `verify`. Use `--data-folder <path>` to inspect a non-default result file, and `--output .\phase0-checklist.txt` to save a handoff copy.
+`checklist` keeps the manual run aligned with the plan and prints the current evidence status, outstanding gates, and suggested records before the steps: preflight, A-D same-account login, restart persistence, Group A isolation, 8/9/12/16 playback, Task Manager CPU/GPU/memory observations, shared account label use, `record --dry-run` preview, final 9+ success evidence, and `verify`. Use `--data-folder <path>` to inspect a non-default result file, and `--output .\phase0-checklist.txt` to save a handoff copy.
 
 `status`, `record`, and `report` print the current recommendation, next action, compact plan-gate audit summary, overall plan-verification status, Phase 0 success-gate status, and suggested `record` shapes for missing evidence. When multiple 9+ results exist, the current recommendation follows the latest 9+ result.
 

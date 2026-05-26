@@ -22,7 +22,7 @@ Run a local preflight check before live SOOP testing:
 dotnet run --project src\StreamOrchestra.Tools -- preflight
 ```
 
-`preflight` reports the data/result paths, A-D profile folders, WebView2 Runtime availability, playback-test layout coverage for 4/8/9/12/16, current decision, gate summary, and suggested evidence records.
+`preflight` reports the data/result paths, A-D profile folders, WebView2 Runtime availability, playback-test layout coverage for 4/8/9/12/16, current decision, gate summary, and suggested evidence records. Add `--output .\phase0-preflight.txt` to save the exact preflight text as the first manual-verification artifact.
 
 Print the Phase 0 manual test order from `docs/plan.md` before recording live SOOP evidence:
 
@@ -30,7 +30,7 @@ Print the Phase 0 manual test order from `docs/plan.md` before recording live SO
 dotnet run --project src\StreamOrchestra.Tools -- checklist
 ```
 
-`checklist` prints the current evidence status, outstanding plan gates, suggested records, and the safe SOOP test flow: preflight, A-D same-account login, restart persistence, Group A isolation, 8/9/12/16 playback, CPU/GPU/memory observations, evidence labels, final success recording, and `verify`. Use `--data-folder <path>` to inspect a non-default result file, and `--output .\phase0-checklist.txt` to save a handoff copy.
+`checklist` prints the current evidence status, outstanding plan gates, suggested records, and the safe SOOP test flow: preflight, A-D same-account login, restart persistence, Group A isolation, 8/9/12/16 playback, CPU/GPU/memory observations, evidence labels, `record --dry-run`, final success recording, and `verify`. Use `--data-folder <path>` to inspect a non-default result file, and `--output .\phase0-checklist.txt` to save a handoff copy.
 
 Audit the remaining Phase 0 gates from `docs/plan.md`, including suggested `record` shapes for missing evidence:
 
@@ -144,7 +144,8 @@ Use `--data-folder <path>` to inspect a non-default data folder.
 - The CLI `status` and `record` commands print suggested `record` shapes for missing evidence after the current recommendation and plan-gate status, including `--account-label <label>` where same-account evidence is expected; `record --dry-run` validates and previews the same decision/audit without saving, and 9-slot success suggestions are listed after higher-slot playback/account evidence so the latest 9+ result can remain the final success record.
 - The CLI `audit` command maps recorded results to the remaining plan gates: 4-slot Group A single-profile playback, distinct 8-slot split-profile, 9-slot threshold, 12-slot, and 16-slot playback evidence, A-D account persistence, restart persistence, resource acceptability, structured observations, and the Phase 0 success gate. Add `--output <path>` to save the audit text.
 - The CLI `history` command lists saved feasibility results with their recorded decision snapshots for manual-test audit trails.
-- The CLI `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md` with the current evidence status, outstanding gates, and suggested `record` shapes before evidence is recorded. Add `--output <path>` to save the checklist text.
+- The CLI `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md` with the current evidence status, outstanding gates, a `record --dry-run` preview step, and suggested `record` shapes before evidence is recorded. Add `--output <path>` to save the checklist text.
+- The CLI `preflight` command can save the runtime/profile/layout readiness text with `--output <path>` so the manual verification run has a setup artifact before live SOOP playback evidence is recorded.
 - The CLI `scenarios` command lists the named playback and isolated-group scenarios with copyable partial/failure shapes, explains when partial evidence counts as visible playback evidence, and prints separate 9+ success shapes that include restart, resource, CPU, GPU, and memory evidence.
 - The CLI `verify` command exits `0` only when every Phase 0 plan gate passes, and exits non-zero with outstanding pending/fail gate details plus suggested `record` shapes while manual SOOP evidence is still pending or failed. Add `--output <path>` to save the verification text.
 - The CLI `browsers` command prints installed/missing external-browser fallback candidates, including custom candidates.
