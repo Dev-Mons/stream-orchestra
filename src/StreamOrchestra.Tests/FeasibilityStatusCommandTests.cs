@@ -666,14 +666,37 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
                 ["isInstalled"] = JsonValue.Create(false),
                 ["executablePath"] = null,
                 ["candidatePaths"] = null
+            },
+            new JsonObject
+            {
+                ["id"] = JsonValue.Create("chrome"),
+                ["name"] = JsonValue.Create("Chrome"),
+                ["isInstalled"] = JsonValue.Create(true),
+                ["executablePath"] = JsonValue.Create(@"C:\Browsers\chrome.exe"),
+                ["candidatePaths"] = new JsonArray(JsonValue.Create(@"C:\Browsers\chrome.exe"))
             });
         diagnosticReport["externalBrowserFallbackPlan"] = new JsonObject
         {
             ["canLaunch"] = JsonValue.Create(true),
             ["reason"] = JsonValue.Create(""),
             ["installedBrowserCount"] = JsonValue.Create(99),
-            ["plannedSlotCount"] = JsonValue.Create(2),
+            ["plannedSlotCount"] = JsonValue.Create(3),
             ["slots"] = new JsonArray(
+                new JsonObject
+                {
+                    ["slotId"] = JsonValue.Create(1),
+                    ["streamName"] = JsonValue.Create("Tampered Chrome"),
+                    ["streamUrl"] = JsonValue.Create("https://example.com/live"),
+                    ["browserId"] = JsonValue.Create("chrome"),
+                    ["browserName"] = JsonValue.Create("Wrong Chrome"),
+                    ["executablePath"] = JsonValue.Create(@"C:\Tampered\chrome.exe"),
+                    ["userDataFolder"] = JsonValue.Create(@"C:\Tampered\Profile"),
+                    ["arguments"] = new JsonArray(
+                        JsonValue.Create("--new-window"),
+                        JsonValue.Create("--mute-audio")),
+                    ["windowLayout"] = null,
+                    ["isMuted"] = JsonValue.Create(false)
+                },
                 new JsonObject
                 {
                     ["slotId"] = JsonValue.Create(17),
@@ -720,8 +743,14 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("diagnostic report external browser edge is installed but executable path is missing.", text);
         Assert.Contains("diagnostic report external browser edge is duplicated.", text);
         Assert.Contains("diagnostic report external browser fallback reason is missing.", text);
-        Assert.Contains("diagnostic report external browser fallback installed count mismatch, expected 1, actual 99.", text);
-        Assert.Contains("diagnostic report external browser fallback planned slot count mismatch, expected 1, actual 2.", text);
+        Assert.Contains("diagnostic report external browser fallback installed count mismatch, expected 2, actual 99.", text);
+        Assert.Contains("diagnostic report external browser fallback planned slot count mismatch, expected 2, actual 3.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 1 browser name mismatch, expected Chrome, actual Wrong Chrome.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 1 executable path mismatch", text);
+        Assert.Contains("diagnostic report external browser fallback slot 1 user data folder mismatch", text);
+        Assert.Contains("diagnostic report external browser fallback slot 1 is missing its user-data-dir argument.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 1 is missing its stream URL argument.", text);
+        Assert.Contains("diagnostic report external browser fallback slot 1 is not muted but includes the --mute-audio argument.", text);
         Assert.Contains("diagnostic report external browser fallback slot id is outside 1-16: 17.", text);
         Assert.Contains("diagnostic report external browser fallback slot 17 URL is not HTTP/HTTPS.", text);
         Assert.Contains("diagnostic report external browser fallback slot 17 browser missing is not installed in the diagnostic snapshot.", text);

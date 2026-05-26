@@ -2093,7 +2093,7 @@ public static class FeasibilityStatusCommand
             .Select(browser => browser!)
             .ToArray();
         var isValid = true;
-        var installedBrowserIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var installedBrowsersById = new Dictionary<string, ExternalBrowserInfo>(StringComparer.OrdinalIgnoreCase);
         var seenBrowserIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var browser in browsers)
@@ -2123,7 +2123,7 @@ public static class FeasibilityStatusCommand
 
             if (browser.IsInstalled)
             {
-                installedBrowserIds.Add(id);
+                installedBrowsersById.TryAdd(id, browser);
                 if (string.IsNullOrWhiteSpace(browser.ExecutablePath))
                 {
                     isValid = false;
@@ -2143,13 +2143,14 @@ public static class FeasibilityStatusCommand
 
         isValid &= ValidateHandoffDiagnosticExternalBrowserFallbackPlan(
             report.ExternalBrowserFallbackPlan,
-            installedBrowserIds,
+            installedBrowsersById,
+            report.DataFolder,
             validationLines);
 
         if (isValid)
         {
             validationLines.Add(
-                $"- [pass] diagnostic report external browsers: total={browsers.Length}, installed={installedBrowserIds.Count}");
+                $"- [pass] diagnostic report external browsers: total={browsers.Length}, installed={installedBrowsersById.Count}");
         }
 
         return isValid;
@@ -2157,7 +2158,8 @@ public static class FeasibilityStatusCommand
 
     private static bool ValidateHandoffDiagnosticExternalBrowserFallbackPlan(
         ExternalBrowserFallbackPlan? plan,
-        IReadOnlySet<string> installedBrowserIds,
+        IReadOnlyDictionary<string, ExternalBrowserInfo> installedBrowsersById,
+        string dataFolder,
         List<string> validationLines)
     {
         if (plan is null)
@@ -2178,11 +2180,11 @@ public static class FeasibilityStatusCommand
             validationLines.Add("- [fail] diagnostic report external browser fallback reason is missing.");
         }
 
-        if (plan.InstalledBrowserCount != installedBrowserIds.Count)
+        if (plan.InstalledBrowserCount != installedBrowsersById.Count)
         {
             isValid = false;
             validationLines.Add(
-                $"- [fail] diagnostic report external browser fallback installed count mismatch, expected {installedBrowserIds.Count}, actual {plan.InstalledBrowserCount}.");
+                $"- [fail] diagnostic report external browser fallback installed count mismatch, expected {installedBrowsersById.Count}, actual {plan.InstalledBrowserCount}.");
         }
 
         if (plan.PlannedSlotCount != slots.Length)
@@ -2219,7 +2221,8 @@ public static class FeasibilityStatusCommand
         {
             isValid &= ValidateHandoffDiagnosticExternalBrowserFallbackSlot(
                 slot,
-                installedBrowserIds,
+                installedBrowsersById,
+                dataFolder,
                 validationLines);
         }
 
@@ -2234,11 +2237,13 @@ public static class FeasibilityStatusCommand
 
     private static bool ValidateHandoffDiagnosticExternalBrowserFallbackSlot(
         ExternalBrowserSlotLaunchPlan slot,
-        IReadOnlySet<string> installedBrowserIds,
+        IReadOnlyDictionary<string, ExternalBrowserInfo> installedBrowsersById,
+        string dataFolder,
         List<string> validationLines)
     {
         var isValid = true;
         var slotLabel = slot.SlotId.ToString(CultureInfo.InvariantCulture);
+        var hasValidSlotId = slot.SlotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount;
         if (slot.SlotId is < 1 or > 16)
         {
             isValid = false;
@@ -2261,11 +2266,19 @@ public static class FeasibilityStatusCommand
             validationLines.Add(
                 $"- [fail] diagnostic report external browser fallback slot {slotLabel} browser id is missing.");
         }
-        else if (!installedBrowserIds.Contains(browserId))
+        else if (!installedBrowsersById.TryGetValue(browserId, out var installedBrowser))
         {
             isValid = false;
             validationLines.Add(
                 $"- [fail] diagnostic report external browser fallback slot {slotLabel} browser {browserId} is not installed in the diagnostic snapshot.");
+        }
+        else
+        {
+            isValid &= ValidateHandoffDiagnosticExternalBrowserFallbackSlotBrowser(
+                slot,
+                installedBrowser,
+                slotLabel,
+                validationLines);
         }
 
         if (string.IsNullOrWhiteSpace(slot.BrowserName))
@@ -2288,6 +2301,22 @@ public static class FeasibilityStatusCommand
             validationLines.Add(
                 $"- [fail] diagnostic report external browser fallback slot {slotLabel} user data folder is missing.");
         }
+        else if (hasValidSlotId &&
+            !string.IsNullOrWhiteSpace(browserId) &&
+            !string.IsNullOrWhiteSpace(dataFolder))
+        {
+            var expectedUserDataFolder = Path.Combine(
+                dataFolder,
+                "ExternalBrowserProfiles",
+                browserId,
+                $"Slot{slot.SlotId}");
+            if (!AreEquivalentPaths(slot.UserDataFolder, expectedUserDataFolder))
+            {
+                isValid = false;
+                validationLines.Add(
+                    $"- [fail] diagnostic report external browser fallback slot {slotLabel} user data folder mismatch, expected {FormatPathForValidation(expectedUserDataFolder)}, actual {FormatPathForValidation(slot.UserDataFolder)}.");
+            }
+        }
 
         var arguments = slot.Arguments ?? Array.Empty<string>();
         if (arguments.Any(string.IsNullOrWhiteSpace))
@@ -2297,12 +2326,103 @@ public static class FeasibilityStatusCommand
                 $"- [fail] diagnostic report external browser fallback slot {slotLabel} has a blank argument.");
         }
 
+        isValid &= ValidateHandoffDiagnosticExternalBrowserFallbackSlotArguments(
+            slot,
+            arguments,
+            streamUri,
+            slotLabel,
+            validationLines);
+
         if (slot.WindowLayout is not null &&
             !IsValidHandoffDiagnosticExternalBrowserWindowLayout(slot.WindowLayout))
         {
             isValid = false;
             validationLines.Add(
                 $"- [fail] diagnostic report external browser fallback slot {slotLabel} window layout is invalid.");
+        }
+
+        return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticExternalBrowserFallbackSlotBrowser(
+        ExternalBrowserSlotLaunchPlan slot,
+        ExternalBrowserInfo installedBrowser,
+        string slotLabel,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        if (!string.IsNullOrWhiteSpace(slot.BrowserName) &&
+            !string.IsNullOrWhiteSpace(installedBrowser.Name) &&
+            !string.Equals(slot.BrowserName.Trim(), installedBrowser.Name.Trim(), StringComparison.Ordinal))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} browser name mismatch, expected {installedBrowser.Name.Trim()}, actual {slot.BrowserName.Trim()}.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(slot.ExecutablePath) &&
+            !string.IsNullOrWhiteSpace(installedBrowser.ExecutablePath) &&
+            !AreEquivalentPaths(slot.ExecutablePath, installedBrowser.ExecutablePath))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} executable path mismatch, expected {FormatPathForValidation(installedBrowser.ExecutablePath)}, actual {FormatPathForValidation(slot.ExecutablePath)}.");
+        }
+
+        return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticExternalBrowserFallbackSlotArguments(
+        ExternalBrowserSlotLaunchPlan slot,
+        IReadOnlyList<string> arguments,
+        Uri? streamUri,
+        string slotLabel,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        var nonBlankArguments = arguments
+            .Where(argument => !string.IsNullOrWhiteSpace(argument))
+            .Select(argument => argument.Trim())
+            .ToArray();
+
+        if (!string.IsNullOrWhiteSpace(slot.UserDataFolder))
+        {
+            var expectedUserDataArgument = $"--user-data-dir={slot.UserDataFolder.Trim()}";
+            if (!nonBlankArguments.Contains(expectedUserDataArgument, StringComparer.OrdinalIgnoreCase))
+            {
+                isValid = false;
+                validationLines.Add(
+                    $"- [fail] diagnostic report external browser fallback slot {slotLabel} is missing its user-data-dir argument.");
+            }
+        }
+
+        if (!nonBlankArguments.Contains("--new-window", StringComparer.Ordinal))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} is missing the --new-window argument.");
+        }
+
+        if (streamUri is not null &&
+            !nonBlankArguments.Contains(streamUri.ToString(), StringComparer.Ordinal))
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} is missing its stream URL argument.");
+        }
+
+        var hasMuteArgument = nonBlankArguments.Contains("--mute-audio", StringComparer.Ordinal);
+        if (slot.IsMuted && !hasMuteArgument)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} is muted but missing the --mute-audio argument.");
+        }
+        else if (!slot.IsMuted && hasMuteArgument)
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report external browser fallback slot {slotLabel} is not muted but includes the --mute-audio argument.");
         }
 
         return isValid;
