@@ -16,6 +16,17 @@ public static class FeasibilityStatusCommand
         WriteIndented = true
     };
 
+    private static readonly string[] RequiredHandoffArtifactFiles =
+    [
+        "phase0-preflight.txt",
+        "phase0-checklist.txt",
+        "phase0-audit.txt",
+        "phase0-verification.txt",
+        "phase0-history.txt",
+        "phase0-diagnostic-report.json",
+        "phase0-results.json"
+    ];
+
     public static int Execute(string[] args, TextWriter output, TextWriter error)
     {
         var parseResult = ParseArgs(args);
@@ -400,12 +411,40 @@ public static class FeasibilityStatusCommand
         var detailedFiles = new HashSet<string>(
             artifactDetails.Select(detail => detail.FileName),
             StringComparer.OrdinalIgnoreCase);
+        var artifactFiles = new HashSet<string>(
+            manifest.ArtifactFiles ?? Array.Empty<string>(),
+            StringComparer.OrdinalIgnoreCase);
+        var requiredFiles = new HashSet<string>(RequiredHandoffArtifactFiles, StringComparer.OrdinalIgnoreCase);
+        foreach (var requiredFile in requiredFiles)
+        {
+            if (!artifactFiles.Contains(requiredFile))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {requiredFile}: missing from artifactFiles.");
+            }
+
+            if (!detailedFiles.Contains(requiredFile))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {requiredFile}: missing artifactDetails entry.");
+            }
+        }
+
         foreach (var artifactFile in manifest.ArtifactFiles ?? Array.Empty<string>())
         {
             if (!detailedFiles.Contains(artifactFile))
             {
                 isValid = false;
                 validationLines.Add($"- [fail] {artifactFile}: missing artifactDetails entry.");
+            }
+        }
+
+        foreach (var detail in artifactDetails)
+        {
+            if (!artifactFiles.Contains(detail.FileName) && !requiredFiles.Contains(detail.FileName))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {detail.FileName}: missing from artifactFiles.");
             }
         }
 

@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 using StreamOrchestra.Tools;
@@ -535,6 +537,43 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal(1, exitCode);
         Assert.Contains("phase0-results.json result count mismatch, expected 1, actual 0", text);
         Assert.Contains("diagnostic report result count mismatch, expected 1, actual 0", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsMissingRequiredArtifactListing()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-missing-artifact-listing");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var artifactFiles = manifest["artifactFiles"]!.AsArray();
+        var resultsIndex = artifactFiles
+            .Select((node, index) => new { FileName = node!.GetValue<string>(), Index = index })
+            .Single(item => item.FileName == "phase0-results.json")
+            .Index;
+        artifactFiles.RemoveAt(resultsIndex);
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-results.json: missing from artifactFiles.", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
