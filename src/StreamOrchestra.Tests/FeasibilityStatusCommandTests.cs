@@ -204,6 +204,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Run each intended `record` command with `--dry-run` first", text);
         Assert.Contains("Record the final 9+ `success` evidence last", text);
         Assert.Contains("Run `verify`", text);
+        Assert.Contains("Run `handoff --output-folder <path>` and `validate-handoff --input-folder <path>`", text);
+        Assert.Contains("`handoff`, `validate-handoff`", text);
         Assert.Contains("Suggested record shapes:", text);
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C", text);
         Assert.Equal("", error.ToString());
@@ -233,6 +235,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Outstanding gates:", fileText);
         Assert.Contains("- [pending] Phase 0 WebView2 success gate", fileText);
         Assert.Contains("Safety: use normal SOOP login/player behavior only", fileText);
+        Assert.Contains("validate-handoff --input-folder <path>", fileText);
         Assert.Contains("Suggested record shapes:", fileText);
         Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", fileText);
         Assert.Equal("", error.ToString());

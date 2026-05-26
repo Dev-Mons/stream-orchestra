@@ -1638,7 +1638,8 @@ public static class FeasibilityStatusCommand
         lines.Add("9. Run each intended `record` command with `--dry-run` first to preview validation, decision, and audit output without saving.");
         lines.Add("10. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
         lines.Add("11. Run `verify`; Phase 0 is not complete until every plan gate passes.");
-        lines.Add("Helpful commands: `scenarios`, `record --dry-run`, `audit`, `verify`.");
+        lines.Add("12. Run `handoff --output-folder <path>` and `validate-handoff --input-folder <path>` so the final evidence bundle can be reviewed.");
+        lines.Add("Helpful commands: `scenarios`, `record --dry-run`, `audit`, `verify`, `handoff`, `validate-handoff`.");
 
         var suggestions = new FeasibilityAuditService().CreateSuggestedRecordShapes(summary.AuditItems);
         if (suggestions.Count > 0)
@@ -2470,7 +2471,8 @@ public static class FeasibilityStatusCommand
         lines.Add("9. Run each intended `record` command with `--dry-run` first to preview validation, decision, and audit output without saving.");
         lines.Add("10. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
         lines.Add("11. Run `verify`; Phase 0 is not complete until every plan gate passes.");
-        lines.Add("Helpful commands: `scenarios`, `record --dry-run`, `audit`, `verify`.");
+        lines.Add("12. Run `handoff --output-folder <path>` and `validate-handoff --input-folder <path>` so the final evidence bundle can be reviewed.");
+        lines.Add("Helpful commands: `scenarios`, `record --dry-run`, `audit`, `verify`, `handoff`, `validate-handoff`.");
 
         var suggestions = auditService.CreateSuggestedRecordShapes(auditItems);
         if (suggestions.Count > 0)
