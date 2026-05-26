@@ -565,7 +565,7 @@ public static class FeasibilityStatusCommand
                 }
                 else
                 {
-                    isValid &= ValidateHandoffDiagnosticReport(report, manifest, validationLines);
+                    isValid &= ValidateHandoffDiagnosticReport(report, manifest, resultsSummary, validationLines);
                 }
             }
             catch (JsonException ex)
@@ -1035,6 +1035,7 @@ public static class FeasibilityStatusCommand
     private static bool ValidateHandoffDiagnosticReport(
         DiagnosticReport report,
         HandoffManifest manifest,
+        HandoffResultsSummary? summary,
         List<string> validationLines)
     {
         var isValid = true;
@@ -1082,12 +1083,138 @@ public static class FeasibilityStatusCommand
         {
             validationLines.Add(
                 $"- [pass] diagnostic report plan gates: pass={auditSummary.PassCount}, pending={auditSummary.PendingCount}, fail={auditSummary.FailCount}, outstanding={outstandingGateCount}, status={planVerificationStatus}");
+        }
+        else
+        {
+            validationLines.Add(
+                $"- [fail] diagnostic report plan gates mismatch, expected pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}, outstanding={manifest.OutstandingGateCount}, status={manifest.PlanVerificationStatus}; actual pass={auditSummary.PassCount}, pending={auditSummary.PendingCount}, fail={auditSummary.FailCount}, outstanding={outstandingGateCount}, status={planVerificationStatus}.");
+            isValid = false;
+        }
+
+        if (summary is not null)
+        {
+            isValid &= ValidateHandoffDiagnosticReportSnapshot(report, summary, validationLines);
+        }
+
+        return isValid;
+    }
+
+    private static bool ValidateHandoffDiagnosticReportSnapshot(
+        DiagnosticReport report,
+        HandoffResultsSummary summary,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        var expectedLatestResult = summary.Results
+            .OrderByDescending(result => result.CapturedAt)
+            .FirstOrDefault();
+        if (AreEquivalentResults(report.LatestFeasibilityResult, expectedLatestResult))
+        {
+            validationLines.Add(
+                $"- [pass] diagnostic report latest result: {FormatResultIdentity(expectedLatestResult)}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report latest result mismatch, expected {FormatResultIdentity(expectedLatestResult)}, actual {FormatResultIdentity(report.LatestFeasibilityResult)}.");
+        }
+
+        var expectedLabels = FeasibilityProfileGroupEvidenceService.GetLatestSameAccountAccountLabels(summary.Results);
+        var actualLabels = report.FeasibilitySameAccountLabels ?? Array.Empty<string>();
+        if (actualLabels.SequenceEqual(expectedLabels, StringComparer.OrdinalIgnoreCase))
+        {
+            validationLines.Add($"- [pass] diagnostic report account labels: {FormatStringList(expectedLabels)}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report account labels mismatch, expected {FormatStringList(expectedLabels)}, actual {FormatStringList(actualLabels)}.");
+        }
+
+        var expectedConflictStatus = FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(summary.Results);
+        if (report.HasConflictingFeasibilityAccountLabels == expectedConflictStatus)
+        {
+            validationLines.Add($"- [pass] diagnostic report account label conflict: {expectedConflictStatus}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report account label conflict mismatch, expected {expectedConflictStatus}, actual {report.HasConflictingFeasibilityAccountLabels}.");
+        }
+
+        var expectedSuggestions = new FeasibilityAuditService().CreateSuggestedRecordShapes(summary.AuditItems);
+        var actualSuggestions = report.FeasibilitySuggestedRecordShapes ?? Array.Empty<string>();
+        if (actualSuggestions.SequenceEqual(expectedSuggestions, StringComparer.Ordinal))
+        {
+            validationLines.Add($"- [pass] diagnostic report suggested records: {expectedSuggestions.Count}");
             return isValid;
         }
 
+        isValid = false;
         validationLines.Add(
-            $"- [fail] diagnostic report plan gates mismatch, expected pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}, outstanding={manifest.OutstandingGateCount}, status={manifest.PlanVerificationStatus}; actual pass={auditSummary.PassCount}, pending={auditSummary.PendingCount}, fail={auditSummary.FailCount}, outstanding={outstandingGateCount}, status={planVerificationStatus}.");
-        return false;
+            $"- [fail] diagnostic report suggested records mismatch, expected {expectedSuggestions.Count}, actual {actualSuggestions.Count}.");
+        return isValid;
+    }
+
+    private static bool AreEquivalentResults(FeasibilityTestResult? actual, FeasibilityTestResult? expected)
+    {
+        if (actual is null || expected is null)
+        {
+            return actual is null && expected is null;
+        }
+
+        return string.Equals(actual.Id, expected.Id, StringComparison.Ordinal) &&
+            actual.CapturedAt.Equals(expected.CapturedAt) &&
+            actual.PlaybackCount == expected.PlaybackCount &&
+            string.Equals(actual.ScenarioId, expected.ScenarioId, StringComparison.Ordinal) &&
+            string.Equals(actual.ScenarioName, expected.ScenarioName, StringComparison.Ordinal) &&
+            string.Equals(actual.Outcome, expected.Outcome, StringComparison.Ordinal) &&
+            AreEquivalentDiagnostics(actual.Diagnostics, expected.Diagnostics) &&
+            actual.IsSameAccountSessionMaintained == expected.IsSameAccountSessionMaintained &&
+            string.Equals(actual.AccountLabel, expected.AccountLabel, StringComparison.Ordinal) &&
+            actual.IsRestartSessionMaintained == expected.IsRestartSessionMaintained &&
+            actual.IsResourceUsageAcceptable == expected.IsResourceUsageAcceptable &&
+            actual.VerifiedProfileGroups.SequenceEqual(expected.VerifiedProfileGroups, StringComparer.Ordinal) &&
+            AreEquivalentNullableDouble(actual.ObservedCpuPercent, expected.ObservedCpuPercent) &&
+            AreEquivalentNullableDouble(actual.ObservedGpuPercent, expected.ObservedGpuPercent) &&
+            AreEquivalentNullableDouble(actual.ObservedMemoryMegabytes, expected.ObservedMemoryMegabytes) &&
+            string.Equals(actual.DecisionCode, expected.DecisionCode, StringComparison.Ordinal) &&
+            string.Equals(actual.DecisionTitle, expected.DecisionTitle, StringComparison.Ordinal) &&
+            string.Equals(actual.DecisionDetail, expected.DecisionDetail, StringComparison.Ordinal) &&
+            string.Equals(actual.DecisionNextAction, expected.DecisionNextAction, StringComparison.Ordinal) &&
+            string.Equals(actual.Notes, expected.Notes, StringComparison.Ordinal);
+    }
+
+    private static bool AreEquivalentDiagnostics(
+        RuntimeDiagnosticsSnapshot actual,
+        RuntimeDiagnosticsSnapshot expected)
+    {
+        return actual.CapturedAt.Equals(expected.CapturedAt) &&
+            actual.WebViewProcessCount == expected.WebViewProcessCount &&
+            AreEquivalentNullableDouble(actual.WebViewWorkingSetMegabytes, expected.WebViewWorkingSetMegabytes) &&
+            AreEquivalentNullableDouble(actual.WebViewPrivateMemoryMegabytes, expected.WebViewPrivateMemoryMegabytes) &&
+            AreEquivalentNullableDouble(actual.WebViewCpuPercent, expected.WebViewCpuPercent);
+    }
+
+    private static bool AreEquivalentNullableDouble(double? actual, double? expected)
+    {
+        return actual.HasValue == expected.HasValue &&
+            (!actual.HasValue || actual.Value.Equals(expected!.Value));
+    }
+
+    private static string FormatResultIdentity(FeasibilityTestResult? result)
+    {
+        return result is null
+            ? "n/a"
+            : $"{result.Id} ({result.Outcome}, {result.PlaybackCount} slot(s), {result.CapturedAt:yyyy-MM-dd HH:mm:ss})";
+    }
+
+    private static string FormatStringList(IReadOnlyList<string> values)
+    {
+        return values.Count == 0 ? "n/a" : string.Join(", ", values);
     }
 
     private static int PrintChecklist(ParseResult parseResult, TextWriter output)

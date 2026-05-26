@@ -451,6 +451,10 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report result count: 0", text);
         Assert.Contains("- [pass] diagnostic report decision: 검증 대기 (pending)", text);
         Assert.Contains("- [pass] diagnostic report plan gates: pass=0, pending=11, fail=0, outstanding=11, status=pending", text);
+        Assert.Contains("- [pass] diagnostic report latest result: n/a", text);
+        Assert.Contains("- [pass] diagnostic report account labels: n/a", text);
+        Assert.Contains("- [pass] diagnostic report account label conflict: False", text);
+        Assert.Contains("- [pass] diagnostic report suggested records:", text);
         Assert.Contains("Validation: pass", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
@@ -609,6 +613,58 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains(
             "phase0-results.json plan gates mismatch, expected pass=0, pending=11, fail=0, outstanding=11, status=pending; actual pass=11, pending=0, fail=0, outstanding=0, status=pass.",
             text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsDiagnosticSnapshotMismatches()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-diagnostic-snapshot-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var diagnosticReportPath = Path.Combine(handoffFolder, "phase0-diagnostic-report.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var diagnosticReport = JsonNode.Parse(File.ReadAllText(diagnosticReportPath))!.AsObject();
+        diagnosticReport["latestFeasibilityResult"] = new JsonObject
+        {
+            ["id"] = "tampered",
+            ["capturedAt"] = "2026-05-26T00:00:00+00:00",
+            ["playbackCount"] = 9,
+            ["scenarioId"] = "groups_a_b_c_9_slot_threshold",
+            ["scenarioName"] = "Groups A/B/C, 9-slot success threshold",
+            ["outcome"] = "success"
+        };
+        diagnosticReport["feasibilitySameAccountLabels"] = new JsonArray(JsonValue.Create("tampered"));
+        diagnosticReport["hasConflictingFeasibilityAccountLabels"] = JsonValue.Create(true);
+        diagnosticReport["feasibilitySuggestedRecordShapes"] = new JsonArray();
+        File.WriteAllText(
+            diagnosticReportPath,
+            diagnosticReport.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-diagnostic-report.json");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("diagnostic report latest result mismatch", text);
+        Assert.Contains("diagnostic report account labels mismatch", text);
+        Assert.Contains("diagnostic report account label conflict mismatch", text);
+        Assert.Contains("diagnostic report suggested records mismatch", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
