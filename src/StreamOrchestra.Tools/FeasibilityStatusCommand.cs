@@ -544,6 +544,7 @@ public static class FeasibilityStatusCommand
         if (resultsSummary is not null)
         {
             isValid &= ValidateHandoffResultsSummary(resultsSummary, manifest, validationLines);
+            isValid &= ValidateHandoffChecklistArtifact(inputFolder, manifest, resultsSummary, validationLines);
             isValid &= ValidateHandoffAuditArtifact(inputFolder, manifest, resultsSummary, validationLines);
             isValid &= ValidateHandoffVerificationArtifact(inputFolder, resultsSummary, validationLines);
             isValid &= ValidateHandoffHistoryArtifact(inputFolder, manifest, resultsSummary, validationLines);
@@ -684,6 +685,21 @@ public static class FeasibilityStatusCommand
         validationLines.Add(
             $"- [fail] {HandoffResultsFileName} plan gates mismatch, expected pass={summary.AuditSummary.PassCount}, pending={summary.AuditSummary.PendingCount}, fail={summary.AuditSummary.FailCount}, outstanding={summary.OutstandingGateCount}, status={summary.PlanVerificationStatus}; actual pass={manifest.PassingGateCount}, pending={manifest.PendingGateCount}, fail={manifest.FailingGateCount}, outstanding={manifest.OutstandingGateCount}, status={manifest.PlanVerificationStatus}.");
         return false;
+    }
+
+    private static bool ValidateHandoffChecklistArtifact(
+        string inputFolder,
+        HandoffManifest manifest,
+        HandoffResultsSummary summary,
+        List<string> validationLines)
+    {
+        var expectedLines = CreateExpectedHandoffChecklistLines(manifest, summary);
+        return ValidateHandoffTextArtifact(
+            inputFolder,
+            HandoffChecklistFileName,
+            expectedLines,
+            "content",
+            validationLines);
     }
 
     private static bool ValidateHandoffAuditArtifact(
@@ -850,6 +866,66 @@ public static class FeasibilityStatusCommand
         return line.Length <= maxLength
             ? $"\"{line}\""
             : $"\"{line[..maxLength]}...\"";
+    }
+
+    private static IReadOnlyList<string> CreateExpectedHandoffChecklistLines(
+        HandoffManifest manifest,
+        HandoffResultsSummary summary)
+    {
+        var lines = new List<string>
+        {
+            "Stream Orchestra Phase 0 Manual Checklist",
+            $"Data folder: {manifest.DataFolder}",
+            $"Results file: {manifest.ResultsFilePath}",
+            $"Results recorded: {summary.Results.Count}",
+            $"Decision: {summary.Decision.Title} ({summary.Decision.Code})"
+        };
+
+        if (!string.IsNullOrWhiteSpace(summary.Decision.NextAction))
+        {
+            lines.Add($"Next action: {summary.Decision.NextAction}");
+        }
+
+        lines.Add($"Plan audit: {summary.AuditSummary.ToCompactText()}");
+        lines.Add($"Plan verification: [{summary.PlanVerificationStatus}]");
+
+        var successGate = summary.AuditItems.FirstOrDefault(item => item.Id == "phase0_success_gate");
+        if (successGate is not null)
+        {
+            lines.Add($"Success gate: [{successGate.Status}] {successGate.Evidence}");
+        }
+
+        var outstandingItems = summary.AuditItems
+            .Where(item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (outstandingItems.Length > 0)
+        {
+            lines.Add("Outstanding gates:");
+            lines.AddRange(outstandingItems.Select(item => $"- [{item.Status}] {item.Title}: {item.Evidence}"));
+        }
+
+        lines.Add("Safety: use normal SOOP login/player behavior only; do not bypass DRM, authentication, or security behavior.");
+        lines.Add("1. Run `preflight` and confirm WebView2 Runtime, A-D profile folders, and 4/8/9/12/16 layout coverage are ready.");
+        lines.Add("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, and D.");
+        lines.Add("3. Restart the app and confirm the SOOP login session persists in the required profile groups.");
+        lines.Add("4. Run the isolated Group A test and record whether slots 1-4 visibly play.");
+        lines.Add("5. Run the 8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests and record each visible playback result.");
+        lines.Add("6. After playback stabilizes, record Task Manager CPU %, GPU %, and memory MB, plus whether resource usage is acceptable.");
+        lines.Add("7. Use one shared non-sensitive account label for every same-account evidence record across A-D.");
+        lines.Add("8. Record lower-count playback evidence as `partial` when the requested slots visibly play but success-only evidence is incomplete, or `failure` when they do not work.");
+        lines.Add("9. Run each intended `record` command with `--dry-run` first to preview validation, decision, and audit output without saving.");
+        lines.Add("10. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
+        lines.Add("11. Run `verify`; Phase 0 is not complete until every plan gate passes.");
+        lines.Add("Helpful commands: `scenarios`, `record --dry-run`, `audit`, `verify`.");
+
+        var suggestions = new FeasibilityAuditService().CreateSuggestedRecordShapes(summary.AuditItems);
+        if (suggestions.Count > 0)
+        {
+            lines.Add("Suggested record shapes:");
+            lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
+        }
+
+        return lines;
     }
 
     private static IReadOnlyList<string> CreateExpectedHandoffAuditLines(
