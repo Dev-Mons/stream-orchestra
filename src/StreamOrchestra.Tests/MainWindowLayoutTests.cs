@@ -133,6 +133,29 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("RestartSessionCheckBox.IsChecked = false;", text[handlerStart..]);
     }
 
+    [Fact]
+    public void CodeBehind_ClearsResourceOkAfterRecordingFeasibilityResult()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "MainWindow.xaml.cs"));
+        var text = File.ReadAllText(path);
+        var handlerStart = text.IndexOf(
+            "private void RecordFeasibilityResultButton_Click",
+            StringComparison.Ordinal);
+
+        Assert.True(handlerStart >= 0);
+        Assert.Contains("ObservedCpuTextBox.Clear();", text[handlerStart..]);
+        Assert.Contains("ObservedGpuTextBox.Clear();", text[handlerStart..]);
+        Assert.Contains("ObservedMemoryTextBox.Clear();", text[handlerStart..]);
+        Assert.Contains("ResourceAcceptableCheckBox.IsChecked = false;", text[handlerStart..]);
+    }
+
     private static XDocument LoadMainWindowDocument()
     {
         var path = Path.GetFullPath(Path.Combine(

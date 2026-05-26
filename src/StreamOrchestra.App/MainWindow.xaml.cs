@@ -391,6 +391,7 @@ public partial class MainWindow : Window
         ObservedCpuTextBox.Clear();
         ObservedGpuTextBox.Clear();
         ObservedMemoryTextBox.Clear();
+        ResourceAcceptableCheckBox.IsChecked = false;
         UpdateFeasibilityResultSummary();
         StatusTextBlock.Text =
             $"Feasibility result recorded: {outcome}, {playbackCount} slot(s), {_currentFeasibilityScenario.Name}. Decision: {decision.Code}.";
