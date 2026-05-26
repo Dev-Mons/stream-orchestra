@@ -9,6 +9,15 @@ namespace StreamOrchestra.Tools;
 
 public static class FeasibilityStatusCommand
 {
+    private const string HandoffPreflightFileName = "phase0-preflight.txt";
+    private const string HandoffChecklistFileName = "phase0-checklist.txt";
+    private const string HandoffAuditFileName = "phase0-audit.txt";
+    private const string HandoffVerificationFileName = "phase0-verification.txt";
+    private const string HandoffHistoryFileName = "phase0-history.txt";
+    private const string HandoffDiagnosticReportFileName = "phase0-diagnostic-report.json";
+    private const string HandoffResultsFileName = "phase0-results.json";
+    private const string HandoffManifestFileName = "phase0-handoff-manifest.json";
+
     private static readonly JsonSerializerOptions HandoffJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -18,13 +27,13 @@ public static class FeasibilityStatusCommand
 
     private static readonly string[] RequiredHandoffArtifactFiles =
     [
-        "phase0-preflight.txt",
-        "phase0-checklist.txt",
-        "phase0-audit.txt",
-        "phase0-verification.txt",
-        "phase0-history.txt",
-        "phase0-diagnostic-report.json",
-        "phase0-results.json"
+        HandoffPreflightFileName,
+        HandoffChecklistFileName,
+        HandoffAuditFileName,
+        HandoffVerificationFileName,
+        HandoffHistoryFileName,
+        HandoffDiagnosticReportFileName,
+        HandoffResultsFileName
     ];
 
     public static int Execute(string[] args, TextWriter output, TextWriter error)
@@ -292,11 +301,11 @@ public static class FeasibilityStatusCommand
         var historyLines = CreateHistoryLines(parseResult.DataFolder);
         var artifacts = new[]
         {
-            SaveHandoffArtifact(outputFolder, "phase0-preflight.txt", preflightLines),
-            SaveHandoffArtifact(outputFolder, "phase0-checklist.txt", checklistLines),
-            SaveHandoffArtifact(outputFolder, "phase0-audit.txt", auditLines),
-            SaveHandoffArtifact(outputFolder, "phase0-verification.txt", verificationLines),
-            SaveHandoffArtifact(outputFolder, "phase0-history.txt", historyLines),
+            SaveHandoffArtifact(outputFolder, HandoffPreflightFileName, preflightLines),
+            SaveHandoffArtifact(outputFolder, HandoffChecklistFileName, checklistLines),
+            SaveHandoffArtifact(outputFolder, HandoffAuditFileName, auditLines),
+            SaveHandoffArtifact(outputFolder, HandoffVerificationFileName, verificationLines),
+            SaveHandoffArtifact(outputFolder, HandoffHistoryFileName, historyLines),
             SaveHandoffDiagnosticReport(outputFolder, diagnosticReport),
             SaveHandoffResultsSnapshot(outputFolder, results)
         };
@@ -349,7 +358,7 @@ public static class FeasibilityStatusCommand
     private static int ValidateHandoff(ParseResult parseResult, TextWriter output)
     {
         var inputFolder = parseResult.DataFolder ?? "";
-        var manifestPath = Path.Combine(inputFolder, "phase0-handoff-manifest.json");
+        var manifestPath = Path.Combine(inputFolder, HandoffManifestFileName);
         var validationLines = new List<string>
         {
             "Stream Orchestra Phase 0 Handoff Validation",
@@ -368,7 +377,7 @@ public static class FeasibilityStatusCommand
         if (!File.Exists(manifestPath))
         {
             validationLines.Add("Validation: fail");
-            validationLines.Add("- [fail] phase0-handoff-manifest.json is missing.");
+            validationLines.Add($"- [fail] {HandoffManifestFileName} is missing.");
             return WriteHandoffValidationResult(validationLines, output, parseResult.OutputPath, exitCode: 1);
         }
 
@@ -401,6 +410,7 @@ public static class FeasibilityStatusCommand
         validationLines.Add($"Outstanding gates: {manifest.OutstandingGateCount}");
 
         var artifactDetails = manifest.ArtifactDetails?.ToArray() ?? Array.Empty<HandoffArtifactMetadata>();
+        var manifestArtifactFiles = manifest.ArtifactFiles ?? Array.Empty<string>();
         if (artifactDetails.Length == 0)
         {
             validationLines.Add("Validation: fail");
@@ -408,11 +418,23 @@ public static class FeasibilityStatusCommand
             return WriteHandoffValidationResult(validationLines, output, parseResult.OutputPath, exitCode: 1);
         }
 
+        foreach (var duplicateFileName in FindDuplicateFileNames(manifestArtifactFiles))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {duplicateFileName}: duplicate artifactFiles entry.");
+        }
+
+        foreach (var duplicateFileName in FindDuplicateFileNames(artifactDetails.Select(detail => detail.FileName)))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {duplicateFileName}: duplicate artifactDetails entry.");
+        }
+
         var detailedFiles = new HashSet<string>(
             artifactDetails.Select(detail => detail.FileName),
             StringComparer.OrdinalIgnoreCase);
         var artifactFiles = new HashSet<string>(
-            manifest.ArtifactFiles ?? Array.Empty<string>(),
+            manifestArtifactFiles,
             StringComparer.OrdinalIgnoreCase);
         var requiredFiles = new HashSet<string>(RequiredHandoffArtifactFiles, StringComparer.OrdinalIgnoreCase);
         foreach (var requiredFile in requiredFiles)
@@ -430,7 +452,7 @@ public static class FeasibilityStatusCommand
             }
         }
 
-        foreach (var artifactFile in manifest.ArtifactFiles ?? Array.Empty<string>())
+        foreach (var artifactFile in manifestArtifactFiles)
         {
             if (!detailedFiles.Contains(artifactFile))
             {
@@ -489,7 +511,7 @@ public static class FeasibilityStatusCommand
             }
         }
 
-        var resultsPath = Path.Combine(inputFolder, "phase0-results.json");
+        var resultsPath = Path.Combine(inputFolder, HandoffResultsFileName);
         if (File.Exists(resultsPath))
         {
             try
@@ -499,23 +521,23 @@ public static class FeasibilityStatusCommand
                     HandoffJsonOptions) ?? [];
                 if (results.Length == manifest.ResultCount)
                 {
-                    validationLines.Add($"- [pass] phase0-results.json result count: {results.Length}");
+                    validationLines.Add($"- [pass] {HandoffResultsFileName} result count: {results.Length}");
                 }
                 else
                 {
                     isValid = false;
                     validationLines.Add(
-                        $"- [fail] phase0-results.json result count mismatch, expected {manifest.ResultCount}, actual {results.Length}.");
+                        $"- [fail] {HandoffResultsFileName} result count mismatch, expected {manifest.ResultCount}, actual {results.Length}.");
                 }
             }
             catch (JsonException ex)
             {
                 isValid = false;
-                validationLines.Add($"- [fail] phase0-results.json JSON is invalid: {ex.Message}");
+                validationLines.Add($"- [fail] {HandoffResultsFileName} JSON is invalid: {ex.Message}");
             }
         }
 
-        var diagnosticReportPath = Path.Combine(inputFolder, "phase0-diagnostic-report.json");
+        var diagnosticReportPath = Path.Combine(inputFolder, HandoffDiagnosticReportFileName);
         if (File.Exists(diagnosticReportPath))
         {
             try
@@ -526,7 +548,7 @@ public static class FeasibilityStatusCommand
                 if (report is null)
                 {
                     isValid = false;
-                    validationLines.Add("- [fail] phase0-diagnostic-report.json is empty.");
+                    validationLines.Add($"- [fail] {HandoffDiagnosticReportFileName} is empty.");
                 }
                 else
                 {
@@ -536,7 +558,7 @@ public static class FeasibilityStatusCommand
             catch (JsonException ex)
             {
                 isValid = false;
-                validationLines.Add($"- [fail] phase0-diagnostic-report.json JSON is invalid: {ex.Message}");
+                validationLines.Add($"- [fail] {HandoffDiagnosticReportFileName} JSON is invalid: {ex.Message}");
             }
         }
 
@@ -562,6 +584,28 @@ public static class FeasibilityStatusCommand
         }
 
         return exitCode;
+    }
+
+    private static IReadOnlyList<string> FindDuplicateFileNames(IEnumerable<string?> fileNames)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var reported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var duplicates = new List<string>();
+
+        foreach (var fileName in fileNames)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                continue;
+            }
+
+            if (!seen.Add(fileName) && reported.Add(fileName))
+            {
+                duplicates.Add(fileName);
+            }
+        }
+
+        return duplicates;
     }
 
     private static bool ValidateHandoffDiagnosticReport(
@@ -1868,7 +1912,7 @@ public static class FeasibilityStatusCommand
         string outputFolder,
         IReadOnlyList<FeasibilityTestResult> results)
     {
-        var path = Path.Combine(outputFolder, "phase0-results.json");
+        var path = Path.Combine(outputFolder, HandoffResultsFileName);
         SaveTextFile(path, JsonSerializer.Serialize(results, HandoffJsonOptions) + Environment.NewLine);
         return path;
     }
@@ -1877,7 +1921,7 @@ public static class FeasibilityStatusCommand
         string outputFolder,
         DiagnosticReport report)
     {
-        var path = Path.Combine(outputFolder, "phase0-diagnostic-report.json");
+        var path = Path.Combine(outputFolder, HandoffDiagnosticReportFileName);
         SaveTextFile(path, JsonSerializer.Serialize(report, HandoffJsonOptions) + Environment.NewLine);
         return path;
     }
@@ -1900,7 +1944,7 @@ public static class FeasibilityStatusCommand
         IReadOnlyList<string> artifactFiles,
         IReadOnlyList<HandoffArtifactMetadata> artifactDetails)
     {
-        var path = Path.Combine(outputFolder, "phase0-handoff-manifest.json");
+        var path = Path.Combine(outputFolder, HandoffManifestFileName);
         var manifest = new HandoffManifest(
             generatedAt,
             dataFolder,
