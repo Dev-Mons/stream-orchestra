@@ -445,6 +445,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Input folder: {handoffFolder}", text);
         Assert.Contains("Plan verification: pending", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json canonical content.", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json artifactFiles standard order.", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json artifactDetails standard order.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json profile groups: A, B, C, D", text);
         Assert.Contains("- [pass] handoff folder contains only standard artifacts.", text);
         Assert.Contains("- [pass] phase0-results.json:", text);
@@ -1103,6 +1105,48 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("phase0-handoff-manifest.json isVerified mismatch, expected False from results, actual True.", text);
         Assert.Contains("phase0-verification.txt plan status mismatch, expected pending from results, actual pass.", text);
         Assert.Contains("phase0-verification.txt completion mismatch, expected False from results, actual True.", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsNonStandardManifestArtifactOrder()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-artifact-order");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var artifactFiles = manifest["artifactFiles"]!.AsArray();
+        var firstArtifactFile = artifactFiles[0]!.GetValue<string>();
+        artifactFiles[0] = JsonValue.Create(artifactFiles[1]!.GetValue<string>());
+        artifactFiles[1] = JsonValue.Create(firstArtifactFile);
+        var artifactDetails = manifest["artifactDetails"]!.AsArray();
+        var firstArtifactDetail = artifactDetails[0]!.DeepClone();
+        artifactDetails[0] = artifactDetails[1]!.DeepClone();
+        artifactDetails[1] = firstArtifactDetail;
+        File.WriteAllText(
+            manifestPath,
+            manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + Environment.NewLine);
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-handoff-manifest.json artifactFiles order mismatch", text);
+        Assert.Contains("phase0-handoff-manifest.json artifactDetails order mismatch", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());

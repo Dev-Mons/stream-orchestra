@@ -440,6 +440,11 @@ public static class FeasibilityStatusCommand
             validationLines.Add($"- [fail] {duplicateFileName}: duplicate artifactDetails entry.");
         }
 
+        isValid &= ValidateHandoffManifestArtifactOrder(
+            manifestArtifactFiles,
+            artifactDetails,
+            validationLines);
+
         var detailedFiles = new HashSet<string>(
             artifactDetails.Select(detail => detail.FileName),
             StringComparer.OrdinalIgnoreCase);
@@ -707,6 +712,49 @@ public static class FeasibilityStatusCommand
 
         validationLines.Add($"- [fail] {HandoffManifestFileName} canonical content mismatch.");
         return false;
+    }
+
+    private static bool ValidateHandoffManifestArtifactOrder(
+        IReadOnlyList<string> artifactFiles,
+        IReadOnlyList<HandoffArtifactMetadata> artifactDetails,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        if (HasRequiredHandoffArtifactOrder(artifactFiles))
+        {
+            validationLines.Add($"- [pass] {HandoffManifestFileName} artifactFiles standard order.");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffManifestFileName} artifactFiles order mismatch, expected {FormatArtifactOrder(RequiredHandoffArtifactFiles)}, actual {FormatArtifactOrder(artifactFiles)}.");
+        }
+
+        var detailFiles = artifactDetails.Select(detail => detail.FileName).ToArray();
+        if (HasRequiredHandoffArtifactOrder(detailFiles))
+        {
+            validationLines.Add($"- [pass] {HandoffManifestFileName} artifactDetails standard order.");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffManifestFileName} artifactDetails order mismatch, expected {FormatArtifactOrder(RequiredHandoffArtifactFiles)}, actual {FormatArtifactOrder(detailFiles)}.");
+        }
+
+        return isValid;
+    }
+
+    private static bool HasRequiredHandoffArtifactOrder(IReadOnlyList<string> fileNames)
+    {
+        return fileNames.Count == RequiredHandoffArtifactFiles.Length &&
+            fileNames.SequenceEqual(RequiredHandoffArtifactFiles, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string FormatArtifactOrder(IEnumerable<string?> fileNames)
+    {
+        return string.Join(", ", fileNames.Select(fileName => string.IsNullOrWhiteSpace(fileName) ? "<blank>" : fileName));
     }
 
     private static bool ValidateHandoffManifestProfileGroups(
