@@ -148,7 +148,7 @@ Use `partial` when the requested playback count or isolated group visibly plays 
 
 The WPF app only records a feasibility result after a playback test, group load, or isolated group load has established the current scenario and playback count. This avoids saving an ambiguous result before a test has run.
 
-In the WPF feasibility row, the account-label and A-D evidence controls are enabled only while `계정 유지` is checked, so playback-only partial records cannot accidentally keep stale account labels.
+In the WPF feasibility row, the account-label, A-D evidence, and restart controls are enabled only while `계정 유지` is checked, so playback-only partial records cannot accidentally keep stale account or restart evidence.
 
 Before clicking `성공`, `부분`, or `실패`, check the `현재 테스트` label in the WPF feasibility row. It shows the scenario and playback count that will be saved.
 Use `감사 복사` to copy the current plan-gate audit text and suggested `record` shapes when you need to paste the verification status into an issue, note, or chat.

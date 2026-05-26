@@ -267,6 +267,7 @@
                                   Content="재실행 유지"
                                   Foreground="#F3F6FA"
                                   VerticalAlignment="Center"
+                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
                                   Margin="0,0,8,0" />
                         <CheckBox x:Name="ResourceAcceptableCheckBox"
                                   Content="리소스 OK"

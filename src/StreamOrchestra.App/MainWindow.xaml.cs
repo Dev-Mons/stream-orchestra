@@ -316,7 +316,7 @@ public partial class MainWindow : Window
         var sameAccountSession = SameAccountSessionCheckBox.IsChecked == true;
         var accountLabel = sameAccountSession ? AccountLabelTextBox.Text.Trim() : "";
         var verifiedProfileGroups = sameAccountSession ? GetVerifiedProfileGroups() : [];
-        var restartSession = RestartSessionCheckBox.IsChecked == true;
+        var restartSession = sameAccountSession && RestartSessionCheckBox.IsChecked == true;
         var resourceUsageAcceptable = ResourceAcceptableCheckBox.IsChecked == true;
         if (!TryReadOptionalPercent(ObservedCpuTextBox, "CPU", out var observedCpuPercent) ||
             !TryReadOptionalPercent(ObservedGpuTextBox, "GPU", out var observedGpuPercent) ||

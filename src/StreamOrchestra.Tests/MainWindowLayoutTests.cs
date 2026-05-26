@@ -99,6 +99,7 @@ public sealed class MainWindowLayoutTests
         Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupBCheckBox"), "IsEnabled"));
         Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupCCheckBox"), "IsEnabled"));
         Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "VerifiedGroupDCheckBox"), "IsEnabled"));
+        Assert.Equal(accountEvidenceBinding, GetAttribute(FindElementByName(document, "RestartSessionCheckBox"), "IsEnabled"));
         Assert.Equal("CPU %", GetAttribute(FindElementByName(document, "ObservedCpuTextBox"), "ToolTip"));
         Assert.Equal("GPU %", GetAttribute(FindElementByName(document, "ObservedGpuTextBox"), "ToolTip"));
         Assert.Equal("Memory MB", GetAttribute(FindElementByName(document, "ObservedMemoryTextBox"), "ToolTip"));
