@@ -225,7 +225,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("record --group A --outcome partial --account --profile-groups A", text);
         Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100>", text);
-        Assert.Contains("record --count 16 --outcome <success|partial|failure> --account --profile-groups A,B,C,D", text);
+        Assert.Contains("record --count 16 --outcome partial --account --profile-groups A,B,C,D", text);
+        Assert.DoesNotContain("record --count 16 --outcome <success|partial|failure>", text);
         Assert.Equal("", error.ToString());
     }
 

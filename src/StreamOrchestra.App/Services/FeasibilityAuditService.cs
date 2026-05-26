@@ -150,7 +150,7 @@ public sealed class FeasibilityAuditService
                     : latestPlanNinePlusResult is not null &&
                         !FeasibilityOutcomeService.IsKnown(latestPlanNinePlusResult)
                             ? "Latest 9+ slot result has invalid outcome."
-                            : "Record CPU %, GPU %, and memory MB from the latest 9+ slot test."),
+                            : "Record CPU %, GPU %, and memory MB from the latest 9+ slot plan-scenario test."),
             new FeasibilityAuditItem(
                 "phase0_success_gate",
                 "Phase 0 WebView2 success gate",
@@ -425,11 +425,11 @@ public sealed class FeasibilityAuditService
             ],
             "twelve_slot_playback" =>
             [
-                "record --count 12 --outcome <success|partial|failure> --account --profile-groups A,B,C --notes \"12-slot SOOP playback\""
+                "record --count 12 --outcome partial --account --profile-groups A,B,C --notes \"12-slot SOOP playback\""
             ],
             "sixteen_slot_playback" =>
             [
-                "record --count 16 --outcome <success|partial|failure> --account --profile-groups A,B,C,D --notes \"16-slot SOOP playback\""
+                "record --count 16 --outcome partial --account --profile-groups A,B,C,D --notes \"16-slot SOOP playback\""
             ],
             "same_account_session" =>
             [

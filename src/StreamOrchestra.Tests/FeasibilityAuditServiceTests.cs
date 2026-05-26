@@ -694,7 +694,8 @@ public sealed class FeasibilityAuditServiceTests
         Assert.Contains("[pending] Phase 0 WebView2 success gate", text);
         Assert.Contains("Suggested record shapes:", text);
         Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
-        Assert.Contains("record --count 12 --outcome <success|partial|failure> --account --profile-groups A,B,C", text);
+        Assert.Contains("record --count 12 --outcome partial --account --profile-groups A,B,C", text);
+        Assert.DoesNotContain("record --count 12 --outcome <success|partial|failure>", text);
     }
 
     [Fact]
