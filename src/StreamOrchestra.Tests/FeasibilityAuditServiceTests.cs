@@ -98,7 +98,7 @@ public sealed class FeasibilityAuditServiceTests
         Assert.Equal("pass", Find(auditItems, "nine_plus_playback").Status);
         Assert.Equal("pending", Find(auditItems, "same_account_session").Status);
         Assert.Equal("pass", Find(auditItems, "restart_session").Status);
-        Assert.Equal("pass", Find(auditItems, "resource_acceptability").Status);
+        Assert.Equal("pending", Find(auditItems, "resource_acceptability").Status);
         Assert.Equal("pending", Find(auditItems, "resource_observations").Status);
         Assert.Equal("pending", Find(auditItems, "phase0_success_gate").Status);
     }
@@ -134,6 +134,7 @@ public sealed class FeasibilityAuditServiceTests
 
         var auditItems = new FeasibilityAuditService().CreateAudit([result], decision);
 
+        Assert.Equal("pending", Find(auditItems, "resource_acceptability").Status);
         Assert.Equal("pending", Find(auditItems, "resource_observations").Status);
         Assert.Equal("pending", Find(auditItems, "phase0_success_gate").Status);
     }

@@ -89,7 +89,7 @@ public sealed class FeasibilityAuditService
             HasRestartSessionEvidence);
         var latestResourceAcceptabilityEvidenceResult = GetLatestNinePlusBooleanEvidenceResult(
             planNinePlusResults,
-            result => result.IsResourceUsageAcceptable);
+            HasResourceAcceptabilityEvidence);
         var latestResourceObservationEvidenceResult = GetLatestNinePlusResourceObservationEvidenceResult(
             planNinePlusResults);
         var latestNinePlusIsFailure = latestNinePlusResult is not null &&
@@ -151,7 +151,7 @@ public sealed class FeasibilityAuditService
                 "CPU/GPU/memory acceptable",
                 latestResourceAcceptabilityEvidenceResult,
                 latestPlanNinePlusResult,
-                result => result.IsResourceUsageAcceptable,
+                HasResourceAcceptabilityEvidence,
                 "No 9+ slot result has resources=True.",
                 "No 9+ slot plan-scenario resource acceptability result recorded."),
             new FeasibilityAuditItem(
@@ -327,6 +327,12 @@ public sealed class FeasibilityAuditService
             FeasibilityProfileGroupEvidenceService.HasRequiredGroups(
                 result.PlaybackCount,
                 result.VerifiedProfileGroups);
+    }
+
+    private static bool HasResourceAcceptabilityEvidence(FeasibilityTestResult result)
+    {
+        return result.IsResourceUsageAcceptable &&
+            HasStructuredResourceObservation(result);
     }
 
     private static FeasibilityTestResult? GetLatestNinePlusResourceObservationEvidenceResult(
