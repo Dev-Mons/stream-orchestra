@@ -94,9 +94,16 @@ public sealed class FeasibilityResultStorageService
 
         var diagnostics = NormalizeDiagnostics(result.Diagnostics, result.CapturedAt);
         var normalizedOutcome = result.Outcome?.Trim() ?? "";
+        var normalizedGroups = FeasibilityProfileGroupEvidenceService.Normalize(result.VerifiedProfileGroups);
         var normalizedAccountLabel = result.IsSameAccountSessionMaintained
             ? result.AccountLabel?.Trim() ?? ""
             : "";
+        var hasSameAccountEvidence = result.IsSameAccountSessionMaintained &&
+            !string.IsNullOrWhiteSpace(normalizedAccountLabel) &&
+            normalizedGroups.Count > 0;
+        var normalizedRestartSession = result.IsRestartSessionMaintained && hasSameAccountEvidence;
+        var normalizedResourceUsageAcceptable = result.IsResourceUsageAcceptable &&
+            FeasibilityResourceObservationService.HasCompleteValidObservation(result);
 
         return new FeasibilityTestResult
         {
@@ -111,9 +118,9 @@ public sealed class FeasibilityResultStorageService
             Diagnostics = diagnostics,
             IsSameAccountSessionMaintained = result.IsSameAccountSessionMaintained,
             AccountLabel = normalizedAccountLabel,
-            IsRestartSessionMaintained = result.IsRestartSessionMaintained,
-            IsResourceUsageAcceptable = result.IsResourceUsageAcceptable,
-            VerifiedProfileGroups = FeasibilityProfileGroupEvidenceService.Normalize(result.VerifiedProfileGroups),
+            IsRestartSessionMaintained = normalizedRestartSession,
+            IsResourceUsageAcceptable = normalizedResourceUsageAcceptable,
+            VerifiedProfileGroups = normalizedGroups,
             ObservedCpuPercent = result.ObservedCpuPercent,
             ObservedGpuPercent = result.ObservedGpuPercent,
             ObservedMemoryMegabytes = result.ObservedMemoryMegabytes,
