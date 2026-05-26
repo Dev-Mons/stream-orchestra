@@ -216,6 +216,61 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_DropsSameAccountEvidenceWhenLabelOrGroupsAreMissing()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "account_without_label",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": " ",
+                "verifiedProfileGroups": ["A", "B", "C"]
+              },
+              {
+                "id": "account_without_groups",
+                "capturedAt": "2026-05-26T12:05:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": []
+              },
+              {
+                "id": "account_with_evidence",
+                "capturedAt": "2026-05-26T12:10:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"]
+              }
+            ]
+            """);
+
+        var results = service.LoadResults();
+
+        Assert.Equal(3, results.Count);
+        Assert.False(results[0].IsSameAccountSessionMaintained);
+        Assert.Equal("", results[0].AccountLabel);
+        Assert.False(results[1].IsSameAccountSessionMaintained);
+        Assert.Equal("", results[1].AccountLabel);
+        Assert.True(results[2].IsSameAccountSessionMaintained);
+        Assert.Equal("main_soop", results[2].AccountLabel);
+    }
+
+    [Fact]
     public void LoadResults_DropsRestartEvidenceWhenSameAccountEvidenceIsIncomplete()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);
