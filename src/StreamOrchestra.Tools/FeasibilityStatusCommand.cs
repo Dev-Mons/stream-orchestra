@@ -445,6 +445,8 @@ public static class FeasibilityStatusCommand
             manifestArtifactFiles,
             StringComparer.OrdinalIgnoreCase);
         var requiredFiles = new HashSet<string>(RequiredHandoffArtifactFiles, StringComparer.OrdinalIgnoreCase);
+        isValid &= ValidateHandoffInputFolderContents(inputFolder, requiredFiles, validationLines);
+
         foreach (var artifactFile in manifestArtifactFiles)
         {
             if (!string.IsNullOrWhiteSpace(artifactFile) && !requiredFiles.Contains(artifactFile))
@@ -652,6 +654,41 @@ public static class FeasibilityStatusCommand
         }
 
         return duplicates;
+    }
+
+    private static bool ValidateHandoffInputFolderContents(
+        string inputFolder,
+        IReadOnlySet<string> requiredFiles,
+        List<string> validationLines)
+    {
+        var isValid = true;
+        var allowedFiles = new HashSet<string>(requiredFiles, StringComparer.OrdinalIgnoreCase)
+        {
+            HandoffManifestFileName
+        };
+        foreach (var fileName in Directory.EnumerateFiles(inputFolder).Select(Path.GetFileName))
+        {
+            if (string.IsNullOrWhiteSpace(fileName) || allowedFiles.Contains(fileName))
+            {
+                continue;
+            }
+
+            isValid = false;
+            validationLines.Add($"- [fail] {fileName}: unexpected file in handoff folder.");
+        }
+
+        foreach (var directoryName in Directory.EnumerateDirectories(inputFolder).Select(Path.GetFileName))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {directoryName}: unexpected directory in handoff folder.");
+        }
+
+        if (isValid)
+        {
+            validationLines.Add("- [pass] handoff folder contains only standard artifacts.");
+        }
+
+        return isValid;
     }
 
     private static bool ValidateHandoffManifestProfileGroups(

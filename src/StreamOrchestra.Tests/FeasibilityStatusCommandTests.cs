@@ -445,6 +445,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Input folder: {handoffFolder}", text);
         Assert.Contains("Plan verification: pending", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json profile groups: A, B, C, D", text);
+        Assert.Contains("- [pass] handoff folder contains only standard artifacts.", text);
         Assert.Contains("- [pass] phase0-results.json:", text);
         Assert.Contains("- [pass] phase0-preflight.txt data folder:", text);
         Assert.Contains("- [pass] phase0-preflight.txt results file:", text);
@@ -1147,6 +1148,35 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal(1, exitCode);
         Assert.Contains("phase0-extra.txt: unexpected artifactFiles entry.", text);
         Assert.Contains("phase0-extra.txt: unexpected artifactDetails entry.", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsUnexpectedFolderFiles()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-unexpected-folder-file");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        File.WriteAllText(Path.Combine(handoffFolder, "phase0-extra.txt"), "unexpected");
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-extra.txt: unexpected file in handoff folder.", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
