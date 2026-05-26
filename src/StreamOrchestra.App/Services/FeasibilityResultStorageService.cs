@@ -94,7 +94,16 @@ public sealed class FeasibilityResultStorageService
 
         var diagnostics = NormalizeDiagnostics(result.Diagnostics, result.CapturedAt);
         var normalizedOutcome = result.Outcome?.Trim() ?? "";
-        var normalizedGroups = FeasibilityProfileGroupEvidenceService.Normalize(result.VerifiedProfileGroups);
+        var normalizedScenarioId = string.IsNullOrWhiteSpace(result.ScenarioId)
+            ? "unspecified"
+            : result.ScenarioId.Trim();
+        var normalizedScenarioName = string.IsNullOrWhiteSpace(result.ScenarioName)
+            ? "Unspecified"
+            : result.ScenarioName.Trim();
+        var normalizedGroups = FeasibilityProfileGroupEvidenceService.GetScenarioConsistentGroups(
+            result.PlaybackCount,
+            normalizedScenarioId,
+            result.VerifiedProfileGroups);
         var normalizedAccountLabel = result.IsSameAccountSessionMaintained
             ? result.AccountLabel?.Trim() ?? ""
             : "";
@@ -112,8 +121,8 @@ public sealed class FeasibilityResultStorageService
                 : result.Id.Trim(),
             CapturedAt = result.CapturedAt,
             PlaybackCount = result.PlaybackCount,
-            ScenarioId = string.IsNullOrWhiteSpace(result.ScenarioId) ? "unspecified" : result.ScenarioId.Trim(),
-            ScenarioName = string.IsNullOrWhiteSpace(result.ScenarioName) ? "Unspecified" : result.ScenarioName.Trim(),
+            ScenarioId = normalizedScenarioId,
+            ScenarioName = normalizedScenarioName,
             Outcome = normalizedOutcome,
             Diagnostics = diagnostics,
             IsSameAccountSessionMaintained = hasSameAccountEvidence,

@@ -271,6 +271,49 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_DropsProfileGroupsOutsideScenarioAndAccountEvidenceWhenNoneRemain()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "mixed_groups",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["D", "x", "b", "A"]
+              },
+              {
+                "id": "mismatched_group_only",
+                "capturedAt": "2026-05-26T12:05:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": "partial",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["D"]
+              }
+            ]
+            """);
+
+        var results = service.LoadResults();
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(["A", "B"], results[0].VerifiedProfileGroups);
+        Assert.True(results[0].IsSameAccountSessionMaintained);
+        Assert.Empty(results[1].VerifiedProfileGroups);
+        Assert.False(results[1].IsSameAccountSessionMaintained);
+        Assert.Equal("", results[1].AccountLabel);
+    }
+
+    [Fact]
     public void LoadResults_DropsRestartEvidenceWhenSameAccountEvidenceIsIncomplete()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);
