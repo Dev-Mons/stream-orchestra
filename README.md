@@ -30,7 +30,7 @@ Create a complete handoff bundle for a manual SOOP verification run:
 dotnet run --project src\StreamOrchestra.Tools -- handoff --output-folder .\phase0-handoff
 ```
 
-`handoff` saves `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, `phase0-diagnostic-report.json`, a normalized `phase0-results.json` evidence snapshot, and `phase0-handoff-manifest.json` together. The manifest includes the current decision, plan-verification status, pass/pending/fail gate counts, outstanding gate count, and artifact file list. Use `--data-folder <path>` and `--profile-folder <path>` when inspecting non-default runtime data.
+`handoff` saves `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, `phase0-diagnostic-report.json`, a normalized `phase0-results.json` evidence snapshot, and `phase0-handoff-manifest.json` together. The manifest includes the current decision, plan-verification status, pass/pending/fail gate counts, outstanding gate count, and artifact file sizes plus SHA-256 hashes. Use `--data-folder <path>` and `--profile-folder <path>` when inspecting non-default runtime data.
 
 Print the Phase 0 manual test order from `docs/plan.md` before recording live SOOP evidence:
 
@@ -154,7 +154,7 @@ Use `--data-folder <path>` to inspect a non-default data folder.
 - The CLI `history` command lists saved feasibility results with their recorded decision snapshots for manual-test audit trails.
 - The CLI `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md` with the current evidence status, outstanding gates, a `record --dry-run` preview step, and suggested `record` shapes before evidence is recorded. Add `--output <path>` to save the checklist text.
 - The CLI `preflight` command can save the runtime/profile/layout readiness text with `--output <path>` so the manual verification run has a setup artifact before live SOOP playback evidence is recorded.
-- The CLI `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one folder for manual SOOP test handoff or post-run review; the manifest records the current decision and plan-gate pass/pending/fail summary.
+- The CLI `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one folder for manual SOOP test handoff or post-run review; the manifest records the current decision, plan-gate pass/pending/fail summary, and artifact hashes.
 - The CLI `scenarios` command lists the named playback and isolated-group scenarios with copyable partial/failure shapes, explains when partial evidence counts as visible playback evidence, and prints separate 9+ success shapes that include restart, resource, CPU, GPU, and memory evidence.
 - The CLI `verify` command exits `0` only when every Phase 0 plan gate passes, and exits non-zero with outstanding pending/fail gate details plus suggested `record` shapes while manual SOOP evidence is still pending or failed. Add `--output <path>` to save the verification text.
 - The CLI `browsers` command prints installed/missing external-browser fallback candidates, including custom candidates.

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using StreamOrchestra.App.Models;
@@ -286,6 +287,14 @@ public static class FeasibilityStatusCommand
             SaveHandoffDiagnosticReport(outputFolder, diagnosticReport),
             SaveHandoffResultsSnapshot(outputFolder, results)
         };
+        var artifactFileNames = artifacts
+            .Select(Path.GetFileName)
+            .Where(fileName => fileName is not null)
+            .Select(fileName => fileName!)
+            .ToArray();
+        var artifactDetails = artifacts
+            .Select(CreateHandoffArtifactMetadata)
+            .ToArray();
         var manifestPath = SaveHandoffManifest(
             outputFolder,
             generatedAt,
@@ -301,7 +310,8 @@ public static class FeasibilityStatusCommand
             auditSummary.PendingCount,
             auditSummary.FailCount,
             outstandingGateCount,
-            artifacts.Select(Path.GetFileName).Where(fileName => fileName is not null).Select(fileName => fileName!).ToArray());
+            artifactFileNames,
+            artifactDetails);
 
         output.WriteLine("Stream Orchestra Phase 0 Handoff");
         output.WriteLine($"Output folder: {outputFolder}");
@@ -1541,7 +1551,8 @@ public static class FeasibilityStatusCommand
         int pendingGateCount,
         int failingGateCount,
         int outstandingGateCount,
-        IReadOnlyList<string> artifactFiles)
+        IReadOnlyList<string> artifactFiles,
+        IReadOnlyList<HandoffArtifactMetadata> artifactDetails)
     {
         var path = Path.Combine(outputFolder, "phase0-handoff-manifest.json");
         var manifest = new HandoffManifest(
@@ -1558,9 +1569,22 @@ public static class FeasibilityStatusCommand
             pendingGateCount,
             failingGateCount,
             outstandingGateCount,
-            artifactFiles);
+            artifactFiles,
+            artifactDetails);
         SaveTextFile(path, JsonSerializer.Serialize(manifest, HandoffJsonOptions) + Environment.NewLine);
         return path;
+    }
+
+    private static HandoffArtifactMetadata CreateHandoffArtifactMetadata(string path)
+    {
+        var fileInfo = new FileInfo(path);
+        using var stream = File.OpenRead(path);
+        var hash = SHA256.HashData(stream);
+
+        return new HandoffArtifactMetadata(
+            fileInfo.Name,
+            fileInfo.Length,
+            Convert.ToHexString(hash).ToLowerInvariant());
     }
 
     private static void WriteLines(IReadOnlyList<string> lines, TextWriter output)
@@ -1731,7 +1755,13 @@ public static class FeasibilityStatusCommand
         int PendingGateCount,
         int FailingGateCount,
         int OutstandingGateCount,
-        IReadOnlyList<string> ArtifactFiles);
+        IReadOnlyList<string> ArtifactFiles,
+        IReadOnlyList<HandoffArtifactMetadata> ArtifactDetails);
+
+    private sealed record HandoffArtifactMetadata(
+        string FileName,
+        long SizeBytes,
+        string Sha256);
 
     private static IReadOnlyList<string> ParseProfileGroups(string rawValue)
     {

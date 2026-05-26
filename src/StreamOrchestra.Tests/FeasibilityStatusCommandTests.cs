@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 using StreamOrchestra.Tools;
@@ -374,6 +375,12 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("\"phase0-history.txt\"", manifestText);
         Assert.Contains("\"phase0-diagnostic-report.json\"", manifestText);
         Assert.Contains("\"phase0-verification.txt\"", manifestText);
+        Assert.Contains("\"artifactDetails\":", manifestText);
+        Assert.Contains("\"fileName\": \"phase0-preflight.txt\"", manifestText);
+        Assert.Contains("\"sizeBytes\":", manifestText);
+        Assert.Contains("\"sha256\":", manifestText);
+        var resultsHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(resultsPath))).ToLowerInvariant();
+        Assert.Contains($"\"sha256\": \"{resultsHash}\"", manifestText);
         Assert.Equal("", error.ToString());
     }
 
