@@ -45,7 +45,7 @@ public sealed class FeasibilityResultValidationService
             return profileGroupValidationError;
         }
 
-        var accountLabelValidationError = ValidateSameAccountLabel(
+        var accountEvidenceValidationError = ValidateSameAccountEvidence(
             sameAccountSession,
             verifiedProfileGroups,
             accountLabel);
@@ -58,7 +58,7 @@ public sealed class FeasibilityResultValidationService
                 observedGpuPercent,
                 observedMemoryMegabytes);
 
-            return resourceObservationError ?? accountLabelValidationError;
+            return resourceObservationError ?? accountEvidenceValidationError;
         }
 
         if (playbackCount < 9)
@@ -93,7 +93,7 @@ public sealed class FeasibilityResultValidationService
             observedGpuPercent,
             observedMemoryMegabytes);
 
-        return successResourceObservationError ?? accountLabelValidationError;
+        return successResourceObservationError ?? accountEvidenceValidationError;
     }
 
     private static string? ValidateResourceAcceptanceObservation(
@@ -115,18 +115,23 @@ public sealed class FeasibilityResultValidationService
         return null;
     }
 
-    private static string? ValidateSameAccountLabel(
+    private static string? ValidateSameAccountEvidence(
         bool sameAccountSession,
         IReadOnlyList<string>? verifiedProfileGroups,
         string? accountLabel)
     {
-        if (!sameAccountSession ||
-            FeasibilityProfileGroupEvidenceService.Normalize(verifiedProfileGroups).Count == 0 ||
-            !string.IsNullOrWhiteSpace(accountLabel))
+        if (!sameAccountSession)
         {
             return null;
         }
 
-        return "Same-account evidence requires an account label.";
+        if (FeasibilityProfileGroupEvidenceService.Normalize(verifiedProfileGroups).Count == 0)
+        {
+            return "Same-account evidence requires at least one verified profile group.";
+        }
+
+        return string.IsNullOrWhiteSpace(accountLabel)
+            ? "Same-account evidence requires an account label."
+            : null;
     }
 }
