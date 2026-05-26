@@ -474,6 +474,54 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void LoadResults_NormalizesKnownOutcomeCasing()
+    {
+        var service = new FeasibilityResultStorageService(_dataFolder);
+        File.WriteAllText(
+            service.ResultsFilePath,
+            """
+            [
+              {
+                "id": "success_with_complete_evidence",
+                "capturedAt": "2026-05-26T12:00:00+00:00",
+                "playbackCount": 9,
+                "scenarioId": "groups_a_b_c_9_slot_threshold",
+                "scenarioName": "Groups A/B/C, 9-slot success threshold",
+                "outcome": " Success ",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": true,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000
+              },
+              {
+                "id": "partial_playback",
+                "capturedAt": "2026-05-26T12:05:00+00:00",
+                "playbackCount": 8,
+                "scenarioId": "groups_a_b_8_slots",
+                "scenarioName": "Groups A/B, 8 slots",
+                "outcome": " Partial "
+              },
+              {
+                "id": "failed_attempt",
+                "capturedAt": "2026-05-26T12:10:00+00:00",
+                "playbackCount": 12,
+                "scenarioId": "groups_a_b_c_12_slots",
+                "scenarioName": "Groups A/B/C, 12 slots",
+                "outcome": " Failure "
+              }
+            ]
+            """);
+
+        var results = service.LoadResults();
+
+        Assert.Equal(["success", "partial", "failure"], results.Select(result => result.Outcome));
+    }
+
+    [Fact]
     public void LoadResults_DowngradesSuccessOutcomeWhenSuccessEvidenceIsIncomplete()
     {
         var service = new FeasibilityResultStorageService(_dataFolder);

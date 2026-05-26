@@ -94,6 +94,7 @@ public sealed class FeasibilityResultStorageService
 
         var diagnostics = NormalizeDiagnostics(result.Diagnostics, result.CapturedAt);
         var rawOutcome = result.Outcome?.Trim() ?? "";
+        var canonicalOutcome = NormalizeKnownOutcome(rawOutcome);
         var normalizedScenarioId = string.IsNullOrWhiteSpace(result.ScenarioId)
             ? "unspecified"
             : result.ScenarioId.Trim();
@@ -110,7 +111,7 @@ public sealed class FeasibilityResultStorageService
         var hasSameAccountEvidence = result.IsSameAccountSessionMaintained &&
             !string.IsNullOrWhiteSpace(normalizedAccountLabel) &&
             normalizedGroups.Count > 0;
-        var isFailureOutcome = FeasibilityOutcomeService.IsFailure(rawOutcome);
+        var isFailureOutcome = FeasibilityOutcomeService.IsFailure(canonicalOutcome);
         var normalizedRestartSession = result.IsRestartSessionMaintained &&
             hasSameAccountEvidence &&
             !isFailureOutcome;
@@ -118,7 +119,7 @@ public sealed class FeasibilityResultStorageService
             !isFailureOutcome &&
             FeasibilityResourceObservationService.HasCompleteValidObservation(result);
         var normalizedOutcome = NormalizeOutcome(
-            rawOutcome,
+            canonicalOutcome,
             result.PlaybackCount,
             normalizedGroups,
             hasSameAccountEvidence,
@@ -175,6 +176,23 @@ public sealed class FeasibilityResultStorageService
             resourceUsageAcceptable
                 ? outcome
                 : "partial";
+    }
+
+    private static string NormalizeKnownOutcome(string outcome)
+    {
+        if (FeasibilityOutcomeService.IsSuccess(outcome))
+        {
+            return "success";
+        }
+
+        if (FeasibilityOutcomeService.IsPartial(outcome))
+        {
+            return "partial";
+        }
+
+        return FeasibilityOutcomeService.IsFailure(outcome)
+            ? "failure"
+            : outcome;
     }
 
     private static RuntimeDiagnosticsSnapshot NormalizeDiagnostics(
