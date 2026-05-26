@@ -228,6 +228,9 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100>", text);
         Assert.Contains("--account-label <label>", text);
         Assert.Contains("record --count 16 --outcome partial --account --profile-groups A,B,C,D", text);
+        Assert.True(
+            text.IndexOf("record --count 16 --outcome partial", StringComparison.Ordinal) <
+            text.IndexOf("record --count 9 --outcome success", StringComparison.Ordinal));
         Assert.DoesNotContain("record --count 16 --outcome <success|partial|failure>", text);
         Assert.Equal("", error.ToString());
     }

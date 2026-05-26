@@ -42,10 +42,15 @@ public sealed class FeasibilityAuditService
 
     public IReadOnlyList<string> CreateSuggestedRecordShapes(IReadOnlyList<FeasibilityAuditItem> auditItems)
     {
-        return auditItems
+        var suggestions = auditItems
             .Where(item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase))
             .SelectMany(CreateSuggestedRecordShapes)
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return suggestions
+            .Where(suggestion => !IsNineSlotSuccessRecordShape(suggestion))
+            .Concat(suggestions.Where(IsNineSlotSuccessRecordShape))
             .ToArray();
     }
 
@@ -485,5 +490,10 @@ public sealed class FeasibilityAuditService
     private static string CreateNineSlotSuccessRecordShape()
     {
         return "record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value> --account-label <label> --notes \"9-slot SOOP threshold\"";
+    }
+
+    private static bool IsNineSlotSuccessRecordShape(string suggestion)
+    {
+        return suggestion.Contains("record --count 9 --outcome success", StringComparison.OrdinalIgnoreCase);
     }
 }

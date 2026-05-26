@@ -783,6 +783,28 @@ public sealed class FeasibilityAuditServiceTests
         Assert.Contains(suggestions, suggestion => suggestion.Contains("record --group D --outcome partial"));
     }
 
+    [Fact]
+    public void CreateSuggestedRecordShapes_OrdersNineSlotSuccessAfterHigherSlotPlaybackEvidence()
+    {
+        var decision = new FeasibilityDecisionService().Decide([]);
+        var service = new FeasibilityAuditService();
+        var auditItems = service.CreateAudit([], decision);
+
+        var suggestions = service.CreateSuggestedRecordShapes(auditItems);
+
+        var nineSuccessIndex = Array.FindIndex(
+            suggestions.ToArray(),
+            suggestion => suggestion.Contains("record --count 9 --outcome success", StringComparison.OrdinalIgnoreCase));
+        var sixteenPlaybackIndex = Array.FindIndex(
+            suggestions.ToArray(),
+            suggestion => suggestion.Contains("record --count 16 --outcome partial", StringComparison.OrdinalIgnoreCase));
+        var groupDAccountIndex = Array.FindIndex(
+            suggestions.ToArray(),
+            suggestion => suggestion.Contains("record --group D --outcome partial", StringComparison.OrdinalIgnoreCase));
+        Assert.True(nineSuccessIndex > sixteenPlaybackIndex);
+        Assert.True(nineSuccessIndex > groupDAccountIndex);
+    }
+
     public static IEnumerable<object[]> InvalidResourceObservationResults()
     {
         yield return
