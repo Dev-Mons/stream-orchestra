@@ -50,7 +50,7 @@ You can also inspect the saved result outside the WPF app:
 dotnet run --project src\StreamOrchestra.Tools -- status
 ```
 
-Before live SOOP testing, run a local preflight check. It verifies that the CLI can see the data folder, A-D profile folders, WebView2 Runtime, playback-test layouts for 4/8/9/12/16, and the current evidence gate status:
+Before live SOOP testing, run a local preflight check. It verifies that the CLI can see and write to the data folder, find A-D profile folders, WebView2 Runtime, playback-test layouts for 4/8/9/12/16, and the current evidence gate status:
 
 ```powershell
 dotnet run --project src\StreamOrchestra.Tools -- preflight
@@ -64,7 +64,7 @@ Create a full handoff bundle when you want the setup, checklist, audit, verifica
 dotnet run --project src\StreamOrchestra.Tools -- handoff --output-folder .\phase0-handoff
 ```
 
-The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, `phase0-diagnostic-report.json`, a normalized `phase0-results.json` snapshot of the current feasibility evidence, and `phase0-handoff-manifest.json`. The manifest includes the preflight profile root, WebView2 runtime status, playback layout status, A-D profile group status, current decision, plan-verification status, pass/pending/fail gate counts, outstanding gate count, and artifact file sizes plus SHA-256 hashes. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
+The bundle contains `phase0-preflight.txt`, `phase0-checklist.txt`, `phase0-audit.txt`, `phase0-verification.txt`, `phase0-history.txt`, `phase0-diagnostic-report.json`, a normalized `phase0-results.json` snapshot of the current feasibility evidence, and `phase0-handoff-manifest.json`. The manifest includes data storage status, the preflight profile root, WebView2 runtime status, playback layout status, A-D profile group status, current decision, plan-verification status, pass/pending/fail gate counts, outstanding gate count, and artifact file sizes plus SHA-256 hashes. Use `--data-folder <path>` and `--profile-folder <path>` to point at non-default runtime data.
 
 Validate the saved bundle before sharing or reviewing it:
 

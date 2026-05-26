@@ -254,6 +254,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.True(exitCode is 0 or 1);
         Assert.Contains("Stream Orchestra Feasibility Preflight", text);
         Assert.Contains($"Data folder: {_dataFolder}", text);
+        Assert.Contains("Data storage: [ready]", text);
         Assert.Contains($"Profile root: {profileFolder}", text);
         Assert.Contains("WebView2 runtime: [", text);
         Assert.Contains("Layouts: [ready]", text);
@@ -295,6 +296,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains($"Preflight saved: {preflightOutputPath}", output.ToString());
         Assert.Contains("Stream Orchestra Feasibility Preflight", fileText);
         Assert.Contains($"Data folder: {_dataFolder}", fileText);
+        Assert.Contains("Data storage: [ready]", fileText);
         Assert.Contains($"Profile root: {profileFolder}", fileText);
         Assert.Contains("WebView2 runtime: [", fileText);
         Assert.Contains("Layouts: [ready]", fileText);
@@ -365,6 +367,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal("[]" + Environment.NewLine, File.ReadAllText(resultsPath));
         var manifestText = File.ReadAllText(manifestPath);
         Assert.Contains("\"resultCount\": 0", manifestText);
+        Assert.Contains("\"dataStorageStatus\": \"[ready] data folder is writable for feasibility artifacts.\"", manifestText);
         Assert.Contains($"\"profileRootFolder\": \"{JsonEncodedText.Encode(profileFolder)}\"", manifestText);
         Assert.Contains("\"webView2RuntimeStatus\":", manifestText);
         Assert.Contains("\"playbackLayoutStatus\":", manifestText);
@@ -449,6 +452,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-handoff-manifest.json data folder path:", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json results file path:", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json profile root path:", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json data storage status: [ready]", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json results file belongs to data folder.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json artifactFiles standard order.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json artifactDetails standard order.", text);
@@ -457,6 +461,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-results.json:", text);
         Assert.Contains("- [pass] phase0-preflight.txt data folder:", text);
         Assert.Contains("- [pass] phase0-preflight.txt results file:", text);
+        Assert.Contains("- [pass] phase0-preflight.txt data storage: [ready]", text);
         Assert.Contains("- [pass] phase0-preflight.txt profile root:", text);
         Assert.Contains("- [pass] phase0-preflight.txt WebView2 runtime:", text);
         Assert.Contains("- [pass] phase0-preflight.txt layouts:", text);
@@ -788,6 +793,46 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal(1, exitCode);
         Assert.Contains("phase0-preflight.txt data folder mismatch", text);
         Assert.Contains("phase0-preflight.txt results file mismatch", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsPreflightDataStorageMismatch()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-preflight-storage-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var preflightPath = Path.Combine(handoffFolder, "phase0-preflight.txt");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        File.WriteAllText(
+            preflightPath,
+            File.ReadAllText(preflightPath)
+                .Replace(
+                    "Data storage: [ready] data folder is writable for feasibility artifacts.",
+                    "Data storage: [blocked] tampered storage status."));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-preflight.txt");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-preflight.txt data storage mismatch", text);
+        Assert.Contains("phase0-preflight.txt readiness mismatch", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());

@@ -295,7 +295,7 @@ public static class FeasibilityStatusCommand
             item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase));
 
         var preflightSnapshot = CreateHandoffPreflightSnapshot(parseResult.ProfileFolder);
-        var (preflightLines, isPreflightReady) = CreatePreflightLines(
+        var (preflightLines, isPreflightReady, dataStorageStatus) = CreatePreflightLines(
             parseResult.DataFolder,
             preflightSnapshot);
         var checklistLines = CreateChecklistLines(parseResult.DataFolder);
@@ -325,6 +325,7 @@ public static class FeasibilityStatusCommand
             generatedAt,
             feasibilityStorage.DataFolder,
             feasibilityStorage.ResultsFilePath,
+            dataStorageStatus,
             preflightSnapshot.ProfileRootFolder,
             preflightSnapshot.WebView2RuntimeStatus,
             preflightSnapshot.PlaybackLayoutStatus,
@@ -783,6 +784,19 @@ public static class FeasibilityStatusCommand
         isValid &= ValidateManifestFullPath("data folder", manifest.DataFolder, validationLines);
         isValid &= ValidateManifestFullPath("results file", manifest.ResultsFilePath, validationLines);
         isValid &= ValidateManifestFullPath("profile root", manifest.ProfileRootFolder, validationLines);
+        if (!string.IsNullOrWhiteSpace(manifest.DataStorageStatus) &&
+            (manifest.DataStorageStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase) ||
+                manifest.DataStorageStatus.StartsWith("[blocked]", StringComparison.OrdinalIgnoreCase)))
+        {
+            validationLines.Add(
+                $"- [pass] {HandoffManifestFileName} data storage status: {manifest.DataStorageStatus}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffManifestFileName} data storage status is invalid: {FormatMismatchLine(manifest.DataStorageStatus)}.");
+        }
 
         if (!string.IsNullOrWhiteSpace(manifest.DataFolder) && !string.IsNullOrWhiteSpace(manifest.ResultsFilePath))
         {
@@ -1077,6 +1091,23 @@ public static class FeasibilityStatusCommand
                 $"- [fail] {HandoffPreflightFileName} results file mismatch, expected {FormatPathForValidation(manifest.ResultsFilePath)}, actual {FormatPathForValidation(resultsFile)}.");
         }
 
+        var dataStorageStatus = ReadLineValue(lines, "Data storage:");
+        if (string.IsNullOrWhiteSpace(dataStorageStatus))
+        {
+            isValid = false;
+            validationLines.Add($"- [fail] {HandoffPreflightFileName} data storage line is missing.");
+        }
+        else if (string.Equals(dataStorageStatus, manifest.DataStorageStatus, StringComparison.Ordinal))
+        {
+            validationLines.Add($"- [pass] {HandoffPreflightFileName} data storage: {dataStorageStatus}");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] {HandoffPreflightFileName} data storage mismatch, expected {FormatMismatchLine(manifest.DataStorageStatus)}, actual {FormatMismatchLine(dataStorageStatus)}.");
+        }
+
         var profileRoot = ReadLineValue(lines, "Profile root:");
         if (string.IsNullOrWhiteSpace(profileRoot))
         {
@@ -1094,11 +1125,13 @@ public static class FeasibilityStatusCommand
                 $"- [fail] {HandoffPreflightFileName} profile root mismatch, expected {FormatPathForValidation(manifest.ProfileRootFolder)}, actual {FormatPathForValidation(profileRoot)}.");
         }
 
+        var dataStorageLine = lines.FirstOrDefault(
+            line => line.StartsWith("Data storage:", StringComparison.OrdinalIgnoreCase));
         var runtimeLine = lines.FirstOrDefault(
             line => line.StartsWith("WebView2 runtime:", StringComparison.OrdinalIgnoreCase));
         var layoutsLine = lines.FirstOrDefault(
             line => line.StartsWith("Layouts:", StringComparison.OrdinalIgnoreCase));
-        if (runtimeLine is null || layoutsLine is null)
+        if (dataStorageLine is null || runtimeLine is null || layoutsLine is null)
         {
             isValid = false;
             validationLines.Add($"- [fail] {HandoffPreflightFileName} readiness lines are missing.");
@@ -1129,8 +1162,12 @@ public static class FeasibilityStatusCommand
                     $"- [fail] {HandoffPreflightFileName} layout status mismatch, expected {FormatMismatchLine(manifest.PlaybackLayoutStatus)}, actual {FormatMismatchLine(layoutStatus)}.");
             }
 
-            var isReady = runtimeLine.Contains("[available]", StringComparison.OrdinalIgnoreCase) &&
-                layoutsLine.Contains("[ready]", StringComparison.OrdinalIgnoreCase);
+            var profileGroupLines = ReadPreflightProfileGroupLines(lines);
+            var isReady = dataStorageLine.Contains("[ready]", StringComparison.OrdinalIgnoreCase) &&
+                runtimeLine.Contains("[available]", StringComparison.OrdinalIgnoreCase) &&
+                layoutsLine.Contains("[ready]", StringComparison.OrdinalIgnoreCase) &&
+                profileGroupLines.Count == RequiredHandoffProfileGroupIds.Length &&
+                profileGroupLines.All(line => line.Contains("[ready]", StringComparison.OrdinalIgnoreCase));
             if (manifest.IsPreflightReady == isReady)
             {
                 validationLines.Add($"- [pass] {HandoffPreflightFileName} readiness: {isReady}");
@@ -1330,6 +1367,7 @@ public static class FeasibilityStatusCommand
             "Stream Orchestra Feasibility Preflight",
             $"Data folder: {manifest.DataFolder}",
             $"Results file: {manifest.ResultsFilePath}",
+            $"Data storage: {manifest.DataStorageStatus}",
             $"Profile root: {manifest.ProfileRootFolder}",
             $"WebView2 runtime: {manifest.WebView2RuntimeStatus}",
             "Profile groups:"
@@ -2168,7 +2206,7 @@ public static class FeasibilityStatusCommand
 
     private static int PrintPreflight(ParseResult parseResult, TextWriter output)
     {
-        var (lines, isReady) = CreatePreflightLines(parseResult.DataFolder, parseResult.ProfileFolder);
+        var (lines, isReady, _) = CreatePreflightLines(parseResult.DataFolder, parseResult.ProfileFolder);
         WriteLines(lines, output);
 
         if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
@@ -2180,7 +2218,7 @@ public static class FeasibilityStatusCommand
         return isReady ? 0 : 1;
     }
 
-    private static (IReadOnlyList<string> Lines, bool IsReady) CreatePreflightLines(
+    private static (IReadOnlyList<string> Lines, bool IsReady, string DataStorageStatus) CreatePreflightLines(
         string? dataFolder,
         string? profileFolder)
     {
@@ -2205,11 +2243,12 @@ public static class FeasibilityStatusCommand
             profileGroups);
     }
 
-    private static (IReadOnlyList<string> Lines, bool IsReady) CreatePreflightLines(
+    private static (IReadOnlyList<string> Lines, bool IsReady, string DataStorageStatus) CreatePreflightLines(
         string? dataFolder,
         HandoffPreflightSnapshot preflightSnapshot)
     {
         var feasibilityStorage = new FeasibilityResultStorageService(dataFolder);
+        var dataStorageStatus = GetDataStorageStatus(feasibilityStorage);
         var results = feasibilityStorage.LoadResults();
         var decision = new FeasibilityDecisionService().Decide(results);
         var auditService = new FeasibilityAuditService();
@@ -2219,6 +2258,7 @@ public static class FeasibilityStatusCommand
             "Stream Orchestra Feasibility Preflight",
             $"Data folder: {feasibilityStorage.DataFolder}",
             $"Results file: {feasibilityStorage.ResultsFilePath}",
+            $"Data storage: {dataStorageStatus}",
             $"Profile root: {preflightSnapshot.ProfileRootFolder}",
             $"WebView2 runtime: {preflightSnapshot.WebView2RuntimeStatus}",
             "Profile groups:"
@@ -2253,10 +2293,46 @@ public static class FeasibilityStatusCommand
             lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
         }
 
-        var isReady = preflightSnapshot.WebView2RuntimeStatus.StartsWith("[available]", StringComparison.OrdinalIgnoreCase) &&
-            preflightSnapshot.PlaybackLayoutStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase);
+        var isReady = dataStorageStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase) &&
+            preflightSnapshot.WebView2RuntimeStatus.StartsWith("[available]", StringComparison.OrdinalIgnoreCase) &&
+            preflightSnapshot.PlaybackLayoutStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase) &&
+            preflightSnapshot.ProfileGroups.Count == RequiredHandoffProfileGroupIds.Length &&
+            preflightSnapshot.ProfileGroups.All(group => group.Status.Equals("ready", StringComparison.OrdinalIgnoreCase));
 
-        return (lines, isReady);
+        return (lines, isReady, dataStorageStatus);
+    }
+
+    private static string GetDataStorageStatus(FeasibilityResultStorageService storage)
+    {
+        var probePath = Path.Combine(
+            storage.DataFolder,
+            $"feasibility-preflight-write-test-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(probePath, "preflight");
+            File.Delete(probePath);
+            return "[ready] data folder is writable for feasibility artifacts.";
+        }
+        catch (Exception ex)
+        {
+            TryDeleteFile(probePath);
+            return $"[blocked] {ex.Message}";
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup for the preflight probe file.
+        }
     }
 
     private static string GetWebView2RuntimeStatus()
@@ -3337,6 +3413,7 @@ public static class FeasibilityStatusCommand
         DateTimeOffset generatedAt,
         string dataFolder,
         string resultsFilePath,
+        string dataStorageStatus,
         string profileRootFolder,
         string webView2RuntimeStatus,
         string playbackLayoutStatus,
@@ -3359,6 +3436,7 @@ public static class FeasibilityStatusCommand
             generatedAt,
             dataFolder,
             resultsFilePath,
+            dataStorageStatus,
             profileRootFolder,
             webView2RuntimeStatus,
             playbackLayoutStatus,
@@ -3555,6 +3633,7 @@ public static class FeasibilityStatusCommand
         DateTimeOffset GeneratedAt,
         string DataFolder,
         string ResultsFilePath,
+        string DataStorageStatus,
         string ProfileRootFolder,
         string WebView2RuntimeStatus,
         string PlaybackLayoutStatus,
