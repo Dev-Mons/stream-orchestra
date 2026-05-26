@@ -326,21 +326,49 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         var checklistPath = Path.Combine(handoffFolder, "phase0-checklist.txt");
         var auditPath = Path.Combine(handoffFolder, "phase0-audit.txt");
         var verificationPath = Path.Combine(handoffFolder, "phase0-verification.txt");
+        var resultsPath = Path.Combine(handoffFolder, "phase0-results.json");
         var text = output.ToString();
 
         Assert.Equal(0, exitCode);
         Assert.Contains("Stream Orchestra Phase 0 Handoff", text);
         Assert.Contains($"Output folder: {handoffFolder}", text);
+        Assert.Contains($"Results snapshot source: {Path.Combine(_dataFolder, "feasibility-results.json")}", text);
+        Assert.Contains("Results snapshot count: 0", text);
         Assert.Contains($"Saved: {preflightPath}", text);
         Assert.Contains($"Saved: {checklistPath}", text);
         Assert.Contains($"Saved: {auditPath}", text);
         Assert.Contains($"Saved: {verificationPath}", text);
+        Assert.Contains($"Saved: {resultsPath}", text);
         Assert.Contains("Preflight ready:", text);
         Assert.Contains("Verification complete: False", text);
         Assert.Contains("Stream Orchestra Feasibility Preflight", File.ReadAllText(preflightPath));
         Assert.Contains("Stream Orchestra Phase 0 Manual Checklist", File.ReadAllText(checklistPath));
         Assert.Contains("Stream Orchestra Plan Audit", File.ReadAllText(auditPath));
         Assert.Contains("Verification: not complete", File.ReadAllText(verificationPath));
+        Assert.Equal("[]" + Environment.NewLine, File.ReadAllText(resultsPath));
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_HandoffWithResults_WritesNormalizedResultsSnapshot()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateSuccessfulResult());
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-with-results");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            output,
+            error);
+
+        var resultsText = File.ReadAllText(Path.Combine(handoffFolder, "phase0-results.json"));
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Results snapshot count: 1", output.ToString());
+        Assert.Contains("\"id\": \"result_1\"", resultsText);
+        Assert.Contains("\"scenarioId\": \"groups_a_b_c_9_slot_threshold\"", resultsText);
+        Assert.Contains("\"accountLabel\": \"main_soop\"", resultsText);
         Assert.Equal("", error.ToString());
     }
 

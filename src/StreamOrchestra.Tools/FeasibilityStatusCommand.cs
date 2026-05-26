@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
@@ -7,6 +8,12 @@ namespace StreamOrchestra.Tools;
 
 public static class FeasibilityStatusCommand
 {
+    private static readonly JsonSerializerOptions HandoffJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+
     public static int Execute(string[] args, TextWriter output, TextWriter error)
     {
         var parseResult = ParseArgs(args);
@@ -243,6 +250,8 @@ public static class FeasibilityStatusCommand
     {
         var outputFolder = ResolveHandoffOutputFolder(parseResult.DataFolder, parseResult.OutputPath);
         Directory.CreateDirectory(outputFolder);
+        var feasibilityStorage = new FeasibilityResultStorageService(parseResult.DataFolder);
+        var results = feasibilityStorage.LoadResults();
 
         var (preflightLines, isPreflightReady) = CreatePreflightLines(
             parseResult.DataFolder,
@@ -255,11 +264,14 @@ public static class FeasibilityStatusCommand
             SaveHandoffArtifact(outputFolder, "phase0-preflight.txt", preflightLines),
             SaveHandoffArtifact(outputFolder, "phase0-checklist.txt", checklistLines),
             SaveHandoffArtifact(outputFolder, "phase0-audit.txt", auditLines),
-            SaveHandoffArtifact(outputFolder, "phase0-verification.txt", verificationLines)
+            SaveHandoffArtifact(outputFolder, "phase0-verification.txt", verificationLines),
+            SaveHandoffResultsSnapshot(outputFolder, results)
         };
 
         output.WriteLine("Stream Orchestra Phase 0 Handoff");
         output.WriteLine($"Output folder: {outputFolder}");
+        output.WriteLine($"Results snapshot source: {feasibilityStorage.ResultsFilePath}");
+        output.WriteLine($"Results snapshot count: {results.Count}");
         foreach (var artifact in artifacts)
         {
             output.WriteLine($"Saved: {artifact}");
@@ -1442,6 +1454,15 @@ public static class FeasibilityStatusCommand
     {
         var path = Path.Combine(outputFolder, fileName);
         SaveTextFile(path, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+        return path;
+    }
+
+    private static string SaveHandoffResultsSnapshot(
+        string outputFolder,
+        IReadOnlyList<FeasibilityTestResult> results)
+    {
+        var path = Path.Combine(outputFolder, "phase0-results.json");
+        SaveTextFile(path, JsonSerializer.Serialize(results, HandoffJsonOptions) + Environment.NewLine);
         return path;
     }
 
