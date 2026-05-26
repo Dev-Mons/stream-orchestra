@@ -860,8 +860,13 @@ public static class FeasibilityStatusCommand
         return sharedLength;
     }
 
-    private static string FormatMismatchLine(string line)
+    private static string FormatMismatchLine(string? line)
     {
+        if (line is null)
+        {
+            return "<null>";
+        }
+
         const int maxLength = 160;
         return line.Length <= maxLength
             ? $"\"{line}\""
@@ -1105,6 +1110,31 @@ public static class FeasibilityStatusCommand
         List<string> validationLines)
     {
         var isValid = true;
+        if (AreEquivalentDecisions(report.FeasibilityDecision, summary.Decision))
+        {
+            validationLines.Add(
+                $"- [pass] diagnostic report decision details: {summary.Decision.Title} ({summary.Decision.Code})");
+        }
+        else
+        {
+            isValid = false;
+            validationLines.Add(
+                $"- [fail] diagnostic report decision details mismatch, expected {FormatDecisionIdentity(summary.Decision)}, actual {FormatDecisionIdentity(report.FeasibilityDecision)}.");
+        }
+
+        var actualAuditItems = report.FeasibilityAudit ?? Array.Empty<FeasibilityAuditItem>();
+        if (actualAuditItems.SequenceEqual(summary.AuditItems))
+        {
+            validationLines.Add($"- [pass] diagnostic report audit items: {summary.AuditItems.Count}");
+        }
+        else
+        {
+            isValid = false;
+            var mismatchIndex = FindFirstAuditItemMismatch(summary.AuditItems, actualAuditItems);
+            validationLines.Add(
+                $"- [fail] diagnostic report audit items mismatch at item {mismatchIndex + 1}, expected {FormatAuditItem(summary.AuditItems, mismatchIndex)}, actual {FormatAuditItem(actualAuditItems, mismatchIndex)}.");
+        }
+
         var expectedLatestResult = summary.Results
             .OrderByDescending(result => result.CapturedAt)
             .FirstOrDefault();
@@ -1159,6 +1189,19 @@ public static class FeasibilityStatusCommand
         return isValid;
     }
 
+    private static bool AreEquivalentDecisions(FeasibilityDecision? actual, FeasibilityDecision? expected)
+    {
+        if (actual is null || expected is null)
+        {
+            return actual is null && expected is null;
+        }
+
+        return string.Equals(actual.Code, expected.Code, StringComparison.Ordinal) &&
+            string.Equals(actual.Title, expected.Title, StringComparison.Ordinal) &&
+            string.Equals(actual.Detail, expected.Detail, StringComparison.Ordinal) &&
+            string.Equals(actual.NextAction, expected.NextAction, StringComparison.Ordinal);
+    }
+
     private static bool AreEquivalentResults(FeasibilityTestResult? actual, FeasibilityTestResult? expected)
     {
         if (actual is null || expected is null)
@@ -1205,11 +1248,45 @@ public static class FeasibilityStatusCommand
             (!actual.HasValue || actual.Value.Equals(expected!.Value));
     }
 
+    private static int FindFirstAuditItemMismatch(
+        IReadOnlyList<FeasibilityAuditItem> expected,
+        IReadOnlyList<FeasibilityAuditItem> actual)
+    {
+        var sharedLength = Math.Min(expected.Count, actual.Count);
+        for (var index = 0; index < sharedLength; index++)
+        {
+            if (!expected[index].Equals(actual[index]))
+            {
+                return index;
+            }
+        }
+
+        return sharedLength;
+    }
+
+    private static string FormatDecisionIdentity(FeasibilityDecision? decision)
+    {
+        return decision is null
+            ? "n/a"
+            : $"{decision.Title} ({decision.Code}), detail={FormatMismatchLine(decision.Detail)}, next={FormatMismatchLine(decision.NextAction)}";
+    }
+
     private static string FormatResultIdentity(FeasibilityTestResult? result)
     {
         return result is null
             ? "n/a"
             : $"{result.Id} ({result.Outcome}, {result.PlaybackCount} slot(s), {result.CapturedAt:yyyy-MM-dd HH:mm:ss})";
+    }
+
+    private static string FormatAuditItem(IReadOnlyList<FeasibilityAuditItem> auditItems, int index)
+    {
+        if (index >= auditItems.Count)
+        {
+            return "<missing>";
+        }
+
+        var item = auditItems[index];
+        return $"{item.Id}/{item.Status}/{FormatMismatchLine(item.Evidence)}";
     }
 
     private static string FormatStringList(IReadOnlyList<string> values)

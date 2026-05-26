@@ -451,6 +451,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report result count: 0", text);
         Assert.Contains("- [pass] diagnostic report decision: 검증 대기 (pending)", text);
         Assert.Contains("- [pass] diagnostic report plan gates: pass=0, pending=11, fail=0, outstanding=11, status=pending", text);
+        Assert.Contains("- [pass] diagnostic report decision details: 검증 대기 (pending)", text);
+        Assert.Contains("- [pass] diagnostic report audit items: 11", text);
         Assert.Contains("- [pass] diagnostic report latest result: n/a", text);
         Assert.Contains("- [pass] diagnostic report account labels: n/a", text);
         Assert.Contains("- [pass] diagnostic report account label conflict: False", text);
@@ -665,6 +667,53 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("diagnostic report account labels mismatch", text);
         Assert.Contains("diagnostic report account label conflict mismatch", text);
         Assert.Contains("diagnostic report suggested records mismatch", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_ValidateHandoff_DetectsDiagnosticDecisionAndAuditMismatches()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-diagnostic-decision-audit-mismatch");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var diagnosticReportPath = Path.Combine(handoffFolder, "phase0-diagnostic-report.json");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var diagnosticReport = JsonNode.Parse(File.ReadAllText(diagnosticReportPath))!.AsObject();
+        diagnosticReport["feasibilityDecision"] = new JsonObject
+        {
+            ["code"] = "pending",
+            ["title"] = "검증 대기",
+            ["detail"] = "tampered detail",
+            ["nextAction"] = "tampered next action"
+        };
+        diagnosticReport["feasibilityAudit"]!.AsArray()[0]!.AsObject()["evidence"] =
+            JsonValue.Create("tampered audit evidence");
+        File.WriteAllText(
+            diagnosticReportPath,
+            diagnosticReport.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        UpdateManifestArtifactMetadata(manifest, handoffFolder, "phase0-diagnostic-report.json");
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("diagnostic report decision details mismatch", text);
+        Assert.Contains("diagnostic report audit items mismatch", text);
         Assert.Contains("Validation: fail", text);
         Assert.Equal("", handoffError.ToString());
         Assert.Equal("", error.ToString());
