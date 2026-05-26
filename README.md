@@ -50,6 +50,8 @@ Verify whether the Phase 0 plan verification is complete. This exits `0` only wh
 dotnet run --project src\StreamOrchestra.Tools -- verify
 ```
 
+Add `--output .\phase0-verification.txt` to save the exact verification result as a handoff artifact.
+
 Check the external-browser fallback candidates:
 
 ```powershell
@@ -142,7 +144,7 @@ Use `--data-folder <path>` to inspect a non-default data folder.
 - The CLI `history` command lists saved feasibility results with their recorded decision snapshots for manual-test audit trails.
 - The CLI `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md` with the current evidence status, outstanding gates, and suggested `record` shapes before evidence is recorded. Add `--output <path>` to save the checklist text.
 - The CLI `scenarios` command lists the named playback and isolated-group scenarios with copyable partial/failure shapes, explains when partial evidence counts as visible playback evidence, and prints separate 9+ success shapes that include restart, resource, CPU, GPU, and memory evidence.
-- The CLI `verify` command exits `0` only when every Phase 0 plan gate passes, and exits non-zero with outstanding pending/fail gate details plus suggested `record` shapes while manual SOOP evidence is still pending or failed.
+- The CLI `verify` command exits `0` only when every Phase 0 plan gate passes, and exits non-zero with outstanding pending/fail gate details plus suggested `record` shapes while manual SOOP evidence is still pending or failed. Add `--output <path>` to save the verification text.
 - The CLI `browsers` command prints installed/missing external-browser fallback candidates, including custom candidates.
 - The CLI `fallback` command exports a reviewable external-browser PowerShell script from visible last-session slots when launchable HTTP/HTTPS stream URLs and installed fallback browsers are available; muted slots include Chromium `--mute-audio`, and when layout data is available, the script passes Chromium window-position/window-size arguments and then applies a Windows window placement fallback from the saved layout.
 - The `브라우저 스크립트` button exports the same reviewable external-browser script directly from the current session without writing a diagnostic report, including current layout placement.

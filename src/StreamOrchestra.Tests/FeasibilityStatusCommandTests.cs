@@ -304,6 +304,34 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_VerifyWithOutput_WritesVerificationTextFile()
+    {
+        var verificationOutputPath = Path.Combine(_dataFolder, "phase0-verification.txt");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["verify", "--data-folder", _dataFolder, "--output", verificationOutputPath],
+            output,
+            error);
+
+        var fileText = File.ReadAllText(verificationOutputPath);
+        Assert.Equal(1, exitCode);
+        Assert.Contains($"Verification saved: {verificationOutputPath}", output.ToString());
+        Assert.Contains("Stream Orchestra Plan Verification", fileText);
+        Assert.Contains("Results recorded: 0", fileText);
+        Assert.Contains("Plan audit: pass=0, pending=11, fail=0", fileText);
+        Assert.Contains("Plan verification: [pending]", fileText);
+        Assert.Contains("Verification: not complete", fileText);
+        Assert.Contains("Outstanding gates:", fileText);
+        Assert.Contains("- [pending] Manual feasibility result recorded", fileText);
+        Assert.Contains("Required evidence: record live SOOP 4-slot Group A", fileText);
+        Assert.Contains("Suggested record shapes:", fileText);
+        Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C", fileText);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_VerifyWithNullProfileGroupEntries_DoesNotCrash()
     {
         Directory.CreateDirectory(_dataFolder);
@@ -1031,6 +1059,19 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         using var error = new StringWriter();
 
         var exitCode = FeasibilityStatusCommand.Execute(["checklist", "--output"], output, error);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--output requires a value.", error.ToString());
+        Assert.Contains("Usage:", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_VerifyValidationErrors_ReturnUsageError()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["verify", "--output"], output, error);
 
         Assert.Equal(2, exitCode);
         Assert.Contains("--output requires a value.", error.ToString());

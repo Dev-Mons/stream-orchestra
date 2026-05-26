@@ -84,6 +84,8 @@ Verify whether the Phase 0 plan verification is complete. This exits `0` only af
 dotnet run --project src\StreamOrchestra.Tools -- verify
 ```
 
+Add `--output .\phase0-verification.txt` to save the exact verification result as a handoff artifact.
+
 Check which external-browser fallback candidates are installed:
 
 ```powershell
@@ -135,7 +137,7 @@ The `status`, `record`, and `audit` commands print pass, pending, or fail for th
 
 The `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md` with current evidence status, outstanding gates, and suggested `record` shapes, and can save the same text with `--output <path>`. The `scenarios` command prints the WPF playback buttons, isolated group tests, scenario IDs, matching CLI `record` shapes, and the partial/failure decision rule, including `--group A-D`, so manual SOOP evidence is named consistently. For 9+ playback, it separates partial/failure records from success records because success requires restart, resource, CPU, GPU, and memory evidence.
 
-The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, and exits non-zero until every Phase 0 plan gate passes.
+The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, can save the same text with `--output <path>`, and exits non-zero until every Phase 0 plan gate passes.
 
 Export a diagnostic report from the CLI:
 

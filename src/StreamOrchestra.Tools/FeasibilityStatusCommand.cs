@@ -34,7 +34,7 @@ public static class FeasibilityStatusCommand
             "record" => RecordResult(parseResult, output),
             "report" => SaveReport(parseResult, output),
             "scenarios" => PrintScenarios(output),
-            "verify" => VerifyPlan(parseResult.DataFolder, output),
+            "verify" => VerifyPlan(parseResult, output),
             _ => PrintStatus(parseResult.DataFolder, output)
         };
     }
@@ -442,7 +442,24 @@ public static class FeasibilityStatusCommand
         ];
     }
 
-    private static int VerifyPlan(string? dataFolder, TextWriter output)
+    private static int VerifyPlan(ParseResult parseResult, TextWriter output)
+    {
+        var (lines, isVerified) = CreateVerificationLines(parseResult.DataFolder);
+        foreach (var line in lines)
+        {
+            output.WriteLine(line);
+        }
+
+        if (!string.IsNullOrWhiteSpace(parseResult.OutputPath))
+        {
+            SaveTextFile(parseResult.OutputPath, string.Join(Environment.NewLine, lines) + Environment.NewLine);
+            output.WriteLine($"Verification saved: {parseResult.OutputPath}");
+        }
+
+        return isVerified ? 0 : 1;
+    }
+
+    private static (IReadOnlyList<string> Lines, bool IsVerified) CreateVerificationLines(string? dataFolder)
     {
         var storage = new FeasibilityResultStorageService(dataFolder);
         var results = storage.LoadResults();
@@ -453,28 +470,53 @@ public static class FeasibilityStatusCommand
         var successGate = auditItems.FirstOrDefault(item => item.Id == "phase0_success_gate");
         var isVerified = auditItems.Count > 0 &&
             auditItems.All(item => item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase));
+        var lines = new List<string>
+        {
+            "Stream Orchestra Plan Verification",
+            $"Data folder: {storage.DataFolder}",
+            $"Results file: {storage.ResultsFilePath}",
+            $"Results recorded: {results.Count}",
+            $"Decision: {decision.Title} ({decision.Code})"
+        };
 
-        output.WriteLine("Stream Orchestra Plan Verification");
-        output.WriteLine($"Data folder: {storage.DataFolder}");
-        output.WriteLine($"Results file: {storage.ResultsFilePath}");
-        output.WriteLine($"Results recorded: {results.Count}");
-        output.WriteLine($"Decision: {decision.Title} ({decision.Code})");
-        WriteNextAction(decision, output);
-        output.WriteLine($"Plan audit: {summary.ToCompactText()}");
-        WritePlanVerificationStatus(auditItems, output);
-        WritePhase0SuccessGate(auditItems, output);
+        if (!string.IsNullOrWhiteSpace(decision.NextAction))
+        {
+            lines.Add($"Next action: {decision.NextAction}");
+        }
+
+        lines.Add($"Plan audit: {summary.ToCompactText()}");
+        lines.Add($"Plan verification: [{auditService.CreatePlanVerificationStatus(auditItems)}]");
+
+        if (successGate is not null)
+        {
+            lines.Add($"Success gate: [{successGate.Status}] {successGate.Evidence}");
+        }
 
         if (isVerified)
         {
-            output.WriteLine("Verification: pass");
-            return 0;
+            lines.Add("Verification: pass");
+            return (lines, true);
         }
 
-        output.WriteLine("Verification: not complete");
-        WriteOutstandingGates(auditItems, output);
-        output.WriteLine("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account-label, restart, resource, CPU, GPU, and memory evidence.");
-        WriteSuggestedRecordShapes(auditItems, output);
-        return 1;
+        lines.Add("Verification: not complete");
+        var outstandingItems = auditItems
+            .Where(item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (outstandingItems.Length > 0)
+        {
+            lines.Add("Outstanding gates:");
+            lines.AddRange(outstandingItems.Select(item => $"- [{item.Status}] {item.Title}: {item.Evidence}"));
+        }
+
+        lines.Add("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account-label, restart, resource, CPU, GPU, and memory evidence.");
+        var suggestions = auditService.CreateSuggestedRecordShapes(auditItems);
+        if (suggestions.Count > 0)
+        {
+            lines.Add("Suggested record shapes:");
+            lines.AddRange(suggestions.Select(suggestion => $"- {suggestion}"));
+        }
+
+        return (lines, false);
     }
 
     private static int PrintBrowsers(string? dataFolder, TextWriter output)
@@ -651,7 +693,7 @@ public static class FeasibilityStatusCommand
 
         if (command.Equals("verify", StringComparison.OrdinalIgnoreCase))
         {
-            return ParseDataFolderOnlyArgs("verify", args);
+            return ParseTextOutputArgs("verify", args);
         }
 
         if (command.Equals("status", StringComparison.OrdinalIgnoreCase))
@@ -1108,7 +1150,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools report [--data-folder <path>] [--profile-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools scenarios");
-        writer.WriteLine("  StreamOrchestra.Tools verify [--data-folder <path>]");
+        writer.WriteLine("  StreamOrchestra.Tools verify [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools --help");
     }
 
