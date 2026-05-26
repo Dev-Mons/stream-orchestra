@@ -169,6 +169,30 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_Checklist_PrintsPlanManualVerificationSteps()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(["checklist"], output, error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Stream Orchestra Phase 0 Manual Checklist", text);
+        Assert.Contains("do not bypass DRM, authentication, or security behavior", text);
+        Assert.Contains("Run `preflight`", text);
+        Assert.Contains("same SOOP account in profile groups A, B, C, and D", text);
+        Assert.Contains("Restart the app", text);
+        Assert.Contains("isolated Group A test", text);
+        Assert.Contains("8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests", text);
+        Assert.Contains("CPU %, GPU %, and memory MB", text);
+        Assert.Contains("one shared non-sensitive account label", text);
+        Assert.Contains("Record the final 9+ `success` evidence last", text);
+        Assert.Contains("Run `verify`", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_Preflight_PrintsRuntimeProfilesLayoutsAndEvidenceStatus()
     {
         var profileFolder = Path.Combine(_dataFolder, "Profiles");

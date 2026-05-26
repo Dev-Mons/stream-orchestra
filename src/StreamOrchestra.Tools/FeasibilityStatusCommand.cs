@@ -27,6 +27,7 @@ public static class FeasibilityStatusCommand
         {
             "audit" => PrintAudit(parseResult, output),
             "browsers" => PrintBrowsers(parseResult.DataFolder, output),
+            "checklist" => PrintChecklist(output),
             "fallback" => SaveFallbackScript(parseResult.DataFolder, output),
             "history" => PrintHistory(parseResult.DataFolder, output),
             "preflight" => PrintPreflight(parseResult, output),
@@ -231,6 +232,24 @@ public static class FeasibilityStatusCommand
 
         output.WriteLine($"External browser fallback script: {exportResult.ScriptPath}");
         output.WriteLine("Review the script before running it. This command does not launch browsers.");
+        return 0;
+    }
+
+    private static int PrintChecklist(TextWriter output)
+    {
+        output.WriteLine("Stream Orchestra Phase 0 Manual Checklist");
+        output.WriteLine("Safety: use normal SOOP login/player behavior only; do not bypass DRM, authentication, or security behavior.");
+        output.WriteLine("1. Run `preflight` and confirm WebView2 Runtime, A-D profile folders, and 4/8/9/12/16 layout coverage are ready.");
+        output.WriteLine("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, and D.");
+        output.WriteLine("3. Restart the app and confirm the SOOP login session persists in the required profile groups.");
+        output.WriteLine("4. Run the isolated Group A test and record whether slots 1-4 visibly play.");
+        output.WriteLine("5. Run the 8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests and record each visible playback result.");
+        output.WriteLine("6. After playback stabilizes, record Task Manager CPU %, GPU %, and memory MB, plus whether resource usage is acceptable.");
+        output.WriteLine("7. Use one shared non-sensitive account label for every same-account evidence record across A-D.");
+        output.WriteLine("8. Record lower-count playback evidence as `partial` when the requested slots visibly play but success-only evidence is incomplete, or `failure` when they do not work.");
+        output.WriteLine("9. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
+        output.WriteLine("10. Run `verify`; Phase 0 is not complete until every plan gate passes.");
+        output.WriteLine("Helpful commands: `scenarios`, `audit`, `verify`.");
         return 0;
     }
 
@@ -546,6 +565,11 @@ public static class FeasibilityStatusCommand
         if (command.Equals("browsers", StringComparison.OrdinalIgnoreCase))
         {
             return ParseDataFolderOnlyArgs("browsers", args);
+        }
+
+        if (command.Equals("checklist", StringComparison.OrdinalIgnoreCase))
+        {
+            return ParseDataFolderOnlyArgs("checklist", args);
         }
 
         if (command.Equals("fallback", StringComparison.OrdinalIgnoreCase))
@@ -1015,6 +1039,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools status [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools audit [--data-folder <path>] [--output <path>]");
         writer.WriteLine("  StreamOrchestra.Tools browsers [--data-folder <path>]");
+        writer.WriteLine("  StreamOrchestra.Tools checklist");
         writer.WriteLine("  StreamOrchestra.Tools fallback [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools history [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>]");

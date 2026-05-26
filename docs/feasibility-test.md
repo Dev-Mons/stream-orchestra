@@ -56,6 +56,14 @@ Before live SOOP testing, run a local preflight check. It verifies that the CLI 
 dotnet run --project src\StreamOrchestra.Tools -- preflight
 ```
 
+Print the ordered Phase 0 manual test flow from `docs/plan.md` before recording live SOOP evidence:
+
+```powershell
+dotnet run --project src\StreamOrchestra.Tools -- checklist
+```
+
+`checklist` keeps the manual run aligned with the plan: preflight, A-D same-account login, restart persistence, Group A isolation, 8/9/12/16 playback, Task Manager CPU/GPU/memory observations, shared account label use, final 9+ success evidence, and `verify`.
+
 `status`, `record`, and `report` print the current recommendation, next action, compact plan-gate audit summary, overall plan-verification status, Phase 0 success-gate status, and suggested `record` shapes for missing evidence. When multiple 9+ results exist, the current recommendation follows the latest 9+ result.
 
 Audit the remaining plan gates, including suggested `record` shapes for missing evidence:
@@ -125,7 +133,7 @@ Whole-app and group load actions switch to a layout that contains the target slo
 
 The `status`, `record`, and `audit` commands print pass, pending, or fail for the manual gates in `docs/plan.md`: 4-slot Group A single-profile playback, distinct 8-slot split-profile, 9-slot threshold, 12-slot, and 16-slot playback evidence, A-D same-account session persistence, restart persistence, resource acceptability, structured resource observations, and the Phase 0 WebView2 success gate. `status` and `record` include suggested `record` shapes directly in their console output, including `--account-label <label>` where same-account evidence is expected; use `audit --output <path>` to save the audit text as a handoff artifact. The 12-slot and 16-slot audit suggestions use copyable `partial` examples for playback-gate evidence, and 9-slot success suggestions are listed after higher-slot playback/account evidence so the latest 9+ result can remain the final success record. Use the `scenarios` command's 9+ `success` shapes when a 12-slot or 16-slot test also has restart, resource, CPU, GPU, and memory evidence.
 
-The `scenarios` command prints the WPF playback buttons, isolated group tests, scenario IDs, matching CLI `record` shapes, and the partial/failure decision rule, including `--group A-D`, so manual SOOP evidence is named consistently. For 9+ playback, it separates partial/failure records from success records because success requires restart, resource, CPU, GPU, and memory evidence.
+The `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md`, and the `scenarios` command prints the WPF playback buttons, isolated group tests, scenario IDs, matching CLI `record` shapes, and the partial/failure decision rule, including `--group A-D`, so manual SOOP evidence is named consistently. For 9+ playback, it separates partial/failure records from success records because success requires restart, resource, CPU, GPU, and memory evidence.
 
 The `verify` command prints the same compact plan-gate summary, lists outstanding pending/fail gates, suggests matching `record` shapes, and exits non-zero until every Phase 0 plan gate passes.
 
