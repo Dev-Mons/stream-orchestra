@@ -295,26 +295,27 @@ public static class FeasibilityStatusCommand
 
     private static int SaveHandoff(ParseResult parseResult, TextWriter output)
     {
-        var outputFolder = ResolveHandoffOutputFolder(parseResult.DataFolder, parseResult.OutputPath);
+        var dataContext = CreateHandoffDataContext(parseResult.DataFolder);
+        var outputFolder = ResolveHandoffOutputFolder(dataContext.DataFolder, parseResult.OutputPath);
         Directory.CreateDirectory(outputFolder);
         var generatedAt = DateTimeOffset.Now;
-        var feasibilityStorage = new FeasibilityResultStorageService(parseResult.DataFolder);
-        var results = feasibilityStorage.LoadResults();
-        var diagnosticReport = CreateDiagnosticReport(parseResult, feasibilityStorage, results);
-        var auditService = new FeasibilityAuditService();
-        var auditSummary = auditService.CreateSummary(diagnosticReport.FeasibilityAudit);
-        var planVerificationStatus = auditService.CreatePlanVerificationStatus(diagnosticReport.FeasibilityAudit);
-        var outstandingGateCount = diagnosticReport.FeasibilityAudit.Count(
-            item => !item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase));
-
         var preflightSnapshot = CreateHandoffPreflightSnapshot(parseResult.ProfileFolder);
-        var (preflightLines, isPreflightReady, dataStorageStatus) = CreatePreflightLines(
-            parseResult.DataFolder,
-            preflightSnapshot);
-        var checklistLines = CreateChecklistLines(parseResult.DataFolder);
-        var auditLines = CreateAuditLines(parseResult.DataFolder);
-        var (verificationLines, isVerified) = CreateVerificationLines(parseResult.DataFolder);
-        var historyLines = CreateHistoryLines(parseResult.DataFolder);
+        var isPreflightReady = IsHandoffPreflightReady(dataContext.DataStorageStatus, preflightSnapshot);
+        var isVerified = IsHandoffVerified(dataContext.Summary);
+        var diagnosticReport = CreateHandoffDiagnosticReport(parseResult, dataContext, preflightSnapshot);
+        var manifestContext = CreateHandoffManifest(
+            generatedAt,
+            dataContext,
+            preflightSnapshot,
+            isPreflightReady,
+            isVerified,
+            [],
+            []);
+        var preflightLines = CreateHandoffPreflightArtifactLines(manifestContext, dataContext.Summary);
+        var checklistLines = CreateHandoffChecklistArtifactLines(manifestContext, dataContext.Summary);
+        var auditLines = CreateHandoffAuditArtifactLines(manifestContext, dataContext.Summary);
+        var verificationLines = CreateHandoffVerificationArtifactLines(manifestContext, dataContext.Summary);
+        var historyLines = CreateHandoffHistoryArtifactLines(manifestContext, dataContext.Results);
         var artifacts = new[]
         {
             SaveHandoffArtifact(outputFolder, HandoffPreflightFileName, preflightLines),
@@ -323,7 +324,7 @@ public static class FeasibilityStatusCommand
             SaveHandoffArtifact(outputFolder, HandoffVerificationFileName, verificationLines),
             SaveHandoffArtifact(outputFolder, HandoffHistoryFileName, historyLines),
             SaveHandoffDiagnosticReport(outputFolder, diagnosticReport),
-            SaveHandoffResultsSnapshot(outputFolder, results)
+            SaveHandoffResultsSnapshot(outputFolder, dataContext.Results)
         };
         var artifactFileNames = artifacts
             .Select(Path.GetFileName)
@@ -333,34 +334,18 @@ public static class FeasibilityStatusCommand
         var artifactDetails = artifacts
             .Select(CreateHandoffArtifactMetadata)
             .ToArray();
-        var manifestPath = SaveHandoffManifest(
-            outputFolder,
-            generatedAt,
-            feasibilityStorage.DataFolder,
-            feasibilityStorage.ResultsFilePath,
-            dataStorageStatus,
-            preflightSnapshot.ProfileRootFolder,
-            preflightSnapshot.WebView2RuntimeStatus,
-            preflightSnapshot.PlaybackLayoutStatus,
-            preflightSnapshot.ProfileGroups,
-            results.Count,
-            isPreflightReady,
-            isVerified,
-            diagnosticReport.FeasibilityDecision.Code,
-            diagnosticReport.FeasibilityDecision.Title,
-            planVerificationStatus,
-            auditSummary.PassCount,
-            auditSummary.PendingCount,
-            auditSummary.FailCount,
-            outstandingGateCount,
-            artifactFileNames,
-            artifactDetails);
+        var manifest = manifestContext with
+        {
+            ArtifactFiles = artifactFileNames,
+            ArtifactDetails = artifactDetails
+        };
+        var manifestPath = SaveHandoffManifest(outputFolder, manifest);
 
         output.WriteLine("Stream Orchestra Phase 0 Handoff");
         output.WriteLine($"Output folder: {outputFolder}");
         output.WriteLine($"Generated at: {generatedAt:O}");
-        output.WriteLine($"Results snapshot source: {feasibilityStorage.ResultsFilePath}");
-        output.WriteLine($"Results snapshot count: {results.Count}");
+        output.WriteLine($"Results snapshot source: {dataContext.ResultsFilePath}");
+        output.WriteLine($"Results snapshot count: {dataContext.Results.Count}");
         foreach (var artifact in artifacts)
         {
             output.WriteLine($"Saved: {artifact}");
@@ -369,11 +354,158 @@ public static class FeasibilityStatusCommand
         output.WriteLine($"Saved: {manifestPath}");
         output.WriteLine($"Preflight ready: {isPreflightReady}");
         output.WriteLine($"Verification complete: {isVerified}");
-        output.WriteLine($"Plan verification: {planVerificationStatus}");
-        output.WriteLine($"Plan audit: {auditSummary.ToCompactText()}");
-        output.WriteLine($"Outstanding gates: {outstandingGateCount}");
+        output.WriteLine($"Plan verification: {dataContext.Summary.PlanVerificationStatus}");
+        output.WriteLine($"Plan audit: {dataContext.Summary.AuditSummary.ToCompactText()}");
+        output.WriteLine($"Outstanding gates: {dataContext.Summary.OutstandingGateCount}");
         output.WriteLine("Use the saved files as the setup, checklist, audit, and verification artifacts for the manual SOOP run.");
         return 0;
+    }
+
+    private static HandoffDataContext CreateHandoffDataContext(string? dataFolder)
+    {
+        var resolvedDataFolder = FeasibilityResultStorageService.ResolveDataFolder(dataFolder);
+        var resultsFilePath = FeasibilityResultStorageService.GetResultsFilePath(resolvedDataFolder);
+        var dataStorageStatus = GetDataStorageStatus(resolvedDataFolder);
+        FeasibilityResultStorageService? storage = null;
+        IReadOnlyList<FeasibilityTestResult> results = [];
+
+        if (dataStorageStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                storage = new FeasibilityResultStorageService(resolvedDataFolder);
+                results = storage.LoadResults();
+                resolvedDataFolder = storage.DataFolder;
+                resultsFilePath = storage.ResultsFilePath;
+            }
+            catch (Exception ex) when (IsCommandEnvironmentException(ex))
+            {
+                storage = null;
+                dataStorageStatus = $"[blocked] {ex.Message}";
+                results = [];
+            }
+        }
+
+        return new HandoffDataContext(
+            resolvedDataFolder,
+            resultsFilePath,
+            dataStorageStatus,
+            results,
+            CreateHandoffResultsSummary(results),
+            storage);
+    }
+
+    private static bool IsHandoffPreflightReady(
+        string dataStorageStatus,
+        HandoffPreflightSnapshot preflightSnapshot)
+    {
+        return dataStorageStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase) &&
+            preflightSnapshot.WebView2RuntimeStatus.StartsWith("[available]", StringComparison.OrdinalIgnoreCase) &&
+            preflightSnapshot.PlaybackLayoutStatus.StartsWith("[ready]", StringComparison.OrdinalIgnoreCase) &&
+            preflightSnapshot.ProfileGroups.Count == RequiredHandoffProfileGroupIds.Length &&
+            preflightSnapshot.ProfileGroups.All(group => group.Status.Equals("ready", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsHandoffVerified(HandoffResultsSummary summary)
+    {
+        return summary.AuditItems.Count > 0 &&
+            summary.AuditItems.All(item => item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static DiagnosticReport CreateHandoffDiagnosticReport(
+        ParseResult parseResult,
+        HandoffDataContext dataContext,
+        HandoffPreflightSnapshot preflightSnapshot)
+    {
+        return dataContext.Storage is null
+            ? CreateBlockedHandoffDiagnosticReport(dataContext, preflightSnapshot)
+            : CreateDiagnosticReport(parseResult, dataContext.Storage, dataContext.Results);
+    }
+
+    private static DiagnosticReport CreateBlockedHandoffDiagnosticReport(
+        HandoffDataContext dataContext,
+        HandoffPreflightSnapshot preflightSnapshot)
+    {
+        return new DiagnosticReport
+        {
+            GeneratedAt = DateTimeOffset.Now,
+            ProfileRootFolder = preflightSnapshot.ProfileRootFolder,
+            ProfileGroups = preflightSnapshot.ProfileGroups
+                .Select(group => new ProfileGroup(group.Id, $"SOOP Group {group.Id}", group.UserDataFolder))
+                .ToArray(),
+            DataFolder = dataContext.DataFolder,
+            DataFiles = CreateBlockedHandoffDiagnosticDataFiles(dataContext.DataFolder, dataContext.ResultsFilePath),
+            WorkspaceDiagnostics = new WorkspaceDiagnostics(0, 0, false, null, null, null, 0, 0),
+            ExternalBrowsers = [],
+            FeasibilityResultCount = dataContext.Results.Count,
+            LatestFeasibilityResult = dataContext.Results
+                .OrderByDescending(result => result.CapturedAt)
+                .FirstOrDefault(),
+            FeasibilitySameAccountLabels =
+                FeasibilityProfileGroupEvidenceService.GetLatestSameAccountAccountLabels(dataContext.Results),
+            HasConflictingFeasibilityAccountLabels =
+                FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(dataContext.Results),
+            FeasibilityDecision = dataContext.Summary.Decision,
+            FeasibilityAudit = dataContext.Summary.AuditItems,
+            FeasibilitySuggestedRecordShapes =
+                new FeasibilityAuditService().CreateSuggestedRecordShapes(dataContext.Summary.AuditItems)
+        };
+    }
+
+    private static IReadOnlyList<DiagnosticDataFile> CreateBlockedHandoffDiagnosticDataFiles(
+        string dataFolder,
+        string resultsFilePath)
+    {
+        return
+        [
+            CreateBlockedHandoffDiagnosticDataFile("appstate", Path.Combine(dataFolder, "appstate.json")),
+            CreateBlockedHandoffDiagnosticDataFile("workspaces", Path.Combine(dataFolder, "workspaces.json")),
+            CreateBlockedHandoffDiagnosticDataFile("favorites", Path.Combine(dataFolder, "favorites.json")),
+            CreateBlockedHandoffDiagnosticDataFile("feasibility-results", resultsFilePath),
+            CreateBlockedHandoffDiagnosticDataFile("external-browsers", Path.Combine(dataFolder, "external-browsers.json"))
+        ];
+    }
+
+    private static DiagnosticDataFile CreateBlockedHandoffDiagnosticDataFile(string name, string path)
+    {
+        var fileInfo = new FileInfo(path);
+        return new DiagnosticDataFile(
+            name,
+            path,
+            fileInfo.Exists,
+            fileInfo.Exists ? fileInfo.Length : 0);
+    }
+
+    private static HandoffManifest CreateHandoffManifest(
+        DateTimeOffset generatedAt,
+        HandoffDataContext dataContext,
+        HandoffPreflightSnapshot preflightSnapshot,
+        bool isPreflightReady,
+        bool isVerified,
+        IReadOnlyList<string> artifactFiles,
+        IReadOnlyList<HandoffArtifactMetadata> artifactDetails)
+    {
+        return new HandoffManifest(
+            generatedAt,
+            dataContext.DataFolder,
+            dataContext.ResultsFilePath,
+            dataContext.DataStorageStatus,
+            preflightSnapshot.ProfileRootFolder,
+            preflightSnapshot.WebView2RuntimeStatus,
+            preflightSnapshot.PlaybackLayoutStatus,
+            preflightSnapshot.ProfileGroups,
+            dataContext.Results.Count,
+            isPreflightReady,
+            isVerified,
+            dataContext.Summary.Decision.Code,
+            dataContext.Summary.Decision.Title,
+            dataContext.Summary.PlanVerificationStatus,
+            dataContext.Summary.AuditSummary.PassCount,
+            dataContext.Summary.AuditSummary.PendingCount,
+            dataContext.Summary.AuditSummary.FailCount,
+            dataContext.Summary.OutstandingGateCount,
+            artifactFiles,
+            artifactDetails);
     }
 
     private static int ValidateHandoff(ParseResult parseResult, TextWriter output)
@@ -1032,7 +1164,7 @@ public static class FeasibilityStatusCommand
         HandoffResultsSummary summary,
         List<string> validationLines)
     {
-        var expectedLines = CreateExpectedHandoffChecklistLines(manifest, summary);
+        var expectedLines = CreateHandoffChecklistArtifactLines(manifest, summary);
         return ValidateHandoffTextArtifact(
             inputFolder,
             HandoffChecklistFileName,
@@ -1047,7 +1179,7 @@ public static class FeasibilityStatusCommand
         HandoffResultsSummary summary,
         List<string> validationLines)
     {
-        var expectedLines = CreateExpectedHandoffAuditLines(manifest, summary);
+        var expectedLines = CreateHandoffAuditArtifactLines(manifest, summary);
         return ValidateHandoffTextArtifact(
             inputFolder,
             HandoffAuditFileName,
@@ -1214,7 +1346,7 @@ public static class FeasibilityStatusCommand
             return isValid;
         }
 
-        var expectedLines = CreateExpectedHandoffPreflightLines(manifest, summary);
+        var expectedLines = CreateHandoffPreflightArtifactLines(manifest, summary);
         if (lines.SequenceEqual(expectedLines, StringComparer.Ordinal))
         {
             validationLines.Add($"- [pass] {HandoffPreflightFileName} content matches manifest and results snapshot.");
@@ -1286,7 +1418,7 @@ public static class FeasibilityStatusCommand
                 $"- [fail] {HandoffVerificationFileName} completion mismatch, expected {isExpectedVerified} from results, actual {isArtifactVerified}.");
         }
 
-        var expectedLines = CreateExpectedHandoffVerificationLines(manifest, summary);
+        var expectedLines = CreateHandoffVerificationArtifactLines(manifest, summary);
         if (lines.SequenceEqual(expectedLines, StringComparer.Ordinal))
         {
             validationLines.Add($"- [pass] {HandoffVerificationFileName} content matches results snapshot.");
@@ -1307,7 +1439,7 @@ public static class FeasibilityStatusCommand
         HandoffResultsSummary summary,
         List<string> validationLines)
     {
-        var expectedLines = CreateExpectedHandoffHistoryLines(manifest, summary.Results);
+        var expectedLines = CreateHandoffHistoryArtifactLines(manifest, summary.Results);
         return ValidateHandoffTextArtifact(
             inputFolder,
             HandoffHistoryFileName,
@@ -1371,7 +1503,7 @@ public static class FeasibilityStatusCommand
             : $"\"{line[..maxLength]}...\"";
     }
 
-    private static IReadOnlyList<string> CreateExpectedHandoffPreflightLines(
+    private static IReadOnlyList<string> CreateHandoffPreflightArtifactLines(
         HandoffManifest manifest,
         HandoffResultsSummary summary)
     {
@@ -1456,7 +1588,7 @@ public static class FeasibilityStatusCommand
         return $"- [{group.Status}] Group {group.Id}: {group.UserDataFolder}";
     }
 
-    private static IReadOnlyList<string> CreateExpectedHandoffChecklistLines(
+    private static IReadOnlyList<string> CreateHandoffChecklistArtifactLines(
         HandoffManifest manifest,
         HandoffResultsSummary summary)
     {
@@ -1516,7 +1648,7 @@ public static class FeasibilityStatusCommand
         return lines;
     }
 
-    private static IReadOnlyList<string> CreateExpectedHandoffAuditLines(
+    private static IReadOnlyList<string> CreateHandoffAuditArtifactLines(
         HandoffManifest manifest,
         HandoffResultsSummary summary)
     {
@@ -1553,7 +1685,7 @@ public static class FeasibilityStatusCommand
         return lines;
     }
 
-    private static IReadOnlyList<string> CreateExpectedHandoffHistoryLines(
+    private static IReadOnlyList<string> CreateHandoffHistoryArtifactLines(
         HandoffManifest manifest,
         IReadOnlyList<FeasibilityTestResult> results)
     {
@@ -1604,7 +1736,7 @@ public static class FeasibilityStatusCommand
         return lines;
     }
 
-    private static IReadOnlyList<string> CreateExpectedHandoffVerificationLines(
+    private static IReadOnlyList<string> CreateHandoffVerificationArtifactLines(
         HandoffManifest manifest,
         HandoffResultsSummary summary)
     {
@@ -3404,8 +3536,8 @@ public static class FeasibilityStatusCommand
             return outputFolder;
         }
 
-        var storage = new FeasibilityResultStorageService(dataFolder);
-        return Path.Combine(storage.DataFolder, $"phase0-handoff-{DateTimeOffset.Now:yyyyMMdd-HHmmss}");
+        var resolvedDataFolder = FeasibilityResultStorageService.ResolveDataFolder(dataFolder);
+        return Path.Combine(resolvedDataFolder, $"phase0-handoff-{DateTimeOffset.Now:yyyyMMdd-HHmmss}");
     }
 
     private static string SaveHandoffArtifact(
@@ -3438,49 +3570,9 @@ public static class FeasibilityStatusCommand
 
     private static string SaveHandoffManifest(
         string outputFolder,
-        DateTimeOffset generatedAt,
-        string dataFolder,
-        string resultsFilePath,
-        string dataStorageStatus,
-        string profileRootFolder,
-        string webView2RuntimeStatus,
-        string playbackLayoutStatus,
-        IReadOnlyList<HandoffProfileGroupMetadata> profileGroups,
-        int resultCount,
-        bool isPreflightReady,
-        bool isVerified,
-        string decisionCode,
-        string decisionTitle,
-        string planVerificationStatus,
-        int passingGateCount,
-        int pendingGateCount,
-        int failingGateCount,
-        int outstandingGateCount,
-        IReadOnlyList<string> artifactFiles,
-        IReadOnlyList<HandoffArtifactMetadata> artifactDetails)
+        HandoffManifest manifest)
     {
         var path = Path.Combine(outputFolder, HandoffManifestFileName);
-        var manifest = new HandoffManifest(
-            generatedAt,
-            dataFolder,
-            resultsFilePath,
-            dataStorageStatus,
-            profileRootFolder,
-            webView2RuntimeStatus,
-            playbackLayoutStatus,
-            profileGroups,
-            resultCount,
-            isPreflightReady,
-            isVerified,
-            decisionCode,
-            decisionTitle,
-            planVerificationStatus,
-            passingGateCount,
-            pendingGateCount,
-            failingGateCount,
-            outstandingGateCount,
-            artifactFiles,
-            artifactDetails);
         SaveTextFile(path, JsonSerializer.Serialize(manifest, HandoffJsonOptions) + Environment.NewLine);
         return path;
     }
@@ -3656,6 +3748,14 @@ public static class FeasibilityStatusCommand
             return new ParseResult(false, false, "", null, null, null, null, null, false, false, false, "unspecified", "Unspecified", [], null, null, null, null, null, false, errorMessage);
         }
     }
+
+    private sealed record HandoffDataContext(
+        string DataFolder,
+        string ResultsFilePath,
+        string DataStorageStatus,
+        IReadOnlyList<FeasibilityTestResult> Results,
+        HandoffResultsSummary Summary,
+        FeasibilityResultStorageService? Storage);
 
     private sealed record HandoffManifest(
         DateTimeOffset GeneratedAt,

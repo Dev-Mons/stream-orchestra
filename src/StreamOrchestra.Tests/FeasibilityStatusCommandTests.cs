@@ -421,6 +421,61 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_HandoffWithFileDataFolder_WritesBlockedStorageBundle()
+    {
+        Directory.CreateDirectory(_dataFolder);
+        var dataFolderFile = Path.Combine(_dataFolder, "data-folder-file");
+        var profileFolder = Path.Combine(_dataFolder, "Profiles");
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-blocked-storage");
+        File.WriteAllText(dataFolderFile, "not a directory");
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        using var validationOutput = new StringWriter();
+        using var validationError = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            [
+                "handoff",
+                "--data-folder",
+                dataFolderFile,
+                "--profile-folder",
+                profileFolder,
+                "--output-folder",
+                handoffFolder
+            ],
+            output,
+            error);
+        var validationExitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            validationOutput,
+            validationError);
+
+        var preflightText = File.ReadAllText(Path.Combine(handoffFolder, "phase0-preflight.txt"));
+        var manifestText = File.ReadAllText(Path.Combine(handoffFolder, "phase0-handoff-manifest.json"));
+        var diagnosticReportText = File.ReadAllText(Path.Combine(handoffFolder, "phase0-diagnostic-report.json"));
+        var validationText = validationOutput.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Equal(0, validationExitCode);
+        Assert.Contains("Preflight ready: False", output.ToString());
+        Assert.Contains($"Results snapshot source: {Path.Combine(dataFolderFile, "feasibility-results.json")}", output.ToString());
+        Assert.Contains($"Data folder: {dataFolderFile}", preflightText);
+        Assert.Contains("Data storage: [blocked]", preflightText);
+        Assert.Contains("Evidence recorded: 0", preflightText);
+        Assert.Contains("\"dataStorageStatus\": \"[blocked]", manifestText);
+        Assert.Contains($"\"dataFolder\": \"{JsonEncodedText.Encode(dataFolderFile)}\"", manifestText);
+        Assert.Contains("\"resultCount\": 0", manifestText);
+        Assert.Contains("\"isPreflightReady\": false", manifestText);
+        Assert.Contains("\"feasibilityResultCount\": 0", diagnosticReportText);
+        Assert.Contains($"\"dataFolder\": \"{JsonEncodedText.Encode(dataFolderFile)}\"", diagnosticReportText);
+        Assert.Equal("[]" + Environment.NewLine, File.ReadAllText(Path.Combine(handoffFolder, "phase0-results.json")));
+        Assert.Contains("- [pass] phase0-handoff-manifest.json data storage status: [blocked]", validationText);
+        Assert.Contains("- [pass] phase0-preflight.txt data storage: [blocked]", validationText);
+        Assert.Contains("Validation: pass", validationText);
+        Assert.Equal("", error.ToString());
+        Assert.Equal("", validationError.ToString());
+    }
+
+    [Fact]
     public void Execute_HandoffWithResults_WritesNormalizedResultsSnapshot()
     {
         var storage = new FeasibilityResultStorageService(_dataFolder);
