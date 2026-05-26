@@ -96,6 +96,28 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_StatusUsesLaterRecordedResultWhenTimestampsMatch()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateSuccessfulResult());
+        storage.AppendResult(CreateFailureResult());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["status", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Latest result: failure, 9 slot(s)", text);
+        Assert.Contains("Notes: manual test failed", text);
+        Assert.DoesNotContain("Notes: manual test passed", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_HistoryWithNoResults_PrintsEmptyHistory()
     {
         using var output = new StringWriter();
@@ -139,6 +161,28 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Recorded decision: WebView2 추가 실험 (continue_webview2_experiments)", text);
         Assert.Contains("Next action at record time:", text);
         Assert.Contains("Notes: manual test passed", text);
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
+    public void Execute_HistoryOrdersSameTimestampResultsByLaterRecordFirst()
+    {
+        var storage = new FeasibilityResultStorageService(_dataFolder);
+        storage.AppendResult(CreateSuccessfulResult());
+        storage.AppendResult(CreateFailureResult());
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["history", "--data-folder", _dataFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, exitCode);
+        Assert.True(
+            text.IndexOf("Id: result_failure", StringComparison.Ordinal) <
+            text.IndexOf("Id: result_1", StringComparison.Ordinal));
         Assert.Equal("", error.ToString());
     }
 

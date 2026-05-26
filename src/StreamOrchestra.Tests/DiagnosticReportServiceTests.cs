@@ -170,6 +170,28 @@ public sealed class DiagnosticReportServiceTests : IDisposable
     }
 
     [Fact]
+    public void CreateReport_UsesLaterRecordedResultWhenTimestampsMatch()
+    {
+        var profileService = new WebViewProfileService(_profileFolder);
+        var presetStorage = new PresetStorageService(_dataFolder);
+        var favoriteStorage = new FavoriteStorageService(_dataFolder);
+        var feasibilityStorage = new FeasibilityResultStorageService(_dataFolder);
+        var capturedAt = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
+        feasibilityStorage.AppendResult(CreateBasicResult("first", "partial", capturedAt));
+        feasibilityStorage.AppendResult(CreateBasicResult("second", "failure", capturedAt));
+
+        var report = new DiagnosticReportService().CreateReport(
+            profileService,
+            presetStorage,
+            favoriteStorage,
+            feasibilityStorage,
+            new FeasibilityDecision("pending", "Pending", "Pending"));
+
+        Assert.Equal("second", report.LatestFeasibilityResult?.Id);
+        Assert.Equal("failure", report.LatestFeasibilityResult?.Outcome);
+    }
+
+    [Fact]
     public void CreateReport_UsesCustomExternalBrowserCandidatesFromDataFolder()
     {
         var executableFolder = Path.Combine(_rootFolder, "PortableBrowser");
@@ -531,6 +553,28 @@ public sealed class DiagnosticReportServiceTests : IDisposable
             ObservedCpuPercent = playbackCount >= 9 ? 45 : null,
             ObservedGpuPercent = playbackCount >= 9 ? 60 : null,
             ObservedMemoryMegabytes = playbackCount >= 9 ? 12000 : null
+        };
+    }
+
+    private static FeasibilityTestResult CreateBasicResult(
+        string id,
+        string outcome,
+        DateTimeOffset capturedAt)
+    {
+        return new FeasibilityTestResult
+        {
+            Id = id,
+            CapturedAt = capturedAt,
+            PlaybackCount = 9,
+            ScenarioId = "groups_a_b_c_9_slot_threshold",
+            ScenarioName = "Groups A/B/C, 9-slot success threshold",
+            Outcome = outcome,
+            Diagnostics = new RuntimeDiagnosticsSnapshot(
+                capturedAt,
+                WebViewProcessCount: 9,
+                WebViewWorkingSetMegabytes: 512,
+                WebViewPrivateMemoryMegabytes: 400,
+                WebViewCpuPercent: 25)
         };
     }
 
