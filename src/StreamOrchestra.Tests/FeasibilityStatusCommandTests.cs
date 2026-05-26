@@ -157,6 +157,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("record --count 8 --outcome <partial|failure> --account --profile-groups A,B", text);
         Assert.Contains("record --count 9 --outcome <partial|failure> --account --profile-groups A,B,C", text);
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value>", text);
+        Assert.Contains("--account-label <label>", text);
         Assert.Contains("record --count 16 --outcome success --account --profile-groups A,B,C,D --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value>", text);
         Assert.Contains("record --group A --outcome <partial|failure> --account --profile-groups A", text);
         Assert.DoesNotContain("record --count 8 --outcome <success|partial|failure>", text);
@@ -225,6 +226,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("record --group A --outcome partial --account --profile-groups A", text);
         Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100>", text);
+        Assert.Contains("--account-label <label>", text);
         Assert.Contains("record --count 16 --outcome partial --account --profile-groups A,B,C,D", text);
         Assert.DoesNotContain("record --count 16 --outcome <success|partial|failure>", text);
         Assert.Equal("", error.ToString());

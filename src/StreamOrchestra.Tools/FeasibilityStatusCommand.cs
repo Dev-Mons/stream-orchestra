@@ -259,7 +259,7 @@ public static class FeasibilityStatusCommand
             var scenario = scenarioService.CreateIsolatedGroupScenario(groupId, targetSlotCount: 4);
             output.WriteLine($"- Group {groupId}: {scenario.Name} ({scenario.Id})");
             output.WriteLine($"  WPF: select Group {groupId}, then click `그룹 단독`");
-            output.WriteLine($"  CLI: record --group {groupId} --outcome <partial|failure> --account --profile-groups {groupId}");
+            output.WriteLine($"  CLI: record --group {groupId} --outcome <partial|failure> --account --profile-groups {groupId} --account-label <label>");
         }
 
         output.WriteLine("Record `success` only when the 9+ playback, required profile-group account, restart, resource, CPU, GPU, and memory evidence is complete.");
@@ -345,7 +345,7 @@ public static class FeasibilityStatusCommand
             ",",
             FeasibilityProfileGroupEvidenceService.GetRequiredGroupsForPlaybackCount(playbackCount));
         var partialOrFailureShape =
-            $"record --count {playbackCount} --outcome <partial|failure> --account --profile-groups {requiredGroups}";
+            $"record --count {playbackCount} --outcome <partial|failure> --account --profile-groups {requiredGroups} --account-label <label>";
 
         if (playbackCount < 9)
         {
@@ -355,7 +355,7 @@ public static class FeasibilityStatusCommand
         return
         [
             partialOrFailureShape,
-            $"record --count {playbackCount} --outcome success --account --profile-groups {requiredGroups} --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value>"
+            $"record --count {playbackCount} --outcome success --account --profile-groups {requiredGroups} --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value> --account-label <label>"
         ];
     }
 

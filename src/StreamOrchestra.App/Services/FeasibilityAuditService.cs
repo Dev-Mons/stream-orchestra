@@ -431,11 +431,11 @@ public sealed class FeasibilityAuditService
         {
             "group_a_playback" =>
             [
-                "record --group A --outcome partial --account --profile-groups A --notes \"Group A isolated SOOP test\""
+                "record --group A --outcome partial --account --profile-groups A --account-label <label> --notes \"Group A isolated SOOP test\""
             ],
             "eight_plus_playback" =>
             [
-                "record --count 8 --outcome partial --account --profile-groups A,B --notes \"8-slot SOOP playback\""
+                "record --count 8 --outcome partial --account --profile-groups A,B --account-label <label> --notes \"8-slot SOOP playback\""
             ],
             "nine_plus_playback" =>
             [
@@ -443,18 +443,18 @@ public sealed class FeasibilityAuditService
             ],
             "twelve_slot_playback" =>
             [
-                "record --count 12 --outcome partial --account --profile-groups A,B,C --notes \"12-slot SOOP playback\""
+                "record --count 12 --outcome partial --account --profile-groups A,B,C --account-label <label> --notes \"12-slot SOOP playback\""
             ],
             "sixteen_slot_playback" =>
             [
-                "record --count 16 --outcome partial --account --profile-groups A,B,C,D --notes \"16-slot SOOP playback\""
+                "record --count 16 --outcome partial --account --profile-groups A,B,C,D --account-label <label> --notes \"16-slot SOOP playback\""
             ],
             "same_account_session" =>
             [
-                "record --group A --outcome partial --account --profile-groups A --notes \"Group A same-account check\"",
-                "record --group B --outcome partial --account --profile-groups B --notes \"Group B same-account check\"",
-                "record --group C --outcome partial --account --profile-groups C --notes \"Group C same-account check\"",
-                "record --group D --outcome partial --account --profile-groups D --notes \"Group D same-account check\""
+                "record --group A --outcome partial --account --profile-groups A --account-label <label> --notes \"Group A same-account check\"",
+                "record --group B --outcome partial --account --profile-groups B --account-label <label> --notes \"Group B same-account check\"",
+                "record --group C --outcome partial --account --profile-groups C --account-label <label> --notes \"Group C same-account check\"",
+                "record --group D --outcome partial --account --profile-groups D --account-label <label> --notes \"Group D same-account check\""
             ],
             "restart_session" or "resource_acceptability" or "resource_observations" or "phase0_success_gate" =>
             [
@@ -466,6 +466,6 @@ public sealed class FeasibilityAuditService
 
     private static string CreateNineSlotSuccessRecordShape()
     {
-        return "record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value> --notes \"9-slot SOOP threshold\"";
+        return "record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value> --account-label <label> --notes \"9-slot SOOP threshold\"";
     }
 }

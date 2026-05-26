@@ -75,7 +75,7 @@ dotnet run --project src\StreamOrchestra.Tools -- record --count 9 --outcome suc
 Record an isolated profile-group check without manually typing the scenario ID:
 
 ```powershell
-dotnet run --project src\StreamOrchestra.Tools -- record --group D --outcome partial --account --profile-groups D --notes "Group D session check"
+dotnet run --project src\StreamOrchestra.Tools -- record --group D --outcome partial --account --profile-groups D --account-label main_soop --notes "Group D session check"
 ```
 
 `success` requires 9 or more streams plus `--account`, required `--profile-groups`, `--restart`, `--resources`, `--cpu-percent`, `--gpu-percent`, and `--memory-mb`; otherwise record `partial` or `failure`. Use optional `--account-label <text>` to leave a non-sensitive label for the SOOP account used across profile groups; conflicting non-empty labels fail the same-account gate. A 9-slot success proves the threshold scenario for A/B/C, but final verification still requires A-D same-account evidence. `--resources` always requires the CPU, GPU, and memory values so resource acceptability has structured evidence. If `--scenario` is omitted, the CLI derives the scenario from `--count` using the same 4/8/9/12/16 playback-test names as the WPF app. Use `--group A`, `--group B`, `--group C`, or `--group D` for isolated profile-group evidence; without `--count`, it records the group's 4-slot test. Profile-group evidence and playback count must match the selected scenario, so Group A evidence cannot be recorded against a Group D scenario and a single-group scenario cannot be recorded as a 16-slot result.
@@ -129,7 +129,7 @@ Use `--data-folder <path>` to inspect a non-default data folder.
 - The WPF feasibility row shows the current playback scenario and slot count before a result is recorded.
 - The WPF feasibility summary shows overall plan-verification status plus plan-gate audit counts, and `감사 복사` copies the detailed audit text plus suggested `record` shapes for sharing test evidence.
 - Feasibility decisions include a concrete next action, such as continuing the WebView2 MVP, repeating targeted experiments, or exporting an external-browser fallback script.
-- The CLI `status` and `record` commands print suggested `record` shapes for missing evidence after the current recommendation and plan-gate status.
+- The CLI `status` and `record` commands print suggested `record` shapes for missing evidence after the current recommendation and plan-gate status, including `--account-label <label>` where same-account evidence is expected.
 - The CLI `audit` command maps recorded results to the remaining plan gates: 4-slot Group A single-profile playback, distinct 8-slot split-profile, 9-slot threshold, 12-slot, and 16-slot playback evidence, A-D account persistence, restart persistence, resource acceptability, structured observations, and the Phase 0 success gate. Add `--output <path>` to save the audit text.
 - The CLI `history` command lists saved feasibility results with their recorded decision snapshots for manual-test audit trails.
 - The CLI `scenarios` command lists the named playback and isolated-group scenarios with copyable partial/failure shapes and separate 9+ success shapes that include restart, resource, CPU, GPU, and memory evidence.

@@ -727,6 +727,7 @@ public sealed class FeasibilityAuditServiceTests
         Assert.Contains("Suggested record shapes:", text);
         Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
         Assert.Contains("record --count 12 --outcome partial --account --profile-groups A,B,C", text);
+        Assert.Contains("--account-label <label>", text);
         Assert.DoesNotContain("record --count 12 --outcome <success|partial|failure>", text);
     }
 
