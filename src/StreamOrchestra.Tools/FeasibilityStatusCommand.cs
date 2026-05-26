@@ -437,6 +437,24 @@ public static class FeasibilityStatusCommand
             manifestArtifactFiles,
             StringComparer.OrdinalIgnoreCase);
         var requiredFiles = new HashSet<string>(RequiredHandoffArtifactFiles, StringComparer.OrdinalIgnoreCase);
+        foreach (var artifactFile in manifestArtifactFiles)
+        {
+            if (!string.IsNullOrWhiteSpace(artifactFile) && !requiredFiles.Contains(artifactFile))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {artifactFile}: unexpected artifactFiles entry.");
+            }
+        }
+
+        foreach (var detail in artifactDetails)
+        {
+            if (!string.IsNullOrWhiteSpace(detail.FileName) && !requiredFiles.Contains(detail.FileName))
+            {
+                isValid = false;
+                validationLines.Add($"- [fail] {detail.FileName}: unexpected artifactDetails entry.");
+            }
+        }
+
         foreach (var requiredFile in requiredFiles)
         {
             if (!artifactFiles.Contains(requiredFile))

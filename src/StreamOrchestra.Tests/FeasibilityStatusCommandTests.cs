@@ -1014,6 +1014,47 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     }
 
     [Fact]
+    public void Execute_ValidateHandoff_DetectsUnexpectedManifestArtifacts()
+    {
+        var handoffFolder = Path.Combine(_dataFolder, "handoff-unexpected-artifacts");
+        using var handoffOutput = new StringWriter();
+        using var handoffError = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+
+        var handoffExitCode = FeasibilityStatusCommand.Execute(
+            ["handoff", "--data-folder", _dataFolder, "--output-folder", handoffFolder],
+            handoffOutput,
+            handoffError);
+        var manifestPath = Path.Combine(handoffFolder, "phase0-handoff-manifest.json");
+        var extraArtifactPath = Path.Combine(handoffFolder, "phase0-extra.txt");
+        File.WriteAllText(extraArtifactPath, "unexpected");
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        manifest["artifactFiles"]!.AsArray().Add(JsonValue.Create("phase0-extra.txt"));
+        manifest["artifactDetails"]!.AsArray().Add(new JsonObject
+        {
+            ["fileName"] = "phase0-extra.txt",
+            ["sizeBytes"] = new FileInfo(extraArtifactPath).Length,
+            ["sha256"] = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(extraArtifactPath))).ToLowerInvariant()
+        });
+        File.WriteAllText(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+        var exitCode = FeasibilityStatusCommand.Execute(
+            ["validate-handoff", "--input-folder", handoffFolder],
+            output,
+            error);
+
+        var text = output.ToString();
+        Assert.Equal(0, handoffExitCode);
+        Assert.Equal(1, exitCode);
+        Assert.Contains("phase0-extra.txt: unexpected artifactFiles entry.", text);
+        Assert.Contains("phase0-extra.txt: unexpected artifactDetails entry.", text);
+        Assert.Contains("Validation: fail", text);
+        Assert.Equal("", handoffError.ToString());
+        Assert.Equal("", error.ToString());
+    }
+
+    [Fact]
     public void Execute_ValidateHandoff_DetectsDuplicateManifestEntries()
     {
         var handoffFolder = Path.Combine(_dataFolder, "handoff-duplicate-artifacts");
