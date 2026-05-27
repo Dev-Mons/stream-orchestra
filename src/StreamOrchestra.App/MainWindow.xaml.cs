@@ -100,6 +100,7 @@ public partial class MainWindow : Window
             var slotView = new StreamSlotView(configuration, _profileService, _streamNavigationService);
             slotView.SlotSelected += SelectSlot;
             slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
+            slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
             _slots.Add(slotView);
         }
     }
@@ -247,31 +248,6 @@ public partial class MainWindow : Window
     {
         SetCurrentFeasibilityScenario(0, new FeasibilityScenario("blank_all", "Blank all slots"));
         await ClearSlotsAsync(_slots, "Clearing all slots");
-    }
-
-    private async void LoadFirstCountButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: string countText } || !int.TryParse(countText, out var count))
-        {
-            return;
-        }
-
-        var plan = _playbackTestPlanService.CreatePlan(count);
-        if (!TryEnsureSlotsVisible(plan.ActiveSlotIds))
-        {
-            return;
-        }
-
-        SetCurrentFeasibilityScenario(
-            plan.TargetPlaybackCount,
-            _feasibilityScenarioService.CreateFirstSlotsScenario(plan));
-        var activeSlotIds = plan.ActiveSlotIds.ToHashSet();
-        var inactiveSlotIds = plan.InactiveSlotIds.ToHashSet();
-        var activeSlots = _slots.Where(slot => activeSlotIds.Contains(slot.SlotId)).ToArray();
-        var inactiveSlots = _slots.Where(slot => inactiveSlotIds.Contains(slot.SlotId)).ToArray();
-
-        await ClearSlotsAsync(inactiveSlots, "Clearing inactive slots");
-        await LoadSlotsAsync(activeSlots, statusPrefix: $"Loading {plan.TargetPlaybackCount}-slot playback test");
     }
 
     private bool TryEnsureSlotsVisible(IReadOnlyCollection<int> targetSlotIds)
@@ -612,6 +588,16 @@ public partial class MainWindow : Window
 
         StatusTextBlock.Text =
             $"Swapped streams: Slot {sourceSlot.SlotId} <-> Slot {targetSlot.SlotId}. Mute and profile group stayed with each slot.";
+    }
+
+    private async void SlotView_StreamUrlDropRequested(StreamSlotView targetSlot, string url, string? streamName)
+    {
+        SelectSlot(targetSlot);
+        await targetSlot.NavigateAsync(url, streamName);
+
+        StatusTextBlock.Text = string.IsNullOrWhiteSpace(streamName)
+            ? $"Dropped URL into Slot {targetSlot.SlotId}: {url}"
+            : $"Dropped {streamName} into Slot {targetSlot.SlotId}: {url}";
     }
 
     private async void ExplorerPanel_UseCurrentUrlRequested(string url)

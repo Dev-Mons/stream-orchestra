@@ -43,17 +43,14 @@ public sealed class ExplorerPanelLayoutTests
     }
 
     [Fact]
-    public void ExplorerPanel_DoesNotExposeDragRegistrationForMvpFavoriteInsertion()
+    public void ExplorerPanel_ExposesCurrentUrlDragSource()
     {
         var document = LoadExplorerPanelDocument();
-        var dragOrDropAttributes = document
-            .Descendants()
-            .SelectMany(element => element.Attributes())
-            .Where(attribute => attribute.Name.LocalName.Contains("Drag", StringComparison.OrdinalIgnoreCase) ||
-                attribute.Name.LocalName.Contains("Drop", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        var dragSource = FindNamedElement(document, "ExplorerDragSource");
 
-        Assert.Empty(dragOrDropAttributes);
+        Assert.Equal("Hand", GetAttribute(dragSource, "Cursor"));
+        Assert.Equal("ExplorerDragSource_PreviewMouseLeftButtonDown", GetAttribute(dragSource, "PreviewMouseLeftButtonDown"));
+        Assert.Equal("ExplorerDragSource_MouseMove", GetAttribute(dragSource, "MouseMove"));
     }
 
     private static XDocument LoadExplorerPanelDocument()

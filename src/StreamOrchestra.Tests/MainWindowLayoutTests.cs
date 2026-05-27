@@ -47,7 +47,7 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
-    public void PlaybackToolbar_ProvidesPlanRequiredPlaybackCounts()
+    public void PlaybackToolbar_RemovesPlanPlaybackTestShortcutsAfterVerification()
     {
         var document = LoadMainWindowDocument();
 
@@ -58,7 +58,8 @@ public sealed class MainWindowLayoutTests
             .Select(element => GetAttribute(element, "Tag"))
             .ToArray();
 
-        Assert.Equal(["4", "8", "9", "12", "16"], playbackButtonTags);
+        Assert.Empty(playbackButtonTags);
+        Assert.Equal("RefreshDiagnosticsButton_Click", GetAttribute(FindButton(document, "진단 갱신"), "Click"));
     }
 
     [Fact]

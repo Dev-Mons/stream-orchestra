@@ -12,6 +12,7 @@ public partial class ExplorerPanel : UserControl
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
     private bool _isInitialized;
+    private Point? _dragStartPoint;
 
     public ExplorerPanel(WebViewProfileService profileService, StreamNavigationService navigationService)
     {
@@ -163,6 +164,48 @@ public partial class ExplorerPanel : UserControl
     private void UseCurrentUrlButton_Click(object sender, RoutedEventArgs e)
     {
         UseCurrentUrlRequested?.Invoke(CurrentUrl);
+    }
+
+    private void ExplorerDragSource_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragStartPoint = e.GetPosition(this);
+    }
+
+    private void ExplorerDragSource_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragStartPoint is null || e.LeftButton != MouseButtonState.Pressed)
+        {
+            return;
+        }
+
+        var currentPoint = e.GetPosition(this);
+        var movedEnough =
+            Math.Abs(currentPoint.X - _dragStartPoint.Value.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+            Math.Abs(currentPoint.Y - _dragStartPoint.Value.Y) >= SystemParameters.MinimumVerticalDragDistance;
+
+        if (!movedEnough)
+        {
+            return;
+        }
+
+        var normalizedUrl = _navigationService.NormalizeUrl(CurrentUrl);
+        if (normalizedUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var data = new DataObject();
+        data.SetData(StreamDragDataFormats.StreamUrl, normalizedUrl);
+        data.SetData(DataFormats.UnicodeText, normalizedUrl);
+        data.SetData(DataFormats.Text, normalizedUrl);
+
+        if (!string.IsNullOrWhiteSpace(CurrentTitle))
+        {
+            data.SetData(StreamDragDataFormats.StreamName, CurrentTitle.Trim());
+        }
+
+        DragDrop.DoDragDrop(ExplorerDragSource, data, DragDropEffects.Copy);
+        _dragStartPoint = null;
     }
 
     private void AddFavoriteButton_Click(object sender, RoutedEventArgs e)

@@ -14,14 +14,31 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0"
+        <Border x:Name="ExplorerDragSource"
+                Grid.Row="0"
                 Background="#17202A"
                 BorderBrush="#2D3642"
                 BorderThickness="0,0,0,1"
-                Padding="8">
-            <TextBlock Text="SOOP 탐색"
-                       Foreground="#F3F6FA"
-                       FontWeight="SemiBold" />
+                Padding="8"
+                Cursor="Hand"
+                ToolTip="현재 탐색 URL을 슬롯으로 드래그"
+                PreviewMouseLeftButtonDown="ExplorerDragSource_PreviewMouseLeftButtonDown"
+                MouseMove="ExplorerDragSource_MouseMove">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="SOOP 탐색"
+                           Foreground="#F3F6FA"
+                           FontWeight="SemiBold" />
+                <TextBlock Grid.Column="1"
+                           Text="↗"
+                           Foreground="#B9C2CC"
+                           FontWeight="SemiBold"
+                           ToolTip="현재 탐색 URL을 슬롯으로 드래그" />
+            </Grid>
         </Border>
 
         <Border Grid.Row="1"

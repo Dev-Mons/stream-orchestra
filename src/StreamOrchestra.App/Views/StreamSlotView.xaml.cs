@@ -2,6 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.IO;
+using System.Net;
+using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
@@ -10,7 +13,6 @@ namespace StreamOrchestra.App.Views;
 
 public partial class StreamSlotView : UserControl
 {
-    private const string SlotDragDataFormat = "StreamOrchestraSlotId";
     private static readonly Brush DefaultBorderBrush = new SolidColorBrush(Color.FromRgb(45, 54, 66));
     private static readonly Brush SelectedBorderBrush = new SolidColorBrush(Color.FromRgb(77, 163, 255));
 
@@ -47,6 +49,8 @@ public partial class StreamSlotView : UserControl
     public event Action<StreamSlotView>? SlotSelected;
 
     public event Action<StreamSlotView, int>? SlotSwapRequested;
+
+    public event Action<StreamSlotView, string, string?>? StreamUrlDropRequested;
 
     public SlotConfiguration Configuration { get; }
 
@@ -310,29 +314,136 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
-        var data = new DataObject(SlotDragDataFormat, SlotId);
+        var data = new DataObject(StreamDragDataFormats.SlotId, SlotId);
         DragDrop.DoDragDrop(DragHandleTextBlock, data, DragDropEffects.Move);
         _dragStartPoint = null;
     }
 
     private void SlotBorder_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(SlotDragDataFormat)
-            ? DragDropEffects.Move
-            : DragDropEffects.None;
+        if (e.Data.GetDataPresent(StreamDragDataFormats.SlotId))
+        {
+            e.Effects = DragDropEffects.Move;
+        }
+        else if (TryGetDroppedStream(e.Data, out _, out _))
+        {
+            e.Effects = DragDropEffects.Copy;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+
         e.Handled = true;
     }
 
     private void SlotBorder_Drop(object sender, DragEventArgs e)
     {
-        if (!e.Data.GetDataPresent(SlotDragDataFormat))
+        if (e.Data.GetDataPresent(StreamDragDataFormats.SlotId))
         {
+            var sourceSlotId = (int)e.Data.GetData(StreamDragDataFormats.SlotId);
+            SlotSwapRequested?.Invoke(this, sourceSlotId);
+            e.Handled = true;
             return;
         }
 
-        var sourceSlotId = (int)e.Data.GetData(SlotDragDataFormat);
-        SlotSwapRequested?.Invoke(this, sourceSlotId);
-        e.Handled = true;
+        if (TryGetDroppedStream(e.Data, out var url, out var streamName))
+        {
+            SlotSelected?.Invoke(this);
+            StreamUrlDropRequested?.Invoke(this, url, streamName);
+            e.Handled = true;
+        }
+    }
+
+    private bool TryGetDroppedStream(IDataObject data, out string url, out string? streamName)
+    {
+        url = "";
+        streamName = null;
+
+        if (TryGetStringData(data, StreamDragDataFormats.StreamName, out var droppedStreamName))
+        {
+            streamName = droppedStreamName.Trim();
+        }
+
+        if (TryGetStringData(data, StreamDragDataFormats.StreamUrl, out var customUrl) &&
+            TryNormalizeDroppedUrl(customUrl, out url))
+        {
+            return true;
+        }
+
+        if (TryGetStringData(data, DataFormats.Html, out var html) &&
+            TryExtractUrlFromHtml(html, out var htmlUrl) &&
+            TryNormalizeDroppedUrl(htmlUrl, out url))
+        {
+            return true;
+        }
+
+        foreach (var format in new[] { DataFormats.UnicodeText, DataFormats.Text, "UniformResourceLocatorW", "UniformResourceLocator" })
+        {
+            if (TryGetStringData(data, format, out var text) &&
+                TryNormalizeDroppedUrl(text, out url))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryNormalizeDroppedUrl(string candidate, out string url)
+    {
+        url = _navigationService.NormalizeUrl(candidate);
+        return !url.Equals("about:blank", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryExtractUrlFromHtml(string html, out string url)
+    {
+        url = "";
+        var match = Regex.Match(
+            html,
+            "href\\s*=\\s*(?:\"(?<url>[^\"]+)\"|'(?<url>[^']+)'|(?<url>[^\\s>]+))",
+            RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        url = WebUtility.HtmlDecode(match.Groups["url"].Value);
+        return !string.IsNullOrWhiteSpace(url);
+    }
+
+    private static bool TryGetStringData(IDataObject data, string format, out string value)
+    {
+        value = "";
+        if (!data.GetDataPresent(format))
+        {
+            return false;
+        }
+
+        value = data.GetData(format) switch
+        {
+            string text => text,
+            MemoryStream stream => ReadStreamText(stream),
+            byte[] bytes => System.Text.Encoding.Unicode.GetString(bytes).TrimEnd('\0'),
+            _ => ""
+        };
+
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static string ReadStreamText(MemoryStream stream)
+    {
+        var position = stream.Position;
+        try
+        {
+            stream.Position = 0;
+            using var reader = new StreamReader(stream, System.Text.Encoding.Unicode, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+            return reader.ReadToEnd().TrimEnd('\0');
+        }
+        finally
+        {
+            stream.Position = position;
+        }
     }
 
     private void UpdateMuteButton()

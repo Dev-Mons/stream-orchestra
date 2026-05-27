@@ -73,7 +73,30 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Equal("True", GetAttribute(slotBorder, "AllowDrop"));
         Assert.Equal("SlotBorder_DragOver", GetAttribute(slotBorder, "DragOver"));
         Assert.Equal("SlotBorder_Drop", GetAttribute(slotBorder, "Drop"));
+        Assert.Equal("False", GetAttribute(FindElementByName(document, "Browser"), "AllowExternalDrop"));
+        Assert.Equal("SlotBorder_DragOver", GetAttribute(FindElementByName(document, "Browser"), "DragOver"));
+        Assert.Equal("SlotBorder_Drop", GetAttribute(FindElementByName(document, "Browser"), "Drop"));
         Assert.Null(GetAttribute(controlBar, "MouseMove"));
+    }
+
+    [Fact]
+    public void CodeBehind_AcceptsExplorerUrlDropsOnSlots()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "Views",
+            "StreamSlotView.xaml.cs"));
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("StreamUrlDropRequested?.Invoke", text);
+        Assert.Contains("StreamDragDataFormats.StreamUrl", text);
+        Assert.Contains("DataFormats.UnicodeText", text);
+        Assert.Contains("DragDropEffects.Copy", text);
     }
 
     private static XDocument LoadStreamSlotViewDocument()
