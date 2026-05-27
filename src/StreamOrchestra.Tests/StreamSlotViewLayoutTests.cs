@@ -51,6 +51,21 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
+    public void StreamSlotView_ShowsVolumeIndicatorInPopupAboveBrowser()
+    {
+        var document = LoadStreamSlotViewDocument();
+        var popup = FindElementByName(document, "VolumeIndicatorPopup");
+        var indicator = FindElementByName(document, "VolumeIndicatorOverlay");
+
+        Assert.Equal("Popup", popup.Name.LocalName);
+        Assert.Equal("False", GetAttribute(popup, "IsOpen"));
+        Assert.Equal("Center", GetAttribute(popup, "Placement"));
+        Assert.Contains("SlotBorder", GetAttribute(popup, "PlacementTarget"));
+        Assert.Equal("False", GetAttribute(popup, "IsHitTestVisible"));
+        Assert.Equal("Border", indicator.Name.LocalName);
+    }
+
+    [Fact]
     public void CodeBehind_AcceptsExplorerUrlDropsOnSlots()
     {
         var slotPath = Path.GetFullPath(Path.Combine(
@@ -83,6 +98,25 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("DataFormats.UnicodeText", dropReaderText);
         Assert.Contains("PlainTextUrlPattern", dropReaderText);
         Assert.Contains("DragDropEffects.Copy", slotText);
+    }
+
+    [Theory]
+    [InlineData(100, -120, 100)]
+    [InlineData(100, 120, 90)]
+    [InlineData(50, -120, 60)]
+    [InlineData(50, 120, 40)]
+    [InlineData(0, 120, 0)]
+    public void CodeBehind_CalculatesWheelVolumeInTenPercentSteps(
+        int currentVolumePercent,
+        double deltaY,
+        int expectedVolumePercent)
+    {
+        var method = typeof(StreamOrchestra.App.Views.StreamSlotView).GetMethod(
+            "CalculateWheelVolumePercent",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        Assert.NotNull(method);
+        Assert.Equal(expectedVolumePercent, method!.Invoke(null, [currentVolumePercent, deltaY]));
     }
 
     [Fact]

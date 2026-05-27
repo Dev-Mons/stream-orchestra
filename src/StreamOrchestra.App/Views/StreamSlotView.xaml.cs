@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Text.Json;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
@@ -11,13 +12,19 @@ namespace StreamOrchestra.App.Views;
 
 public partial class StreamSlotView : UserControl
 {
+    private const int MinVolumePercent = 0;
+    private const int MaxVolumePercent = 100;
+    private const int VolumeStepPercent = 10;
+
     private static readonly Brush DefaultBorderBrush = new SolidColorBrush(Color.FromRgb(45, 54, 66));
     private static readonly Brush SelectedBorderBrush = new SolidColorBrush(Color.FromRgb(77, 163, 255));
 
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
+    private readonly DispatcherTimer _volumeOverlayTimer;
     private bool _isInitialized;
     private bool _isMuted;
+    private int _volumePercent = MaxVolumePercent;
     private bool _hasExplicitStreamName;
     private string _preferredQualityKey = "master";
     private string? _playbackViewportScriptId;
@@ -33,6 +40,15 @@ public partial class StreamSlotView : UserControl
         _navigationService = navigationService;
 
         InitializeComponent();
+        _volumeOverlayTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _volumeOverlayTimer.Tick += (_, _) =>
+        {
+            VolumeIndicatorPopup.IsOpen = false;
+            _volumeOverlayTimer.Stop();
+        };
 
         ProfilePathTextBlock.Text = Configuration.ProfileGroup.UserDataFolder;
 
@@ -56,6 +72,8 @@ public partial class StreamSlotView : UserControl
     public string CurrentStreamName { get; private set; } = "Empty";
 
     public bool IsMuted => _isMuted;
+
+    public int VolumePercent => _volumePercent;
 
     public bool IsBrowserInitialized => _isInitialized;
 
@@ -102,7 +120,7 @@ public partial class StreamSlotView : UserControl
 
     public SlotRuntimeState CreateRuntimeState()
     {
-        return new SlotRuntimeState(SlotId, CurrentStreamName, CurrentUrl, IsMuted, ProfileGroupId);
+        return new SlotRuntimeState(SlotId, CurrentStreamName, CurrentUrl, false, ProfileGroupId);
     }
 
     public void SetSelected(bool isSelected)
@@ -113,17 +131,11 @@ public partial class StreamSlotView : UserControl
 
     public void SetMuted(bool isMuted, bool suppressQualityUpdate = false)
     {
-        var changed = _isMuted != isMuted;
-        _isMuted = isMuted;
+        _isMuted = false;
 
         if (Browser.CoreWebView2 is not null)
         {
-            Browser.CoreWebView2.IsMuted = _isMuted;
-        }
-
-        if (changed && !suppressQualityUpdate)
-        {
-            MuteChanged?.Invoke(this);
+            Browser.CoreWebView2.IsMuted = false;
         }
     }
 
@@ -157,10 +169,12 @@ public partial class StreamSlotView : UserControl
         Browser.CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
         Browser.CoreWebView2.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
         Browser.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
-        Browser.CoreWebView2.IsMuted = _isMuted;
+        _isMuted = false;
+        Browser.CoreWebView2.IsMuted = false;
         _isInitialized = true;
 
         InitializationOverlay.Visibility = Visibility.Collapsed;
+        _ = ApplyVolumeToWebPageAsync();
     }
 
     private void CoreWebView2_SourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
@@ -209,6 +223,9 @@ public partial class StreamSlotView : UserControl
         }
 
         InitializationOverlay.Visibility = Visibility.Collapsed;
+        Browser.CoreWebView2.IsMuted = false;
+        _isMuted = false;
+        _ = ApplyVolumeToWebPageAsync();
     }
 
     private void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -233,7 +250,7 @@ public partial class StreamSlotView : UserControl
 
         if (message.Type.Equals("slot-wheel", StringComparison.OrdinalIgnoreCase))
         {
-            ApplyWheelMute(message.DeltaY);
+            ApplyWheelVolume(message.DeltaY);
             return;
         }
 
@@ -259,11 +276,11 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
-        ApplyWheelMute(-e.Delta);
+        ApplyWheelVolume(-e.Delta);
         e.Handled = true;
     }
 
-    private void ApplyWheelMute(double deltaY)
+    private void ApplyWheelVolume(double deltaY)
     {
         if (deltaY == 0)
         {
@@ -271,7 +288,51 @@ public partial class StreamSlotView : UserControl
         }
 
         SlotSelected?.Invoke(this);
-        SetMuted(deltaY > 0, suppressQualityUpdate: true);
+        SetVolumePercent(CalculateWheelVolumePercent(_volumePercent, deltaY));
+    }
+
+    private static int CalculateWheelVolumePercent(int currentVolumePercent, double deltaY)
+    {
+        var direction = Math.Sign(deltaY);
+        if (direction == 0)
+        {
+            return Math.Clamp(currentVolumePercent, MinVolumePercent, MaxVolumePercent);
+        }
+
+        var nextVolumePercent = currentVolumePercent + (direction < 0 ? VolumeStepPercent : -VolumeStepPercent);
+        return Math.Clamp(nextVolumePercent, MinVolumePercent, MaxVolumePercent);
+    }
+
+    private void SetVolumePercent(int volumePercent)
+    {
+        _volumePercent = Math.Clamp(volumePercent, MinVolumePercent, MaxVolumePercent);
+        ShowVolumeIndicator(_volumePercent);
+        _ = ApplyVolumeToWebPageAsync();
+    }
+
+    private void ShowVolumeIndicator(int volumePercent)
+    {
+        VolumeIndicatorTextBlock.Text = $"볼륨 {volumePercent}%";
+        VolumeIndicatorPopup.IsOpen = true;
+        _volumeOverlayTimer.Stop();
+        _volumeOverlayTimer.Start();
+    }
+
+    private async Task ApplyVolumeToWebPageAsync()
+    {
+        if (Browser.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Browser.CoreWebView2.ExecuteScriptAsync(CreateSetVolumeScript(_volumePercent));
+        }
+        catch
+        {
+            // Ignore transient script execution failures.
+        }
     }
 
     private void SlotBorder_DragOver(object sender, DragEventArgs e)
@@ -479,6 +540,78 @@ public partial class StreamSlotView : UserControl
     return match?.[0] || "";
   }
 
+  window.__streamOrchestraVolumePercent = 100;
+
+  function clampVolumePercent(value) {
+    const normalized = Number(value);
+    if (!Number.isFinite(normalized)) {
+      return 1;
+    }
+
+    return Math.max(0, Math.min(1, normalized / 100));
+  }
+
+  function collectMediaElements(root, mediaElements) {
+    if (!root) {
+      return;
+    }
+
+    const candidates = Array.from(root.querySelectorAll ? root.querySelectorAll("audio, video") : []);
+    for (const candidate of candidates) {
+      if (candidate) {
+        mediaElements.push(candidate);
+      }
+    }
+
+    const elements = Array.from(root.querySelectorAll ? root.querySelectorAll("*") : []);
+    for (const element of elements) {
+      if (element?.shadowRoot) {
+        collectMediaElements(element.shadowRoot, mediaElements);
+      }
+    }
+  }
+
+  window.__streamOrchestraApplyVolumeToMediaElements = function (volumePercent) {
+    const volume = clampVolumePercent(volumePercent);
+    window.__streamOrchestraVolumePercent = volumePercent;
+    const mediaElements = [];
+    collectMediaElements(document, mediaElements);
+
+    for (const mediaElement of mediaElements) {
+      try {
+        if (!mediaElement) {
+          continue;
+        }
+
+        mediaElement.volume = volume;
+      } catch {}
+    }
+  };
+
+  window.__streamOrchestraSetVolumePercent = function (volumePercent) {
+    window.__streamOrchestraApplyVolumeToMediaElements(volumePercent);
+  };
+
+  const volumeObserver = new MutationObserver(() => {
+    window.__streamOrchestraApplyVolumeToMediaElements(window.__streamOrchestraVolumePercent);
+  });
+
+  const volumeTarget = document.body || document.documentElement || document;
+  if (volumeTarget) {
+    volumeObserver.observe(volumeTarget, { childList: true, subtree: true });
+    window.__streamOrchestraApplyVolumeToMediaElements(window.__streamOrchestraVolumePercent);
+  } else {
+    window.addEventListener("DOMContentLoaded", () => {
+      const target = document.body || document.documentElement || document;
+      if (!target) {
+        return;
+      }
+
+      volumeObserver.observe(target, { childList: true, subtree: true });
+      window.__streamOrchestraApplyVolumeToMediaElements(window.__streamOrchestraVolumePercent);
+    }, { once: true });
+  }
+
   function applySoopImmersiveMode() {
     const host = location.hostname.toLowerCase();
     if (!host.includes("sooplive.co.kr")) {
@@ -515,6 +648,29 @@ public partial class StreamSlotView : UserControl
   }
 })();
 """;
+    }
+
+    private static string CreateSetVolumeScript(int volumePercent)
+    {
+        var clamped = Math.Clamp(volumePercent, MinVolumePercent, MaxVolumePercent);
+        var template = """
+(() => {
+  if (typeof window.__streamOrchestraSetVolumePercent === "function") {
+    window.__streamOrchestraSetVolumePercent({0});
+    return;
+  }
+
+  const volume = {0} / 100;
+  const mediaElements = document.querySelectorAll("audio, video");
+  for (const mediaElement of mediaElements) {
+    try {
+      mediaElement.volume = volume;
+    } catch {}
+  }
+})();
+""";
+
+        return template.Replace("{0}", clamped.ToString());
     }
 
     private async Task RefreshQualityObserverScriptAsync()

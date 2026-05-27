@@ -462,7 +462,7 @@ public partial class MainWindow : Window
                     SlotId = slot.SlotId,
                     StreamName = slot.CurrentStreamName,
                     StreamUrl = slot.CurrentUrl,
-                    Muted = slot.IsMuted,
+                    Muted = false,
                     ProfileGroupId = slot.ProfileGroupId
                 })
                 .ToArray()
@@ -521,7 +521,7 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            slot.SetMuted(workspaceSlot.Muted);
+            slot.SetMuted(false);
             if (layout.Slots.Any(layoutSlot => layoutSlot.SlotId == slot.SlotId))
             {
                 await NavigateSlotAsync(slot, workspaceSlot.StreamUrl, workspaceSlot.StreamName);

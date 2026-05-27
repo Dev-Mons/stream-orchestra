@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
              xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
              mc:Ignorable="d"
              d:DesignHeight="240"
@@ -42,6 +43,24 @@
                     </StackPanel>
                 </Border>
             </Grid>
+            <primitives:Popup x:Name="VolumeIndicatorPopup"
+                              PlacementTarget="{Binding ElementName=SlotBorder}"
+                              Placement="Center"
+                              IsOpen="False"
+                              AllowsTransparency="True"
+                              IsHitTestVisible="False"
+                              Focusable="False">
+                <Border x:Name="VolumeIndicatorOverlay"
+                        Background="#B3000000"
+                        Padding="12,6"
+                        CornerRadius="8">
+                    <TextBlock x:Name="VolumeIndicatorTextBlock"
+                               Text="100%"
+                               Foreground="#FAFAFA"
+                               FontSize="24"
+                               FontWeight="Bold"/>
+                </Border>
+            </primitives:Popup>
         </Grid>
     </Border>
 </UserControl>
