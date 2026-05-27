@@ -9,70 +9,37 @@ public sealed class StreamSlotViewLayoutTests
     {
         var document = LoadStreamSlotViewDocument();
 
-        var slotChrome = FindElementByName(document, "SlotChrome");
         var browser = FindElementByName(document, "Browser");
         var browserContentGrid = browser.Parent;
 
         Assert.NotNull(browserContentGrid);
-        Assert.Equal("0", GetAttribute(slotChrome, "Grid.Row") ?? "0");
-        Assert.Equal("1", GetAttribute(browserContentGrid!, "Grid.Row"));
-        Assert.False(IsDescendantOf(FindElementByName(document, "ControlBar"), browserContentGrid!));
-        Assert.False(IsDescendantOf(FindElementByName(document, "SlotUrlEditor"), browserContentGrid!));
         Assert.Empty(browserContentGrid!
             .Descendants()
             .Where(element => element.Name.LocalName is "Button" or "TextBox" or "ContextMenu" or "MenuItem"));
     }
 
     [Fact]
-    public void StreamSlotView_MenuButton_ProvidesConcreteSlotActions()
+    public void StreamSlotView_RemovesSlotChromeControls()
     {
         var document = LoadStreamSlotViewDocument();
-        var menuButton = FindElementByName(document, "MenuButton");
-        var menuItems = menuButton
+
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Attributes().Any(attribute =>
+                attribute.Name.LocalName == "Name" &&
+                attribute.Value is "SlotChrome" or "ControlBar" or "SlotUrlEditor" or "SlotTitleTextBlock" or "GroupTextBlock" or "MuteButton" or "MenuButton"));
+        Assert.Empty(document
             .Descendants()
-            .Where(element => element.Name.LocalName == "MenuItem")
-            .Select(element => GetAttribute(element, "Header"))
-            .ToArray();
-
-        Assert.Equal(["Copy URL", "Clear Slot", "Load SOOP Home"], menuItems);
+            .Where(element => element.Name.LocalName is "Button" or "TextBox" or "ContextMenu" or "MenuItem"));
     }
 
     [Fact]
-    public void StreamSlotView_ProvidesIndividualUrlLoadControls()
+    public void StreamSlotView_ProvidesSlotSelectionWheelMuteAndDropTarget()
     {
         var document = LoadStreamSlotViewDocument();
-        var urlTextBox = FindElementByName(document, "SlotUrlTextBox");
-        var loadButton = FindButtonByClick(document, "LoadButton_Click");
-
-        Assert.Equal("SlotUrlTextBox_KeyDown", GetAttribute(urlTextBox, "KeyDown"));
-        Assert.Equal("Load", GetAttribute(loadButton, "Content"));
-    }
-
-    [Fact]
-    public void StreamSlotView_ProvidesMuteAndRefreshControls()
-    {
-        var document = LoadStreamSlotViewDocument();
-        var muteButton = FindElementByName(document, "MuteButton");
-        var refreshButton = FindButtonByClick(document, "RefreshButton_Click");
-
-        Assert.Equal("MuteButton_Click", GetAttribute(muteButton, "Click"));
-        Assert.Equal("Refresh slot", GetAttribute(refreshButton, "ToolTip"));
-    }
-
-    [Fact]
-    public void StreamSlotView_RestrictsSlotSwappingToDragHandleAndDropTarget()
-    {
-        var document = LoadStreamSlotViewDocument();
-        var dragHandle = FindElementByName(document, "DragHandleTextBlock");
         var slotBorder = FindElementByName(document, "SlotBorder");
-        var controlBar = FindElementByName(document, "ControlBar");
-        var slotChrome = FindElementByName(document, "SlotChrome");
 
-        Assert.Equal("Collapsed", GetAttribute(slotChrome, "Visibility"));
         Assert.Equal("SlotBorder_PreviewMouseLeftButtonDown", GetAttribute(slotBorder, "PreviewMouseLeftButtonDown"));
-        Assert.Equal("DragHandleTextBlock_MouseLeftButtonDown", GetAttribute(dragHandle, "MouseLeftButtonDown"));
-        Assert.Equal("DragHandleTextBlock_MouseMove", GetAttribute(dragHandle, "MouseMove"));
-        Assert.Equal("SizeAll", GetAttribute(dragHandle, "Cursor"));
+        Assert.Equal("SlotBorder_PreviewMouseWheel", GetAttribute(slotBorder, "PreviewMouseWheel"));
         Assert.Equal("True", GetAttribute(slotBorder, "AllowDrop"));
         Assert.Equal("SlotBorder_DragOver", GetAttribute(slotBorder, "DragOver"));
         Assert.Equal("SlotBorder_Drop", GetAttribute(slotBorder, "Drop"));
@@ -80,7 +47,7 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Equal("SlotBorder_DragOver", GetAttribute(FindElementByName(document, "Browser"), "DragOver"));
         Assert.Equal("SlotBorder_Drop", GetAttribute(FindElementByName(document, "Browser"), "Drop"));
         Assert.Equal("SlotBorder_PreviewMouseLeftButtonDown", GetAttribute(FindElementByName(document, "Browser"), "PreviewMouseLeftButtonDown"));
-        Assert.Null(GetAttribute(controlBar, "MouseMove"));
+        Assert.Equal("SlotBorder_PreviewMouseWheel", GetAttribute(FindElementByName(document, "Browser"), "PreviewMouseWheel"));
     }
 
     [Fact]
@@ -111,6 +78,7 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("StreamDropDataReader.TryGetDroppedStream", slotText);
         Assert.Contains("CoreWebView2_WebMessageReceived", slotText);
         Assert.Contains("stream-drop", slotText);
+        Assert.Contains("slot-wheel", slotText);
         Assert.Contains("StreamDragDataFormats.StreamUrl", dropReaderText);
         Assert.Contains("DataFormats.UnicodeText", dropReaderText);
         Assert.Contains("PlainTextUrlPattern", dropReaderText);
@@ -164,15 +132,6 @@ public sealed class StreamSlotViewLayoutTests
                 attribute.Value == name));
     }
 
-    private static XElement FindButtonByClick(XDocument document, string clickHandler)
-    {
-        return document
-            .Descendants()
-            .Single(element =>
-                element.Name.LocalName == "Button" &&
-                GetAttribute(element, "Click") == clickHandler);
-    }
-
     private static string? GetAttribute(XElement element, string name)
     {
         return element
@@ -181,10 +140,4 @@ public sealed class StreamSlotViewLayoutTests
             ?.Value;
     }
 
-    private static bool IsDescendantOf(XElement element, XElement ancestor)
-    {
-        return element
-            .Ancestors()
-            .Any(candidate => ReferenceEquals(candidate, ancestor));
-    }
 }

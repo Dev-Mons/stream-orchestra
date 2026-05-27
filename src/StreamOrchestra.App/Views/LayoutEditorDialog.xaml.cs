@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using StreamOrchestra.App.Models;
@@ -12,6 +13,9 @@ public partial class LayoutEditorDialog : Window
 {
     private const double WeightStep = 0.2;
     private const double MinWeight = 0.2;
+    private const double ZoneGap = 3;
+    private const double SplitterThickness = 8;
+    private const double SplitDragThreshold = 8;
 
     private static readonly string[] SlotColorValues =
     [
@@ -44,6 +48,15 @@ public partial class LayoutEditorDialog : Window
     private bool _isRefreshingEditor;
     private LayoutPreset? _selectedTemplate;
 
+    private Canvas? _editorCanvas;
+    private readonly List<(Button Button, int SlotId)> _editorZoneButtons = new();
+    private readonly List<(Thumb Thumb, int Boundary)> _editorColumnSplitters = new();
+    private readonly List<(Thumb Thumb, int Boundary)> _editorRowSplitters = new();
+    private Size _editorSurfaceSize = new(760, 440);
+    private bool _zonePointerDown;
+    private bool _zoneDragSplitting;
+    private Point _zoneDragStart;
+
     public LayoutEditorDialog(
         LayoutPresetService layoutPresetService,
         IReadOnlyList<LayoutPreset> templateLayouts,
@@ -57,6 +70,7 @@ public partial class LayoutEditorDialog : Window
         _allLayouts = allLayouts.ToList();
 
         InitializeComponent();
+        SplitEditorHost.SizeChanged += SplitEditorHost_SizeChanged;
         RefreshTemplateList();
         RefreshCustomLayoutList();
         ResetZoneEditor("Custom Layout");
@@ -621,28 +635,18 @@ public partial class LayoutEditorDialog : Window
 
     private FrameworkElement BuildZoneEditorGrid(LayoutPreset layout)
     {
-        var grid = new Grid
+        var canvas = new Canvas
         {
-            Width = Math.Max(320, layout.GridColumns * 128),
-            Height = Math.Max(220, layout.GridRows * 96),
-            Background = new SolidColorBrush(Color.FromRgb(5, 7, 10))
+            Background = new SolidColorBrush(Color.FromRgb(5, 7, 10)),
+            ClipToBounds = true,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
         };
 
-        for (var rowIndex = 0; rowIndex < layout.GridRows; rowIndex++)
-        {
-            grid.RowDefinitions.Add(new RowDefinition
-            {
-                Height = new GridLength(GetWeight(layout.RowWeights, rowIndex), GridUnitType.Star)
-            });
-        }
-
-        for (var columnIndex = 0; columnIndex < layout.GridColumns; columnIndex++)
-        {
-            grid.ColumnDefinitions.Add(new ColumnDefinition
-            {
-                Width = new GridLength(GetWeight(layout.ColumnWeights, columnIndex), GridUnitType.Star)
-            });
-        }
+        _editorCanvas = canvas;
+        _editorZoneButtons.Clear();
+        _editorColumnSplitters.Clear();
+        _editorRowSplitters.Clear();
 
         foreach (var slot in layout.Slots.OrderBy(slot => slot.SlotId))
         {
@@ -651,7 +655,6 @@ public partial class LayoutEditorDialog : Window
             {
                 Tag = slot.SlotId,
                 Content = slot.SlotId.ToString(),
-                Margin = new Thickness(3),
                 FontSize = 24,
                 FontWeight = FontWeights.Bold,
                 Foreground = Brushes.Black,
@@ -659,31 +662,267 @@ public partial class LayoutEditorDialog : Window
                 BorderBrush = isSelected
                     ? new SolidColorBrush(Color.FromRgb(243, 246, 250))
                     : new SolidColorBrush(Color.FromRgb(45, 54, 66)),
-                BorderThickness = isSelected ? new Thickness(4) : new Thickness(1)
+                BorderThickness = isSelected ? new Thickness(4) : new Thickness(1),
+                Cursor = Cursors.Cross,
+                ToolTip = "클릭: 선택 · 내부 드래그: 드래그 방향으로 분할"
             };
-            button.Click += ZoneButton_Click;
-
-            Grid.SetColumn(button, slot.X);
-            Grid.SetRow(button, slot.Y);
-            Grid.SetColumnSpan(button, slot.W);
-            Grid.SetRowSpan(button, slot.H);
-            grid.Children.Add(button);
+            button.PreviewMouseLeftButtonDown += Zone_PreviewMouseLeftButtonDown;
+            button.PreviewMouseMove += Zone_PreviewMouseMove;
+            button.PreviewMouseLeftButtonUp += Zone_PreviewMouseLeftButtonUp;
+            canvas.Children.Add(button);
+            _editorZoneButtons.Add((button, slot.SlotId));
         }
 
-        return new Viewbox
+        for (var boundary = 1; boundary < layout.GridColumns; boundary++)
         {
-            Stretch = Stretch.Uniform,
-            Child = grid
+            var thumb = CreateSplitter(isVertical: true);
+            thumb.Tag = boundary;
+            thumb.DragDelta += ColumnSplitter_DragDelta;
+            thumb.DragCompleted += Splitter_DragCompleted;
+            canvas.Children.Add(thumb);
+            _editorColumnSplitters.Add((thumb, boundary));
+        }
+
+        for (var boundary = 1; boundary < layout.GridRows; boundary++)
+        {
+            var thumb = CreateSplitter(isVertical: false);
+            thumb.Tag = boundary;
+            thumb.DragDelta += RowSplitter_DragDelta;
+            thumb.DragCompleted += Splitter_DragCompleted;
+            canvas.Children.Add(thumb);
+            _editorRowSplitters.Add((thumb, boundary));
+        }
+
+        RepositionSurface();
+        return canvas;
+    }
+
+    private static Thumb CreateSplitter(bool isVertical)
+    {
+        return new Thumb
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x55, 0x9B, 0xC2, 0xCC)),
+            BorderThickness = new Thickness(0),
+            Cursor = isVertical ? Cursors.SizeWE : Cursors.SizeNS,
+            Template = CreateSplitterTemplate()
         };
     }
 
-    private void ZoneButton_Click(object sender, RoutedEventArgs e)
+    private static ControlTemplate CreateSplitterTemplate()
     {
-        if (sender is not Button { Tag: int zoneId })
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.SetBinding(
+            Border.BackgroundProperty,
+            new System.Windows.Data.Binding
+            {
+                RelativeSource = new System.Windows.Data.RelativeSource(
+                    System.Windows.Data.RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(nameof(Control.Background))
+            });
+
+        return new ControlTemplate(typeof(Thumb)) { VisualTree = border };
+    }
+
+    private void SplitEditorHost_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        _editorSurfaceSize = new Size(
+            Math.Max(160, e.NewSize.Width),
+            Math.Max(120, e.NewSize.Height));
+        RepositionSurface();
+    }
+
+    private void RepositionSurface()
+    {
+        if (_editorCanvas is null)
         {
             return;
         }
 
+        var width = Math.Max(160, _editorSurfaceSize.Width);
+        var height = Math.Max(120, _editorSurfaceSize.Height);
+        _editorCanvas.Width = width;
+        _editorCanvas.Height = height;
+
+        var columnOffsets = CumulativeOffsets(_columnWeights, width);
+        var rowOffsets = CumulativeOffsets(_rowWeights, height);
+        var rects = GetZoneRects().ToDictionary(rect => rect.ZoneId);
+
+        foreach (var (button, slotId) in _editorZoneButtons)
+        {
+            if (!rects.TryGetValue(slotId, out var rect))
+            {
+                continue;
+            }
+
+            var left = columnOffsets[rect.X];
+            var right = columnOffsets[rect.X + rect.W];
+            var top = rowOffsets[rect.Y];
+            var bottom = rowOffsets[rect.Y + rect.H];
+
+            Canvas.SetLeft(button, left + ZoneGap);
+            Canvas.SetTop(button, top + ZoneGap);
+            button.Width = Math.Max(0, right - left - 2 * ZoneGap);
+            button.Height = Math.Max(0, bottom - top - 2 * ZoneGap);
+        }
+
+        foreach (var (thumb, boundary) in _editorColumnSplitters)
+        {
+            Canvas.SetLeft(thumb, columnOffsets[boundary] - SplitterThickness / 2);
+            Canvas.SetTop(thumb, 0);
+            thumb.Width = SplitterThickness;
+            thumb.Height = height;
+        }
+
+        foreach (var (thumb, boundary) in _editorRowSplitters)
+        {
+            Canvas.SetLeft(thumb, 0);
+            Canvas.SetTop(thumb, rowOffsets[boundary] - SplitterThickness / 2);
+            thumb.Width = width;
+            thumb.Height = SplitterThickness;
+        }
+    }
+
+    private static double[] CumulativeOffsets(IReadOnlyList<double> weights, double total)
+    {
+        var sum = 0.0;
+        foreach (var weight in weights)
+        {
+            sum += weight > 0 ? weight : 0;
+        }
+
+        if (sum <= 0)
+        {
+            sum = Math.Max(1, weights.Count);
+        }
+
+        var offsets = new double[weights.Count + 1];
+        var accumulated = 0.0;
+        for (var index = 0; index < weights.Count; index++)
+        {
+            offsets[index] = total * accumulated / sum;
+            accumulated += weights[index] > 0 ? weights[index] : 0;
+        }
+
+        offsets[weights.Count] = total;
+        return offsets;
+    }
+
+    private void ColumnSplitter_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (sender is not Thumb { Tag: int boundary })
+        {
+            return;
+        }
+
+        var total = _columnWeights.Sum(weight => weight > 0 ? weight : 0);
+        if (total <= 0)
+        {
+            return;
+        }
+
+        var deltaWeight = e.HorizontalChange / Math.Max(1, _editorSurfaceSize.Width) * total;
+        var left = _columnWeights[boundary - 1] + deltaWeight;
+        var right = _columnWeights[boundary] - deltaWeight;
+        if (left < MinWeight || right < MinWeight)
+        {
+            return;
+        }
+
+        _columnWeights[boundary - 1] = left;
+        _columnWeights[boundary] = right;
+        RepositionSurface();
+    }
+
+    private void RowSplitter_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (sender is not Thumb { Tag: int boundary })
+        {
+            return;
+        }
+
+        var total = _rowWeights.Sum(weight => weight > 0 ? weight : 0);
+        if (total <= 0)
+        {
+            return;
+        }
+
+        var deltaWeight = e.VerticalChange / Math.Max(1, _editorSurfaceSize.Height) * total;
+        var top = _rowWeights[boundary - 1] + deltaWeight;
+        var bottom = _rowWeights[boundary] - deltaWeight;
+        if (top < MinWeight || bottom < MinWeight)
+        {
+            return;
+        }
+
+        _rowWeights[boundary - 1] = top;
+        _rowWeights[boundary] = bottom;
+        RepositionSurface();
+    }
+
+    private void Splitter_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        _columnWeights = NormalizeWeightAverage(_columnWeights);
+        _rowWeights = NormalizeWeightAverage(_rowWeights);
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = "분할선을 드래그해 열/행 비율을 조정했습니다.";
+    }
+
+    private void Zone_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Button button || _editorCanvas is null)
+        {
+            return;
+        }
+
+        _zonePointerDown = true;
+        _zoneDragSplitting = false;
+        _zoneDragStart = e.GetPosition(_editorCanvas);
+        button.CaptureMouse();
+    }
+
+    private void Zone_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_zonePointerDown || _editorCanvas is null)
+        {
+            return;
+        }
+
+        var current = e.GetPosition(_editorCanvas);
+        if (Math.Abs(current.X - _zoneDragStart.X) > SplitDragThreshold ||
+            Math.Abs(current.Y - _zoneDragStart.Y) > SplitDragThreshold)
+        {
+            _zoneDragSplitting = true;
+        }
+    }
+
+    private void Zone_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Button { Tag: int slotId } button || _editorCanvas is null)
+        {
+            return;
+        }
+
+        button.ReleaseMouseCapture();
+        if (!_zonePointerDown)
+        {
+            return;
+        }
+
+        _zonePointerDown = false;
+        e.Handled = true;
+
+        if (_zoneDragSplitting)
+        {
+            PerformDragSplit(slotId, _zoneDragStart, e.GetPosition(_editorCanvas));
+        }
+        else
+        {
+            SelectZone(slotId);
+        }
+    }
+
+    private void SelectZone(int zoneId)
+    {
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
             if (!_selectedZoneIds.Add(zoneId))
@@ -700,7 +939,225 @@ public partial class LayoutEditorDialog : Window
         RefreshZoneEditorSurface();
         DialogStatusTextBlock.Text = _selectedZoneIds.Count == 1
             ? $"선택 슬롯: {_selectedZoneIds.Single()}"
-            : $"선택 슬롯: {string.Join(", ", _selectedZoneIds.OrderBy(zoneId => zoneId))}";
+            : $"선택 슬롯: {string.Join(", ", _selectedZoneIds.OrderBy(id => id))}";
+    }
+
+    private void PerformDragSplit(int slotId, Point start, Point end)
+    {
+        var rect = GetZoneRects().FirstOrDefault(candidate => candidate.ZoneId == slotId);
+        if (rect.ZoneId == 0)
+        {
+            return;
+        }
+
+        if (GetZoneRects().Count >= PlaybackTestPlanService.MaxSlotCount)
+        {
+            DialogStatusTextBlock.Text = $"최대 {PlaybackTestPlanService.MaxSlotCount}개 슬롯까지 만들 수 있습니다.";
+            return;
+        }
+
+        var width = Math.Max(1, _editorSurfaceSize.Width);
+        var height = Math.Max(1, _editorSurfaceSize.Height);
+        var columnOffsets = CumulativeOffsets(_columnWeights, width);
+        var rowOffsets = CumulativeOffsets(_rowWeights, height);
+        var left = columnOffsets[rect.X];
+        var right = columnOffsets[rect.X + rect.W];
+        var top = rowOffsets[rect.Y];
+        var bottom = rowOffsets[rect.Y + rect.H];
+
+        var newZoneId = GetNextZoneId();
+        if (Math.Abs(end.X - start.X) >= Math.Abs(end.Y - start.Y))
+        {
+            var fraction = (end.X - left) / Math.Max(1, right - left);
+            InsertVerticalSplit(rect, fraction, newZoneId);
+            DialogStatusTextBlock.Text = "드래그 위치를 기준으로 세로 분할했습니다.";
+        }
+        else
+        {
+            var fraction = (end.Y - top) / Math.Max(1, bottom - top);
+            InsertHorizontalSplit(rect, fraction, newZoneId);
+            DialogStatusTextBlock.Text = "드래그 위치를 기준으로 가로 분할했습니다.";
+        }
+
+        _selectedZoneIds.Clear();
+        _selectedZoneIds.Add(newZoneId);
+        RefreshZoneEditorSurface();
+    }
+
+    private void InsertVerticalSplit(ZoneRect rect, double fraction, int newZoneId)
+    {
+        fraction = Math.Clamp(fraction, 0.05, 0.95);
+        var columns = _zoneCells.GetLength(1);
+        var rows = _zoneCells.GetLength(0);
+
+        var zoneWeight = 0.0;
+        for (var x = rect.X; x < rect.X + rect.W; x++)
+        {
+            zoneWeight += _columnWeights[x] > 0 ? _columnWeights[x] : 1;
+        }
+
+        var target = fraction * zoneWeight;
+        var accumulated = 0.0;
+        var splitColumn = rect.X + rect.W - 1;
+        var within = 0.5;
+        for (var x = rect.X; x < rect.X + rect.W; x++)
+        {
+            var weight = _columnWeights[x] > 0 ? _columnWeights[x] : 1;
+            if (target <= accumulated + weight)
+            {
+                splitColumn = x;
+                within = (target - accumulated) / weight;
+                break;
+            }
+
+            accumulated += weight;
+        }
+
+        within = Math.Clamp(within, 0.05, 0.95);
+
+        var nextCells = new int[rows, columns + 1];
+        for (var y = 0; y < rows; y++)
+        {
+            for (var x = 0; x <= columns; x++)
+            {
+                if (x <= splitColumn)
+                {
+                    nextCells[y, x] = _zoneCells[y, x];
+                }
+                else if (x == splitColumn + 1)
+                {
+                    nextCells[y, x] = _zoneCells[y, splitColumn];
+                }
+                else
+                {
+                    nextCells[y, x] = _zoneCells[y, x - 1];
+                }
+            }
+        }
+
+        for (var y = rect.Y; y < rect.Y + rect.H; y++)
+        {
+            for (var x = splitColumn + 1; x <= columns; x++)
+            {
+                if (nextCells[y, x] == rect.ZoneId)
+                {
+                    nextCells[y, x] = newZoneId;
+                }
+            }
+        }
+
+        var sourceWeight = _columnWeights[splitColumn] > 0 ? _columnWeights[splitColumn] : 1;
+        var nextWeights = new double[columns + 1];
+        for (var x = 0; x <= columns; x++)
+        {
+            if (x < splitColumn)
+            {
+                nextWeights[x] = _columnWeights[x];
+            }
+            else if (x == splitColumn)
+            {
+                nextWeights[x] = sourceWeight * within;
+            }
+            else if (x == splitColumn + 1)
+            {
+                nextWeights[x] = sourceWeight * (1 - within);
+            }
+            else
+            {
+                nextWeights[x] = _columnWeights[x - 1];
+            }
+        }
+
+        _zoneCells = nextCells;
+        _columnWeights = NormalizeWeightAverage(nextWeights);
+    }
+
+    private void InsertHorizontalSplit(ZoneRect rect, double fraction, int newZoneId)
+    {
+        fraction = Math.Clamp(fraction, 0.05, 0.95);
+        var columns = _zoneCells.GetLength(1);
+        var rows = _zoneCells.GetLength(0);
+
+        var zoneWeight = 0.0;
+        for (var y = rect.Y; y < rect.Y + rect.H; y++)
+        {
+            zoneWeight += _rowWeights[y] > 0 ? _rowWeights[y] : 1;
+        }
+
+        var target = fraction * zoneWeight;
+        var accumulated = 0.0;
+        var splitRow = rect.Y + rect.H - 1;
+        var within = 0.5;
+        for (var y = rect.Y; y < rect.Y + rect.H; y++)
+        {
+            var weight = _rowWeights[y] > 0 ? _rowWeights[y] : 1;
+            if (target <= accumulated + weight)
+            {
+                splitRow = y;
+                within = (target - accumulated) / weight;
+                break;
+            }
+
+            accumulated += weight;
+        }
+
+        within = Math.Clamp(within, 0.05, 0.95);
+
+        var nextCells = new int[rows + 1, columns];
+        for (var y = 0; y <= rows; y++)
+        {
+            for (var x = 0; x < columns; x++)
+            {
+                if (y <= splitRow)
+                {
+                    nextCells[y, x] = _zoneCells[y, x];
+                }
+                else if (y == splitRow + 1)
+                {
+                    nextCells[y, x] = _zoneCells[splitRow, x];
+                }
+                else
+                {
+                    nextCells[y, x] = _zoneCells[y - 1, x];
+                }
+            }
+        }
+
+        for (var y = splitRow + 1; y <= rows; y++)
+        {
+            for (var x = rect.X; x < rect.X + rect.W; x++)
+            {
+                if (nextCells[y, x] == rect.ZoneId)
+                {
+                    nextCells[y, x] = newZoneId;
+                }
+            }
+        }
+
+        var sourceWeight = _rowWeights[splitRow] > 0 ? _rowWeights[splitRow] : 1;
+        var nextWeights = new double[rows + 1];
+        for (var y = 0; y <= rows; y++)
+        {
+            if (y < splitRow)
+            {
+                nextWeights[y] = _rowWeights[y];
+            }
+            else if (y == splitRow)
+            {
+                nextWeights[y] = sourceWeight * within;
+            }
+            else if (y == splitRow + 1)
+            {
+                nextWeights[y] = sourceWeight * (1 - within);
+            }
+            else
+            {
+                nextWeights[y] = _rowWeights[y - 1];
+            }
+        }
+
+        _zoneCells = nextCells;
+        _rowWeights = NormalizeWeightAverage(nextWeights);
     }
 
     private void SaveCustomLayoutButton_Click(object sender, RoutedEventArgs e)

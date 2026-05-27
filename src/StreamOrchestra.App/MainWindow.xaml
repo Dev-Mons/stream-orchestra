@@ -23,7 +23,7 @@
                 BorderThickness="0,0,0,1"
                 Padding="10">
             <StackPanel>
-                <DockPanel LastChildFill="True">
+                <DockPanel LastChildFill="False">
                     <StackPanel DockPanel.Dock="Right"
                                 Orientation="Horizontal"
                                 Margin="10,0,0,0">
@@ -32,20 +32,6 @@
                                 MinWidth="86"
                                 Padding="10,0"
                                 Click="ToggleExplorerButton_Click" />
-                        <Button x:Name="ToggleSlotUrlEditorsButton"
-                                Height="30"
-                                MinWidth="86"
-                                Margin="8,0,0,0"
-                                Padding="10,0"
-                                Visibility="Collapsed"
-                                Click="ToggleSlotUrlEditorsButton_Click" />
-                        <Button x:Name="ToggleSlotControlBarsButton"
-                                Height="30"
-                                MinWidth="86"
-                                Margin="8,0,0,0"
-                                Padding="10,0"
-                                Visibility="Collapsed"
-                                Click="ToggleSlotControlBarsButton_Click" />
                         <ComboBox x:Name="LayoutComboBox"
                                   Width="170"
                                   Height="30"
@@ -58,66 +44,7 @@
                                 Margin="8,0,0,0"
                                 Padding="10,0"
                                 Click="EditLayoutsButton_Click" />
-                        <ComboBox x:Name="LoadScopeComboBox"
-                                  Width="140"
-                                  Height="30"
-                                  Margin="8,0,0,0"
-                                  SelectedIndex="0">
-                            <ComboBoxItem Content="All Groups"
-                                          Tag="All" />
-                            <ComboBoxItem Content="Group A"
-                                          Tag="A" />
-                            <ComboBoxItem Content="Group B"
-                                          Tag="B" />
-                            <ComboBoxItem Content="Group C"
-                                          Tag="C" />
-                            <ComboBoxItem Content="Group D"
-                                          Tag="D" />
-                        </ComboBox>
-                        <Button Content="선택 그룹 로드"
-                                Height="30"
-                                MinWidth="112"
-                                Margin="8,0,0,0"
-                                Padding="10,0"
-                                Click="LoadScopeButton_Click" />
-                        <Button Content="그룹 단독"
-                                Height="30"
-                                MinWidth="86"
-                                Margin="8,0,0,0"
-                                Padding="10,0"
-                                Click="LoadIsolatedScopeButton_Click" />
-                        <Button Content="전체 로드"
-                                Height="30"
-                                MinWidth="84"
-                                Margin="8,0,0,0"
-                                Padding="10,0"
-                                Click="LoadAllButton_Click" />
-                        <Button Content="빈 화면"
-                                Height="30"
-                                MinWidth="76"
-                                Margin="8,0,0,0"
-                                Padding="10,0"
-                                Click="BlankAllButton_Click" />
                     </StackPanel>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0"
-                                   Text="URL"
-                                   Foreground="#F3F6FA"
-                                   VerticalAlignment="Center"
-                                   FontWeight="SemiBold"
-                                   Margin="0,0,8,0" />
-                        <TextBox x:Name="GlobalUrlTextBox"
-                                 Grid.Column="1"
-                                 Height="30"
-                                 Text="https://www.sooplive.co.kr"
-                                 VerticalContentAlignment="Center"
-                                 KeyDown="GlobalUrlTextBox_KeyDown" />
-                    </Grid>
                 </DockPanel>
 
                 <DockPanel Margin="0,8,0,0"
@@ -230,137 +157,6 @@
                     </WrapPanel>
                 </DockPanel>
 
-                <DockPanel Margin="0,8,0,0"
-                           LastChildFill="True">
-                    <TextBlock x:Name="FeasibilityResultTextBlock"
-                               DockPanel.Dock="Right"
-                               Foreground="#B9C2CC"
-                               VerticalAlignment="Center"
-                               TextAlignment="Right" />
-                    <WrapPanel>
-                        <TextBlock Text="검증 기록"
-                                   Foreground="#F3F6FA"
-                                   VerticalAlignment="Center"
-                                   FontWeight="SemiBold"
-                                   Margin="0,0,8,0" />
-                        <TextBlock x:Name="CurrentFeasibilityScenarioTextBlock"
-                                   Width="260"
-                                   Foreground="#B9C2CC"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis"
-                                   ToolTip="현재 기록 대상 테스트"
-                                   Margin="0,0,8,0" />
-                        <TextBox x:Name="FeasibilityNotesTextBox"
-                                  Width="220"
-                                  Height="28"
-                                  VerticalContentAlignment="Center"
-                                  Margin="0,0,6,0"
-                                  ToolTip="검증 메모" />
-                        <TextBox x:Name="AccountLabelTextBox"
-                                  Width="112"
-                                  Height="28"
-                                  VerticalContentAlignment="Center"
-                                  Margin="0,0,6,0"
-                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
-                                  ToolTip="SOOP account label for evidence" />
-                        <CheckBox x:Name="SameAccountSessionCheckBox"
-                                  Content="계정 유지"
-                                  Foreground="#F3F6FA"
-                                  VerticalAlignment="Center"
-                                  Margin="0,0,4,0"
-                                  Unchecked="SameAccountSessionCheckBox_Unchecked" />
-                        <CheckBox x:Name="VerifiedGroupACheckBox"
-                                  Content="A"
-                                  Foreground="#F3F6FA"
-                                  VerticalAlignment="Center"
-                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
-                                  Margin="0,0,4,0"
-                                  ToolTip="Group A same-account session verified" />
-                        <CheckBox x:Name="VerifiedGroupBCheckBox"
-                                  Content="B"
-                                  Foreground="#F3F6FA"
-                                  VerticalAlignment="Center"
-                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
-                                  Margin="0,0,4,0"
-                                  ToolTip="Group B same-account session verified" />
-                        <CheckBox x:Name="VerifiedGroupCCheckBox"
-                                  Content="C"
-                                  Foreground="#F3F6FA"
-                                  VerticalAlignment="Center"
-                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
-                                  Margin="0,0,4,0"
-                                  ToolTip="Group C same-account session verified" />
-                        <CheckBox x:Name="VerifiedGroupDCheckBox"
-                                  Content="D"
-                                  Foreground="#F3F6FA"
-                                  VerticalAlignment="Center"
-                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
-                                  Margin="0,0,8,0"
-                                  ToolTip="Group D same-account session verified" />
-                        <CheckBox x:Name="RestartSessionCheckBox"
-                                  Content="재실행 유지"
-                                  Foreground="#F3F6FA"
-                                  VerticalAlignment="Center"
-                                  IsEnabled="{Binding IsChecked, ElementName=SameAccountSessionCheckBox}"
-                                  Margin="0,0,8,0" />
-                        <CheckBox x:Name="ResourceAcceptableCheckBox"
-                                  Content="리소스 OK"
-                                  Foreground="#F3F6FA"
-                                  VerticalAlignment="Center"
-                                  Margin="0,0,8,0"
-                                  ToolTip="Requires CPU %, GPU %, and Memory MB values" />
-                        <TextBox x:Name="ObservedCpuTextBox"
-                                 Width="54"
-                                 Height="28"
-                                 VerticalContentAlignment="Center"
-                                 Margin="0,0,4,0"
-                                 ToolTip="CPU %" />
-                        <TextBox x:Name="ObservedGpuTextBox"
-                                 Width="54"
-                                 Height="28"
-                                 VerticalContentAlignment="Center"
-                                 Margin="0,0,4,0"
-                                 ToolTip="GPU %" />
-                        <TextBox x:Name="ObservedMemoryTextBox"
-                                 Width="70"
-                                 Height="28"
-                                 VerticalContentAlignment="Center"
-                                 Margin="0,0,8,0"
-                                 ToolTip="Memory MB" />
-                        <Button Content="성공"
-                                Tag="success"
-                                Height="28"
-                                MinWidth="54"
-                                Margin="0,0,6,0"
-                                Click="RecordFeasibilityResultButton_Click" />
-                        <Button Content="부분"
-                                Tag="partial"
-                                Height="28"
-                                MinWidth="54"
-                                Margin="0,0,6,0"
-                                Click="RecordFeasibilityResultButton_Click" />
-                        <Button Content="실패"
-                                Tag="failure"
-                                Height="28"
-                                MinWidth="54"
-                                Margin="0,0,6,0"
-                                Click="RecordFeasibilityResultButton_Click" />
-                        <Button Content="리포트 저장"
-                                Height="28"
-                                MinWidth="86"
-                                Margin="0,0,6,0"
-                                Click="SaveDiagnosticReportButton_Click" />
-                        <Button Content="브라우저 스크립트"
-                                Height="28"
-                                MinWidth="118"
-                                Margin="0,0,6,0"
-                                Click="SaveExternalBrowserFallbackScriptButton_Click" />
-                        <Button Content="감사 복사"
-                                Height="28"
-                                MinWidth="82"
-                                Click="CopyAuditButton_Click" />
-                    </WrapPanel>
-                </DockPanel>
             </StackPanel>
         </Border>
 

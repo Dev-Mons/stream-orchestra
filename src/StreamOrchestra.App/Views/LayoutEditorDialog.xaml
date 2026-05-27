@@ -236,12 +236,14 @@
                                     BorderBrush="#2D3642"
                                     BorderThickness="1"
                                     Padding="8">
-                                <ContentControl x:Name="SplitEditorHost" />
+                                <ContentControl x:Name="SplitEditorHost"
+                                                HorizontalContentAlignment="Stretch"
+                                                VerticalContentAlignment="Stretch" />
                             </Border>
 
                             <TextBlock x:Name="SplitEditorHintTextBlock"
                                        Grid.Row="2"
-                                       Text="슬롯을 선택한 뒤 분할/병합하고, 폭/높이 버튼으로 선택 슬롯이 차지한 열/행 비율을 조절합니다."
+                                       Text="슬롯 내부를 드래그하면 드래그 방향·위치로 분할되고, 경계선을 드래그하면 비율이 실시간 조절됩니다. 클릭은 선택(Ctrl+클릭 다중 선택)."
                                        Foreground="#788492"
                                        Margin="0,8,0,0" />
                         </Grid>

@@ -3,7 +3,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using System.ComponentModel;
-using System.Globalization;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 using StreamOrchestra.App.Views;
@@ -14,18 +13,9 @@ public partial class MainWindow : Window
 {
     private readonly WebViewProfileService _profileService = new();
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
-    private readonly PlaybackTestPlanService _playbackTestPlanService = new();
-    private readonly SlotSwapService _slotSwapService = new();
     private readonly PresetStorageService _presetStorageService = new();
     private readonly LayoutPresetService _layoutPresetService;
     private readonly FavoriteStorageService _favoriteStorageService = new();
-    private readonly FeasibilityResultStorageService _feasibilityResultStorageService = new();
-    private readonly FeasibilityDecisionService _feasibilityDecisionService = new();
-    private readonly FeasibilityResultValidationService _feasibilityResultValidationService = new();
-    private readonly FeasibilityScenarioService _feasibilityScenarioService = new();
-    private readonly FeasibilityAuditService _feasibilityAuditService = new();
-    private readonly DiagnosticReportService _diagnosticReportService = new();
-    private readonly ExternalBrowserFallbackExportService _externalBrowserFallbackExportService = new();
     private readonly StreamNavigationService _streamNavigationService = new();
     private readonly SlotSelectionService _slotSelectionService = new();
     private readonly AppWindowPlacementService _appWindowPlacementService = new();
@@ -44,11 +34,7 @@ public partial class MainWindow : Window
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
     private bool _isExplorerPanelVisible = true;
-    private bool _areSlotUrlEditorsVisible = true;
-    private bool _areSlotControlBarsAlwaysVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
-    private int _currentPlaybackTestCount;
-    private FeasibilityScenario _currentFeasibilityScenario = new("unspecified", "Unspecified");
 
     public MainWindow()
     {
@@ -71,8 +57,6 @@ public partial class MainWindow : Window
         _diagnosticsTimer = CreateDiagnosticsTimer();
         StatusTextBlock.Text = $"Profile data persists under: {_profileService.BaseProfileFolder}";
         UpdateDiagnostics();
-        UpdateCurrentFeasibilityScenarioText();
-        UpdateFeasibilityResultSummary();
         _diagnosticsTimer.Start();
 
         Loaded += MainWindow_Loaded;
@@ -102,7 +86,6 @@ public partial class MainWindow : Window
             var configuration = new SlotConfiguration(slotId, _profileService.GetGroupForSlot(slotId));
             var slotView = new StreamSlotView(configuration, _profileService, _streamNavigationService);
             slotView.SlotSelected += SelectSlot;
-            slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
             slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
             slotView.MuteChanged += SlotView_MuteChanged;
             _slots.Add(slotView);
@@ -238,411 +221,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void LoadAllButton_Click(object sender, RoutedEventArgs e)
-    {
-        await LoadAllSlotsAsync();
-    }
-
-    private async void LoadScopeButton_Click(object sender, RoutedEventArgs e)
-    {
-        var groupId = GetSelectedGroupId();
-        var targetSlots = groupId == "All"
-            ? _slots.ToArray()
-            : _slots.Where(slot => slot.ProfileGroupId.Equals(groupId, StringComparison.OrdinalIgnoreCase)).ToArray();
-
-        if (!TryEnsureSlotsVisible(targetSlots.Select(slot => slot.SlotId).ToArray()))
-        {
-            return;
-        }
-
-        SetCurrentFeasibilityScenario(
-            targetSlots.Length,
-            _feasibilityScenarioService.CreateScopeLoadScenario(groupId, targetSlots.Length));
-        await LoadSlotsAsync(targetSlots);
-    }
-
-    private async void LoadIsolatedScopeButton_Click(object sender, RoutedEventArgs e)
-    {
-        var groupId = GetSelectedGroupId();
-        if (groupId == "All")
-        {
-            if (!TryEnsureSlotsVisible(_slots.Select(slot => slot.SlotId).ToArray()))
-            {
-                return;
-            }
-
-            SetCurrentFeasibilityScenario(
-                PlaybackTestPlanService.MaxSlotCount,
-                _feasibilityScenarioService.CreateScopeLoadScenario("All", _slots.Count));
-            await LoadSlotsAsync(_slots);
-            return;
-        }
-
-        var targetSlots = _slots
-            .Where(slot => slot.ProfileGroupId.Equals(groupId, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (!TryEnsureSlotsVisible(targetSlots.Select(slot => slot.SlotId).ToArray()))
-        {
-            return;
-        }
-
-        var plan = _playbackTestPlanService.CreateIsolatedSlotPlan(targetSlots.Select(slot => slot.SlotId).ToArray());
-        var activeSlotIds = plan.ActiveSlotIds.ToHashSet();
-        var inactiveSlotIds = plan.InactiveSlotIds.ToHashSet();
-        var activeSlots = _slots.Where(slot => activeSlotIds.Contains(slot.SlotId)).ToArray();
-        var inactiveSlots = _slots.Where(slot => inactiveSlotIds.Contains(slot.SlotId)).ToArray();
-
-        SetCurrentFeasibilityScenario(
-            plan.TargetPlaybackCount,
-            _feasibilityScenarioService.CreateIsolatedGroupScenario(groupId, plan.TargetPlaybackCount));
-        await ClearSlotsAsync(inactiveSlots, "Clearing non-selected groups");
-        await LoadSlotsAsync(activeSlots, statusPrefix: $"Loading isolated Group {groupId} test");
-    }
-
-    private async void BlankAllButton_Click(object sender, RoutedEventArgs e)
-    {
-        SetCurrentFeasibilityScenario(0, new FeasibilityScenario("blank_all", "Blank all slots"));
-        await ClearSlotsAsync(_slots, "Clearing all slots");
-    }
-
-    private bool TryEnsureSlotsVisible(IReadOnlyCollection<int> targetSlotIds)
-    {
-        var currentLayout = LayoutComboBox.SelectedItem as LayoutPreset;
-        LayoutPreset playbackLayout;
-        try
-        {
-            playbackLayout = LayoutPresetService.SelectLayoutContainingSlots(
-                _layouts,
-                currentLayout,
-                targetSlotIds);
-        }
-        catch (InvalidOperationException ex)
-        {
-            StatusTextBlock.Text = ex.Message;
-            return false;
-        }
-
-        if (!ReferenceEquals(LayoutComboBox.SelectedItem, playbackLayout))
-        {
-            LayoutComboBox.SelectedItem = playbackLayout;
-        }
-
-        return true;
-    }
-
-    private void RecordFeasibilityResultButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: string outcome })
-        {
-            return;
-        }
-
-        if (_currentPlaybackTestCount <= 0)
-        {
-            StatusTextBlock.Text = "Run a playback test or load a group before recording a feasibility result.";
-            return;
-        }
-
-        var playbackCount = _currentPlaybackTestCount;
-        var sameAccountSession = SameAccountSessionCheckBox.IsChecked == true;
-        var accountLabel = sameAccountSession ? AccountLabelTextBox.Text.Trim() : "";
-        var verifiedProfileGroups = sameAccountSession ? GetVerifiedProfileGroups() : [];
-        var restartSession = sameAccountSession && RestartSessionCheckBox.IsChecked == true;
-        var resourceUsageAcceptable = ResourceAcceptableCheckBox.IsChecked == true;
-        if (!TryReadOptionalPercent(ObservedCpuTextBox, "CPU", out var observedCpuPercent) ||
-            !TryReadOptionalPercent(ObservedGpuTextBox, "GPU", out var observedGpuPercent) ||
-            !TryReadOptionalNonNegativeNumber(ObservedMemoryTextBox, "Memory MB", out var observedMemoryMegabytes))
-        {
-            return;
-        }
-
-        var scenarioPlaybackCountError = FeasibilityScenarioService.ValidatePlaybackCountConsistency(
-            playbackCount,
-            _currentFeasibilityScenario.Id);
-        if (scenarioPlaybackCountError is not null)
-        {
-            StatusTextBlock.Text = scenarioPlaybackCountError;
-            return;
-        }
-
-        var scenarioProfileGroupError = FeasibilityProfileGroupEvidenceService.ValidateScenarioConsistency(
-            playbackCount,
-            _currentFeasibilityScenario.Id,
-            verifiedProfileGroups);
-        if (scenarioProfileGroupError is not null)
-        {
-            StatusTextBlock.Text = scenarioProfileGroupError;
-            return;
-        }
-
-        var validationError = _feasibilityResultValidationService.Validate(
-            playbackCount,
-            outcome,
-            sameAccountSession,
-            restartSession,
-            resourceUsageAcceptable,
-            observedCpuPercent,
-            observedGpuPercent,
-            observedMemoryMegabytes,
-            verifiedProfileGroups,
-            accountLabel,
-            _currentFeasibilityScenario.Id);
-        if (validationError is not null)
-        {
-            StatusTextBlock.Text = validationError;
-            return;
-        }
-
-        var capturedAt = DateTimeOffset.Now;
-        var diagnostics = _diagnosticsService.Capture();
-        var result = new FeasibilityTestResult
-        {
-            Id = FeasibilityResultStorageService.CreateResultId(capturedAt, playbackCount, outcome),
-            CapturedAt = capturedAt,
-            PlaybackCount = playbackCount,
-            ScenarioId = _currentFeasibilityScenario.Id,
-            ScenarioName = _currentFeasibilityScenario.Name,
-            Outcome = outcome,
-            Diagnostics = diagnostics,
-            IsSameAccountSessionMaintained = sameAccountSession,
-            AccountLabel = accountLabel,
-            VerifiedProfileGroups = verifiedProfileGroups,
-            IsRestartSessionMaintained = restartSession,
-            IsResourceUsageAcceptable = resourceUsageAcceptable,
-            ObservedCpuPercent = observedCpuPercent,
-            ObservedGpuPercent = observedGpuPercent,
-            ObservedMemoryMegabytes = observedMemoryMegabytes,
-            Notes = FeasibilityNotesTextBox.Text.Trim()
-        };
-
-        var existingResults = _feasibilityResultStorageService.LoadResults();
-        var decision = _feasibilityDecisionService.Decide(existingResults.Append(result).ToArray());
-        FeasibilityResultStorageService.ApplyDecisionSnapshot(result, decision);
-        _feasibilityResultStorageService.AppendResult(result);
-        FeasibilityNotesTextBox.Clear();
-        ObservedCpuTextBox.Clear();
-        ObservedGpuTextBox.Clear();
-        ObservedMemoryTextBox.Clear();
-        ResourceAcceptableCheckBox.IsChecked = false;
-        UpdateFeasibilityResultSummary();
-        StatusTextBlock.Text =
-            $"Feasibility result recorded: {outcome}, {playbackCount} slot(s), {_currentFeasibilityScenario.Name}. Decision: {decision.Code}.";
-    }
-
-    private bool TryReadOptionalPercent(TextBox textBox, string label, out double? value)
-    {
-        if (!TryReadOptionalNumber(textBox.Text, label, out value))
-        {
-            return false;
-        }
-
-        if (value is < 0 or > 100)
-        {
-            StatusTextBlock.Text = $"{label} must be between 0 and 100.";
-            return false;
-        }
-
-        return true;
-    }
-
-    private IReadOnlyList<string> GetVerifiedProfileGroups()
-    {
-        var groups = new List<string>();
-        if (VerifiedGroupACheckBox.IsChecked == true)
-        {
-            groups.Add("A");
-        }
-
-        if (VerifiedGroupBCheckBox.IsChecked == true)
-        {
-            groups.Add("B");
-        }
-
-        if (VerifiedGroupCCheckBox.IsChecked == true)
-        {
-            groups.Add("C");
-        }
-
-        if (VerifiedGroupDCheckBox.IsChecked == true)
-        {
-            groups.Add("D");
-        }
-
-        return groups;
-    }
-
-    private void SameAccountSessionCheckBox_Unchecked(object sender, RoutedEventArgs e)
-    {
-        if (!IsInitialized ||
-            AccountLabelTextBox is null ||
-            VerifiedGroupACheckBox is null ||
-            VerifiedGroupBCheckBox is null ||
-            VerifiedGroupCCheckBox is null ||
-            VerifiedGroupDCheckBox is null ||
-            RestartSessionCheckBox is null)
-        {
-            return;
-        }
-
-        AccountLabelTextBox.Clear();
-        VerifiedGroupACheckBox.IsChecked = false;
-        VerifiedGroupBCheckBox.IsChecked = false;
-        VerifiedGroupCCheckBox.IsChecked = false;
-        VerifiedGroupDCheckBox.IsChecked = false;
-        RestartSessionCheckBox.IsChecked = false;
-    }
-
-    private bool TryReadOptionalNonNegativeNumber(TextBox textBox, string label, out double? value)
-    {
-        if (!TryReadOptionalNumber(textBox.Text, label, out value))
-        {
-            return false;
-        }
-
-        if (value < 0)
-        {
-            StatusTextBlock.Text = $"{label} must be 0 or higher.";
-            return false;
-        }
-
-        return true;
-    }
-
-    private bool TryReadOptionalNumber(string text, string label, out double? value)
-    {
-        value = null;
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return true;
-        }
-
-        if (double.TryParse(text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var invariantValue) ||
-            double.TryParse(text.Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out invariantValue))
-        {
-            value = invariantValue;
-            return true;
-        }
-
-        StatusTextBlock.Text = $"{label} must be a number.";
-        return false;
-    }
-
-    private void SetCurrentFeasibilityScenario(int playbackCount, FeasibilityScenario scenario)
-    {
-        _currentPlaybackTestCount = playbackCount;
-        _currentFeasibilityScenario = scenario;
-        UpdateCurrentFeasibilityScenarioText();
-    }
-
-    private void UpdateCurrentFeasibilityScenarioText()
-    {
-        CurrentFeasibilityScenarioTextBlock.Text = _currentPlaybackTestCount <= 0
-            ? "현재 테스트: 미선택"
-            : $"현재 테스트: {_currentPlaybackTestCount} slots / {_currentFeasibilityScenario.Name}";
-        CurrentFeasibilityScenarioTextBlock.ToolTip = _currentPlaybackTestCount <= 0
-            ? "재생 테스트 또는 그룹 로드 후 검증 결과를 기록할 수 있습니다."
-            : $"{_currentFeasibilityScenario.Name} ({_currentFeasibilityScenario.Id}){Environment.NewLine}{FeasibilityScenarioService.CreatePlanGateHint(_currentPlaybackTestCount, _currentFeasibilityScenario.Id)}";
-    }
-
-    private void SaveDiagnosticReportButton_Click(object sender, RoutedEventArgs e)
-    {
-        var results = _feasibilityResultStorageService.LoadResults();
-        var decision = _feasibilityDecisionService.Decide(results);
-        var report = _diagnosticReportService.CreateReport(
-            _profileService,
-            _presetStorageService,
-            _favoriteStorageService,
-            _feasibilityResultStorageService,
-            decision,
-            CaptureWorkspace("diagnostic_current_session", "Diagnostic Current Session"),
-            _layouts);
-        var path = _diagnosticReportService.SaveReport(report, _presetStorageService.DataFolder);
-        var fallbackScriptPath = _diagnosticReportService.SaveExternalBrowserFallbackScript(
-            report,
-            _presetStorageService.DataFolder);
-        var auditSummary = _feasibilityAuditService.CreateSummary(report.FeasibilityAudit);
-        var fallbackStatus = FormatExternalBrowserFallbackScriptStatus(report, fallbackScriptPath);
-
-        StatusTextBlock.Text = $"Diagnostic report saved: {path} | {fallbackStatus} | audit {auditSummary.ToCompactText()}";
-    }
-
-    private void SaveExternalBrowserFallbackScriptButton_Click(object sender, RoutedEventArgs e)
-    {
-        var exportResult = _externalBrowserFallbackExportService.SaveScript(
-            CaptureWorkspace("fallback_current_session", "Fallback Current Session"),
-            _presetStorageService.DataFolder,
-            DateTimeOffset.Now,
-            "No current session is available.",
-            _layouts);
-
-        if (!exportResult.ScriptSaved)
-        {
-            StatusTextBlock.Text = $"External browser fallback unavailable: {exportResult.Reason}";
-            return;
-        }
-
-        StatusTextBlock.Text =
-            $"External browser fallback script saved: {exportResult.ScriptPath} | {exportResult.Plan?.PlannedSlotCount ?? 0} slot(s). Review before running.";
-    }
-
-    private static string FormatExternalBrowserFallbackScriptStatus(
-        DiagnosticReport report,
-        string? fallbackScriptPath)
-    {
-        if (fallbackScriptPath is not null)
-        {
-            return $"fallback script: {fallbackScriptPath}";
-        }
-
-        var reason = report.ExternalBrowserFallbackPlan?.Reason ?? "No last saved session is available.";
-        return $"fallback unavailable: {reason}";
-    }
-
-    private void CopyAuditButton_Click(object sender, RoutedEventArgs e)
-    {
-        var results = _feasibilityResultStorageService.LoadResults();
-        var decision = _feasibilityDecisionService.Decide(results);
-        var auditText = _feasibilityAuditService.CreateAuditText(results, decision);
-
-        Clipboard.SetText(auditText);
-        StatusTextBlock.Text = "Plan audit copied to clipboard.";
-    }
-
     private void ToggleExplorerButton_Click(object sender, RoutedEventArgs e)
     {
         SetExplorerPanelVisible(!_isExplorerPanelVisible);
         StatusTextBlock.Text = _isExplorerPanelVisible ? "Explorer panel shown." : "Explorer panel hidden.";
-    }
-
-    private void ToggleSlotUrlEditorsButton_Click(object sender, RoutedEventArgs e)
-    {
-        SetSlotUrlEditorsVisible(!_areSlotUrlEditorsVisible);
-        StatusTextBlock.Text = _areSlotUrlEditorsVisible ? "Slot URL editors shown." : "Slot URL editors hidden.";
-    }
-
-    private void ToggleSlotControlBarsButton_Click(object sender, RoutedEventArgs e)
-    {
-        SetSlotControlBarsAlwaysVisible(!_areSlotControlBarsAlwaysVisible);
-        StatusTextBlock.Text = _areSlotControlBarsAlwaysVisible
-            ? "Slot control bars pinned."
-            : "Slot control bars show on hover.";
-    }
-
-    private async void SlotView_SlotSwapRequested(StreamSlotView targetSlot, int sourceSlotId)
-    {
-        var sourceSlot = _slots.SingleOrDefault(slot => slot.SlotId == sourceSlotId);
-        if (sourceSlot is null || sourceSlot.SlotId == targetSlot.SlotId)
-        {
-            return;
-        }
-
-        var result = _slotSwapService.SwapStreams(sourceSlot.CreateRuntimeState(), targetSlot.CreateRuntimeState());
-
-        await NavigateSlotAsync(sourceSlot, result.SourceSlot.StreamUrl, result.SourceSlot.StreamName);
-        await NavigateSlotAsync(targetSlot, result.TargetSlot.StreamUrl, result.TargetSlot.StreamName);
-
-        StatusTextBlock.Text =
-            $"Swapped streams: Slot {sourceSlot.SlotId} <-> Slot {targetSlot.SlotId}. Mute and profile group stayed with each slot.";
     }
 
     private async void SlotView_StreamUrlDropRequested(StreamSlotView targetSlot, string url, string? streamName)
@@ -654,11 +236,7 @@ public partial class MainWindow : Window
     {
         var hasTargetSlot = TryGetDropTargetSlot(e.GetPosition(SlotsGrid), out _);
 
-        if (hasTargetSlot && e.Data.GetDataPresent(StreamDragDataFormats.SlotId))
-        {
-            e.Effects = DragDropEffects.Move;
-        }
-        else if (hasTargetSlot && StreamDropDataReader.TryGetDroppedStream(e.Data, _streamNavigationService, out _, out _))
+        if (hasTargetSlot && StreamDropDataReader.TryGetDroppedStream(e.Data, _streamNavigationService, out _, out _))
         {
             e.Effects = DragDropEffects.Copy;
         }
@@ -675,17 +253,6 @@ public partial class MainWindow : Window
         if (!TryGetDropTargetSlot(e.GetPosition(SlotsGrid), out var targetSlot) || targetSlot is null)
         {
             StatusTextBlock.Text = "Drop the stream over a visible playback area.";
-            e.Handled = true;
-            return;
-        }
-
-        if (e.Data.GetDataPresent(StreamDragDataFormats.SlotId))
-        {
-            if (e.Data.GetData(StreamDragDataFormats.SlotId) is int sourceSlotId)
-            {
-                SlotView_SlotSwapRequested(targetSlot, sourceSlotId);
-            }
-
             e.Handled = true;
             return;
         }
@@ -917,8 +484,6 @@ public partial class MainWindow : Window
             SelectedSlotId = _selectedSlot?.SlotId,
             LastSession = CaptureWorkspace("last_session", "Last Session"),
             IsExplorerPanelVisible = _isExplorerPanelVisible,
-            AreSlotUrlEditorsVisible = _areSlotUrlEditorsVisible,
-            AreSlotControlBarsAlwaysVisible = _areSlotControlBarsAlwaysVisible,
             Window = new AppWindowState
             {
                 X = bounds.X,
@@ -1094,8 +659,6 @@ public partial class MainWindow : Window
     private void ApplyViewState(AppState? appState)
     {
         SetExplorerPanelVisible(appState?.IsExplorerPanelVisible ?? true);
-        SetSlotUrlEditorsVisible(appState?.AreSlotUrlEditorsVisible ?? true);
-        SetSlotControlBarsAlwaysVisible(appState?.AreSlotControlBarsAlwaysVisible ?? true);
     }
 
     private void SetExplorerPanelVisible(bool isVisible)
@@ -1112,30 +675,6 @@ public partial class MainWindow : Window
         ExplorerColumn.Width = isVisible ? _lastExplorerColumnWidth : new GridLength(0);
         ExplorerSplitterColumn.Width = isVisible ? new GridLength(6) : new GridLength(0);
         ToggleExplorerButton.Content = isVisible ? "탐색 숨김" : "탐색 표시";
-    }
-
-    private void SetSlotUrlEditorsVisible(bool isVisible)
-    {
-        _areSlotUrlEditorsVisible = isVisible;
-
-        foreach (var slot in _slots)
-        {
-            slot.SetUrlEditorVisible(isVisible);
-        }
-
-        ToggleSlotUrlEditorsButton.Content = isVisible ? "URL 숨김" : "URL 표시";
-    }
-
-    private void SetSlotControlBarsAlwaysVisible(bool isAlwaysVisible)
-    {
-        _areSlotControlBarsAlwaysVisible = isAlwaysVisible;
-
-        foreach (var slot in _slots)
-        {
-            slot.SetControlBarAlwaysVisible(isAlwaysVisible);
-        }
-
-        ToggleSlotControlBarsButton.Content = isAlwaysVisible ? "바 자동" : "바 고정";
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -1184,50 +723,6 @@ public partial class MainWindow : Window
         await ApplyQualityPolicyToSlotsAsync([slot]);
     }
 
-    private async void GlobalUrlTextBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter)
-        {
-            return;
-        }
-
-        e.Handled = true;
-        await LoadAllSlotsAsync();
-    }
-
-    private async Task LoadAllSlotsAsync()
-    {
-        if (!TryEnsureSlotsVisible(_slots.Select(slot => slot.SlotId).ToArray()))
-        {
-            return;
-        }
-
-        SetCurrentFeasibilityScenario(
-            PlaybackTestPlanService.MaxSlotCount,
-            _feasibilityScenarioService.CreateScopeLoadScenario("All", _slots.Count));
-        await LoadSlotsAsync(_slots);
-    }
-
-    private async Task LoadSlotsAsync(
-        IEnumerable<StreamSlotView> slots,
-        string? urlOverride = null,
-        string? statusPrefix = null)
-    {
-        var url = urlOverride ?? GlobalUrlTextBox.Text;
-        var slotList = slots.ToArray();
-        var messagePrefix = statusPrefix ?? "Loading";
-
-        StatusTextBlock.Text = $"{messagePrefix} {slotList.Length} slot(s): {url}";
-
-        foreach (var slot in slotList)
-        {
-            await NavigateSlotAsync(slot, url);
-        }
-
-        StatusTextBlock.Text = $"Loaded {slotList.Length} slot(s). Profile data persists under: {_profileService.BaseProfileFolder}";
-        UpdateDiagnostics();
-    }
-
     private async Task NavigateSlotAsync(StreamSlotView slot, string url, string? streamName = null)
     {
         if (IsQualityPolicyEnabled())
@@ -1269,16 +764,6 @@ public partial class MainWindow : Window
             .ToArray();
 
         await ClearSlotsAsync(hiddenNonBlankSlots, "Clearing hidden slots");
-    }
-
-    private string GetSelectedGroupId()
-    {
-        if (LoadScopeComboBox.SelectedItem is ComboBoxItem { Tag: string groupId })
-        {
-            return groupId;
-        }
-
-        return "All";
     }
 
     private async Task ApplyQualityPolicyToSlotsAsync(IReadOnlyList<StreamSlotView> targetSlots)
@@ -1382,39 +867,4 @@ public partial class MainWindow : Window
             $"WebView2 {snapshot.WebViewProcessCount} proc | {cpuText} | WS {snapshot.WebViewWorkingSetMegabytes:F0} MB | Private {snapshot.WebViewPrivateMemoryMegabytes:F0} MB";
     }
 
-    private void UpdateFeasibilityResultSummary()
-    {
-        var results = _feasibilityResultStorageService.LoadResults();
-        var latest = results.OrderByDescending(result => result.CapturedAt).FirstOrDefault();
-        var decision = _feasibilityDecisionService.Decide(results);
-        var auditItems = _feasibilityAuditService.CreateAudit(results, decision);
-        var auditSummary = _feasibilityAuditService.CreateSummary(auditItems);
-        var auditText = $"Audit {auditSummary.ToCompactText()}";
-        var successGate = auditItems.FirstOrDefault(item => item.Id == "phase0_success_gate");
-        var gateText = successGate is null ? "Gate n/a" : $"Gate {successGate.Status}";
-        var planVerificationText = $"Plan {GetPlanVerificationStatus(auditItems)}";
-        FeasibilityResultTextBlock.Text = latest is null
-            ? $"No feasibility result recorded | {decision.Title} | {planVerificationText} | {gateText} | {auditText}"
-            : $"Last: {latest.Outcome} / {latest.PlaybackCount} slots / {latest.ScenarioName} / {latest.CapturedAt:yyyy-MM-dd HH:mm} | {decision.Title} | {planVerificationText} | {gateText} | {auditText}";
-        FeasibilityResultTextBlock.ToolTip = string.IsNullOrWhiteSpace(decision.NextAction)
-            ? decision.Detail
-            : $"{decision.Detail}{Environment.NewLine}Next: {decision.NextAction}";
-    }
-
-    private static string GetPlanVerificationStatus(IReadOnlyList<FeasibilityAuditItem> auditItems)
-    {
-        if (auditItems.Count == 0)
-        {
-            return "n/a";
-        }
-
-        if (auditItems.All(item => item.Status.Equals("pass", StringComparison.OrdinalIgnoreCase)))
-        {
-            return "pass";
-        }
-
-        return auditItems.Any(item => item.Status.Equals("fail", StringComparison.OrdinalIgnoreCase))
-            ? "fail"
-            : "pending";
-    }
 }

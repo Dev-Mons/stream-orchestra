@@ -18,10 +18,7 @@ public partial class StreamSlotView : UserControl
     private readonly StreamNavigationService _navigationService;
     private bool _isInitialized;
     private bool _isMuted;
-    private bool _areControlBarsAlwaysVisible = true;
-    private bool _isPointerOverChrome;
     private bool _hasExplicitStreamName;
-    private Point? _dragStartPoint;
     private string _preferredQualityKey = "master";
     private string? _playbackViewportScriptId;
     private string? _qualityObserverScriptId;
@@ -37,19 +34,12 @@ public partial class StreamSlotView : UserControl
 
         InitializeComponent();
 
-        SlotTitleTextBlock.Text = $"Slot {Configuration.SlotId}";
-        GroupTextBlock.Text = $"Group {Configuration.ProfileGroup.Id}";
         ProfilePathTextBlock.Text = Configuration.ProfileGroup.UserDataFolder;
-        SlotUrlTextBox.Text = "https://www.sooplive.co.kr";
-        UpdateMuteButton();
-        UpdateControlBarVisibility();
 
         Loaded += StreamSlotView_Loaded;
     }
 
     public event Action<StreamSlotView>? SlotSelected;
-
-    public event Action<StreamSlotView, int>? SlotSwapRequested;
 
     public event Action<StreamSlotView, string, string?>? StreamUrlDropRequested;
 
@@ -131,23 +121,10 @@ public partial class StreamSlotView : UserControl
             Browser.CoreWebView2.IsMuted = _isMuted;
         }
 
-        UpdateMuteButton();
-
         if (changed)
         {
             MuteChanged?.Invoke(this);
         }
-    }
-
-    public void SetUrlEditorVisible(bool isVisible)
-    {
-        SlotUrlEditor.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    public void SetControlBarAlwaysVisible(bool isAlwaysVisible)
-    {
-        _areControlBarsAlwaysVisible = isAlwaysVisible;
-        UpdateControlBarVisibility();
     }
 
     private async void StreamSlotView_Loaded(object sender, RoutedEventArgs e)
@@ -249,8 +226,18 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
-        if (message is null ||
-            !message.Type.Equals("stream-drop", StringComparison.OrdinalIgnoreCase) ||
+        if (message is null)
+        {
+            return;
+        }
+
+        if (message.Type.Equals("slot-wheel", StringComparison.OrdinalIgnoreCase))
+        {
+            ApplyWheelMute(message.DeltaY);
+            return;
+        }
+
+        if (!message.Type.Equals("stream-drop", StringComparison.OrdinalIgnoreCase) ||
             !StreamDropDataReader.TryNormalizeDroppedText(message.Url, _navigationService, out var url))
         {
             return;
@@ -260,130 +247,36 @@ public partial class StreamSlotView : UserControl
         StreamUrlDropRequested?.Invoke(this, url, message.StreamName);
     }
 
-    private async void LoadButton_Click(object sender, RoutedEventArgs e)
-    {
-        await NavigateFromSlotTextAsync();
-    }
-
-    private async void SlotUrlTextBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter)
-        {
-            return;
-        }
-
-        e.Handled = true;
-        await NavigateFromSlotTextAsync();
-    }
-
-    private async Task NavigateFromSlotTextAsync()
-    {
-        try
-        {
-            await NavigateAsync(SlotUrlTextBox.Text);
-        }
-        catch (Exception ex)
-        {
-            ShowInitializationError(ex);
-        }
-    }
-
-    private void RefreshButton_Click(object sender, RoutedEventArgs e)
-    {
-        Browser.CoreWebView2?.Reload();
-    }
-
-    private void MenuButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (MenuButton.ContextMenu is null)
-        {
-            return;
-        }
-
-        MenuButton.ContextMenu.PlacementTarget = MenuButton;
-        MenuButton.ContextMenu.IsOpen = true;
-    }
-
-    private void CopyUrlMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (!string.IsNullOrWhiteSpace(CurrentUrl))
-        {
-            Clipboard.SetText(CurrentUrl);
-        }
-    }
-
-    private async void ClearSlotMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        await NavigateAsync("about:blank");
-    }
-
-    private async void LoadSoopHomeMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        await NavigateAsync("https://www.sooplive.co.kr");
-    }
-
-    private void MuteButton_Click(object sender, RoutedEventArgs e)
-    {
-        SetMuted(!_isMuted);
-    }
-
     private void SlotBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         SlotSelected?.Invoke(this);
     }
 
-    private void ControlBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void SlotBorder_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        SlotSelected?.Invoke(this);
-    }
-
-    private void SlotChrome_MouseEnter(object sender, MouseEventArgs e)
-    {
-        _isPointerOverChrome = true;
-        UpdateControlBarVisibility();
-    }
-
-    private void SlotChrome_MouseLeave(object sender, MouseEventArgs e)
-    {
-        _isPointerOverChrome = false;
-        UpdateControlBarVisibility();
-    }
-
-    private void DragHandleTextBlock_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        _dragStartPoint = e.GetPosition(this);
-        SlotSelected?.Invoke(this);
-    }
-
-    private void DragHandleTextBlock_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (_dragStartPoint is null || e.LeftButton != MouseButtonState.Pressed)
+        if (e.Delta == 0)
         {
             return;
         }
 
-        var currentPoint = e.GetPosition(this);
-        var movedEnough =
-            Math.Abs(currentPoint.X - _dragStartPoint.Value.X) >= SystemParameters.MinimumHorizontalDragDistance ||
-            Math.Abs(currentPoint.Y - _dragStartPoint.Value.Y) >= SystemParameters.MinimumVerticalDragDistance;
+        ApplyWheelMute(-e.Delta);
+        e.Handled = true;
+    }
 
-        if (!movedEnough)
+    private void ApplyWheelMute(double deltaY)
+    {
+        if (deltaY == 0)
         {
             return;
         }
 
-        var data = new DataObject(StreamDragDataFormats.SlotId, SlotId);
-        DragDrop.DoDragDrop(DragHandleTextBlock, data, DragDropEffects.Move);
-        _dragStartPoint = null;
+        SlotSelected?.Invoke(this);
+        SetMuted(deltaY > 0);
     }
 
     private void SlotBorder_DragOver(object sender, DragEventArgs e)
     {
-        if (e.Data.GetDataPresent(StreamDragDataFormats.SlotId))
-        {
-            e.Effects = DragDropEffects.Move;
-        }
-        else if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out _, out _))
+        if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out _, out _))
         {
             e.Effects = DragDropEffects.Copy;
         }
@@ -397,14 +290,6 @@ public partial class StreamSlotView : UserControl
 
     private void SlotBorder_Drop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetDataPresent(StreamDragDataFormats.SlotId))
-        {
-            var sourceSlotId = (int)e.Data.GetData(StreamDragDataFormats.SlotId);
-            SlotSwapRequested?.Invoke(this, sourceSlotId);
-            e.Handled = true;
-            return;
-        }
-
         if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out var url, out var streamName))
         {
             SlotSelected?.Invoke(this);
@@ -515,6 +400,19 @@ public partial class StreamSlotView : UserControl
       streamName: payload.streamName || ""
     });
   }, true);
+
+  document.addEventListener("wheel", event => {
+    if (event.deltaY === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    window.chrome?.webview?.postMessage({
+      type: "slot-wheel",
+      deltaY: event.deltaY
+    });
+  }, { capture: true, passive: false });
 
   function hasStreamUrlData(dataTransfer) {
     if (!dataTransfer) {
@@ -726,32 +624,12 @@ public partial class StreamSlotView : UserControl
 """;
     }
 
-    private void UpdateMuteButton()
-    {
-        MuteButton.Content = _isMuted ? "🔇" : "🔊";
-        MuteButton.ToolTip = _isMuted ? "Unmute slot" : "Mute slot";
-    }
-
     private void UpdateCurrentLocation(string url, string streamName)
     {
         CurrentUrl = url;
         CurrentStreamName = string.IsNullOrWhiteSpace(streamName)
             ? _navigationService.CreateDisplayName(url)
             : streamName.Trim();
-        SlotUrlTextBox.Text = url;
-        SlotTitleTextBlock.Text = $"Slot {Configuration.SlotId} / {CurrentStreamName}";
-        SlotTitleTextBlock.ToolTip = url;
-    }
-
-    private void UpdateControlBarVisibility()
-    {
-        SlotChrome.Visibility = Visibility.Collapsed;
-        var shouldShowControlBar = _areControlBarsAlwaysVisible || _isPointerOverChrome;
-
-        ControlBar.Visibility = shouldShowControlBar ? Visibility.Visible : Visibility.Collapsed;
-        ControlBarHoverTarget.Visibility = _areControlBarsAlwaysVisible || shouldShowControlBar
-            ? Visibility.Collapsed
-            : Visibility.Visible;
     }
 
     private void ShowInitializationError(Exception ex)
@@ -767,6 +645,8 @@ public partial class StreamSlotView : UserControl
         public string Url { get; init; } = "";
 
         public string? StreamName { get; init; }
+
+        public double DeltaY { get; init; }
     }
 
 }

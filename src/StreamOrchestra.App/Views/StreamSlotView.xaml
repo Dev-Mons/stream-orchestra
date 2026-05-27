@@ -15,147 +15,17 @@
             AllowDrop="True"
             DragOver="SlotBorder_DragOver"
             Drop="SlotBorder_Drop"
-            PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown">
+            PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown"
+            PreviewMouseWheel="SlotBorder_PreviewMouseWheel">
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <Grid x:Name="SlotChrome"
-                  Grid.Row="0"
-                  Visibility="Collapsed"
-                  MouseEnter="SlotChrome_MouseEnter"
-                  MouseLeave="SlotChrome_MouseLeave">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <Border x:Name="ControlBar"
-                        Background="#17202A"
-                        BorderBrush="#2D3642"
-                        BorderThickness="0,0,0,1"
-                        Padding="8,6"
-                        MouseLeftButtonDown="ControlBar_MouseLeftButtonDown">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <Grid Grid.Column="0"
-                              VerticalAlignment="Center">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock x:Name="DragHandleTextBlock"
-                                       Grid.Column="0"
-                                       Text="⋮⋮"
-                                       Foreground="#7F8B99"
-                                       FontWeight="SemiBold"
-                                       FontSize="14"
-                                       Cursor="SizeAll"
-                                       ToolTip="Drag to swap streams"
-                                       Margin="0,0,8,0"
-                                       VerticalAlignment="Center"
-                                       MouseLeftButtonDown="DragHandleTextBlock_MouseLeftButtonDown"
-                                       MouseMove="DragHandleTextBlock_MouseMove" />
-                            <TextBlock x:Name="SlotTitleTextBlock"
-                                       Grid.Column="1"
-                                       Foreground="#F3F6FA"
-                                       FontWeight="SemiBold"
-                                       TextTrimming="CharacterEllipsis"
-                                       VerticalAlignment="Center" />
-                            <Border Background="#2C3E50"
-                                    CornerRadius="3"
-                                    Grid.Column="2"
-                                    Margin="8,0,0,0"
-                                    Padding="6,2">
-                                <TextBlock x:Name="GroupTextBlock"
-                                           Foreground="#EAF2F8"
-                                           FontSize="11"
-                                           FontWeight="SemiBold" />
-                            </Border>
-                        </Grid>
-
-                        <StackPanel Grid.Column="1"
-                                    Orientation="Horizontal">
-                            <Button x:Name="MuteButton"
-                                    MinWidth="34"
-                                    Margin="0,0,6,0"
-                                    Padding="8,3"
-                                    ToolTip="Toggle mute"
-                                    Click="MuteButton_Click" />
-                            <Button Content="↻"
-                                    MinWidth="34"
-                                    Margin="0,0,6,0"
-                                    Padding="8,3"
-                                    ToolTip="Refresh slot"
-                                    Click="RefreshButton_Click" />
-                            <Button x:Name="MenuButton"
-                                    Content="⋯"
-                                    MinWidth="34"
-                                    Padding="8,3"
-                                    ToolTip="More slot actions"
-                                    Click="MenuButton_Click">
-                                <Button.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="Copy URL"
-                                                  Click="CopyUrlMenuItem_Click" />
-                                        <MenuItem Header="Clear Slot"
-                                                  Click="ClearSlotMenuItem_Click" />
-                                        <MenuItem Header="Load SOOP Home"
-                                                  Click="LoadSoopHomeMenuItem_Click" />
-                                    </ContextMenu>
-                                </Button.ContextMenu>
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
-                <Border x:Name="ControlBarHoverTarget"
-                        Grid.Row="1"
-                        Height="6"
-                        Background="#243140"
-                        Visibility="Collapsed" />
-
-                <Grid x:Name="SlotUrlEditor"
-                      Grid.Row="2"
-                      Background="#101820"
-                      Margin="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <TextBox x:Name="SlotUrlTextBox"
-                             Grid.Column="0"
-                             Margin="6"
-                             MinWidth="120"
-                             VerticalContentAlignment="Center"
-                             KeyDown="SlotUrlTextBox_KeyDown" />
-                    <Button Grid.Column="1"
-                            Content="Load"
-                            MinWidth="54"
-                            Margin="0,6,6,6"
-                            Padding="8,3"
-                            Click="LoadButton_Click" />
-                </Grid>
-            </Grid>
-
-            <Grid Grid.Row="1"
-                  Background="#05070A">
+            <Grid Background="#05070A">
                 <wv2:WebView2 x:Name="Browser"
                               AllowExternalDrop="True"
                               AllowDrop="True"
                               DragOver="SlotBorder_DragOver"
                               Drop="SlotBorder_Drop"
-                              PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown" />
+                              PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown"
+                              PreviewMouseWheel="SlotBorder_PreviewMouseWheel" />
                 <Border x:Name="InitializationOverlay"
                         Background="#05070A">
                     <StackPanel HorizontalAlignment="Center"
