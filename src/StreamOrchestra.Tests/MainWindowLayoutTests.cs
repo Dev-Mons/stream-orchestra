@@ -64,8 +64,6 @@ public sealed class MainWindowLayoutTests
     {
         var document = LoadMainWindowDocument();
         var audibleQualityComboBox = FindElementByName(document, "AudibleQualityComboBox");
-        var mutedQualityComboBox = FindElementByName(document, "MutedQualityComboBox");
-        var qualityLockCheckBox = FindElementByName(document, "QualityLockCheckBox");
 
         var playbackButtonTags = document
             .Descendants()
@@ -78,19 +76,13 @@ public sealed class MainWindowLayoutTests
             .Where(element => element.Name.LocalName == "ComboBoxItem")
             .Select(element => $"{GetAttribute(element, "Tag")}:{GetAttribute(element, "Content")}")
             .ToArray();
-        var mutedQualityOptions = mutedQualityComboBox
-            .Elements()
-            .Where(element => element.Name.LocalName == "ComboBoxItem")
-            .Select(element => $"{GetAttribute(element, "Tag")}:{GetAttribute(element, "Content")}")
-            .ToArray();
 
         Assert.Empty(playbackButtonTags);
-        Assert.Equal("True", GetAttribute(qualityLockCheckBox, "IsChecked"));
-        Assert.Equal("QualityPolicyControl_Changed", GetAttribute(qualityLockCheckBox, "Checked"));
         Assert.Equal(["original:최대화질", "original:1080p", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], audibleQualityOptions);
-        Assert.Equal(["original:최대화질", "original:1080p", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], mutedQualityOptions);
         Assert.Equal("ApplyQualityPolicyButton_Click", GetAttribute(FindButton(document, "화질 적용"), "Click"));
-        Assert.Equal("RefreshDiagnosticsButton_Click", GetAttribute(FindButton(document, "진단 갱신"), "Click"));
+        Assert.Empty(document.Descendants().Where(element =>
+            element.Name.LocalName == "ComboBox" &&
+            GetAttribute(element, "Name") == "MutedQualityComboBox"));
     }
 
     [Fact]
@@ -101,8 +93,7 @@ public sealed class MainWindowLayoutTests
         {
             ["불러오기"] = "LoadWorkspaceButton_Click",
             ["현재 상태 저장"] = "SaveCurrentWorkspaceButton_Click",
-            ["다른 이름으로 저장"] = "SaveWorkspaceAsButton_Click",
-            ["되돌리기"] = "RevertWorkspaceButton_Click"
+            ["다른 이름으로 저장"] = "SaveWorkspaceAsButton_Click"
         };
 
         foreach (var (content, clickHandler) in expectedButtons)

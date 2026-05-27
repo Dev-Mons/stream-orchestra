@@ -60,47 +60,12 @@
                                    VerticalAlignment="Center"
                                    FontWeight="SemiBold"
                                    Margin="0,0,8,0" />
-                        <CheckBox x:Name="QualityLockCheckBox"
-                                  Content="고정"
-                                  Foreground="#F3F6FA"
-                                  VerticalAlignment="Center"
-                                  IsChecked="True"
-                                  Margin="0,0,8,0"
-                                  Checked="QualityPolicyControl_Changed"
-                                  Unchecked="QualityPolicyControl_Changed" />
-                        <TextBlock Text="소리"
-                                   Foreground="#B9C2CC"
-                                   VerticalAlignment="Center"
-                                   Margin="0,0,4,0" />
                         <ComboBox x:Name="AudibleQualityComboBox"
                                   Width="92"
                                   Height="28"
                                   SelectedIndex="0"
                                   Margin="0,0,8,0"
-                                  SelectionChanged="QualityPolicyControl_Changed">
-                            <ComboBoxItem Content="최대화질"
-                                          Tag="original" />
-                            <ComboBoxItem Content="1080p"
-                                          Tag="original" />
-                            <ComboBoxItem Content="자동"
-                                          Tag="master" />
-                            <ComboBoxItem Content="720p"
-                                          Tag="hd4k" />
-                            <ComboBoxItem Content="540p"
-                                          Tag="hd" />
-                            <ComboBoxItem Content="360p"
-                                          Tag="sd" />
-                        </ComboBox>
-                        <TextBlock Text="무음"
-                                   Foreground="#B9C2CC"
-                                   VerticalAlignment="Center"
-                                   Margin="0,0,4,0" />
-                        <ComboBox x:Name="MutedQualityComboBox"
-                                  Width="86"
-                                  Height="28"
-                                  SelectedIndex="4"
-                                  Margin="0,0,8,0"
-                                  SelectionChanged="QualityPolicyControl_Changed">
+                                  SelectionChanged="AudibleQualityComboBox_SelectionChanged">
                             <ComboBoxItem Content="최대화질"
                                           Tag="original" />
                             <ComboBoxItem Content="1080p"
@@ -119,10 +84,6 @@
                                 MinWidth="82"
                                 Margin="0,0,12,0"
                                 Click="ApplyQualityPolicyButton_Click" />
-                        <Button Content="진단 갱신"
-                                Height="28"
-                                MinWidth="82"
-                                Click="RefreshDiagnosticsButton_Click" />
                     </WrapPanel>
                 </DockPanel>
 
@@ -154,10 +115,6 @@
                                 MinWidth="124"
                                 Margin="0,0,6,0"
                                 Click="SaveWorkspaceAsButton_Click" />
-                        <Button Content="되돌리기"
-                                Height="28"
-                                MinWidth="74"
-                                Click="RevertWorkspaceButton_Click" />
                     </WrapPanel>
                 </DockPanel>
 

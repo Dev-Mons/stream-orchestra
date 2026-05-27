@@ -111,7 +111,7 @@ public partial class StreamSlotView : UserControl
         SlotBorder.BorderThickness = isSelected ? new Thickness(2) : new Thickness(1);
     }
 
-    public void SetMuted(bool isMuted)
+    public void SetMuted(bool isMuted, bool suppressQualityUpdate = false)
     {
         var changed = _isMuted != isMuted;
         _isMuted = isMuted;
@@ -121,7 +121,7 @@ public partial class StreamSlotView : UserControl
             Browser.CoreWebView2.IsMuted = _isMuted;
         }
 
-        if (changed)
+        if (changed && !suppressQualityUpdate)
         {
             MuteChanged?.Invoke(this);
         }
@@ -271,7 +271,7 @@ public partial class StreamSlotView : UserControl
         }
 
         SlotSelected?.Invoke(this);
-        SetMuted(deltaY > 0);
+        SetMuted(deltaY > 0, suppressQualityUpdate: true);
     }
 
     private void SlotBorder_DragOver(object sender, DragEventArgs e)

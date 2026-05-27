@@ -324,25 +324,6 @@ public partial class MainWindow : Window
         SaveWorkspaceAs();
     }
 
-    private async void RevertWorkspaceButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_activeWorkspace is null)
-        {
-            StatusTextBlock.Text = "No active preset to revert.";
-            return;
-        }
-
-        var originalWorkspace = _workspaces.FirstOrDefault(workspace => workspace.Id == _activeWorkspace.Id);
-        if (originalWorkspace is null)
-        {
-            StatusTextBlock.Text = "Active preset was not found.";
-            return;
-        }
-
-        await ApplyWorkspaceAsync(originalWorkspace, setActiveWorkspace: true);
-        StatusTextBlock.Text = $"Reverted to preset: {originalWorkspace.Name}";
-    }
-
     private void SelectSlot(StreamSlotView slot)
     {
         if (_selectedSlot is not null)
@@ -420,9 +401,7 @@ public partial class MainWindow : Window
             SelectedSlotId = _selectedSlot?.SlotId,
             LastSession = CaptureWorkspace("last_session", "Last Session"),
             IsExplorerPanelVisible = _isExplorerPanelVisible,
-            IsQualityLockEnabled = IsQualityPolicyEnabled(),
             AudibleQualityKey = GetQualityKey(AudibleQualityComboBox),
-            MutedQualityKey = GetQualityKey(MutedQualityComboBox),
             Window = new AppWindowState
             {
                 X = bounds.X,
@@ -566,9 +545,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        QualityLockCheckBox.IsChecked = appState.IsQualityLockEnabled;
-        SetQualityComboBoxSelection(AudibleQualityComboBox, appState.AudibleQualityKey);
-        SetQualityComboBoxSelection(MutedQualityComboBox, appState.MutedQualityKey);
+        SetQualityComboBoxSelection(
+            AudibleQualityComboBox,
+            NormalizeQualityKey(appState.AudibleQualityKey) ?? "master");
     }
 
     private void SetExplorerPanelVisible(bool isVisible)
@@ -592,11 +571,6 @@ public partial class MainWindow : Window
         _presetStorageService.SaveAppState(CaptureAppState());
     }
 
-    private void RefreshDiagnosticsButton_Click(object sender, RoutedEventArgs e)
-    {
-        UpdateDiagnostics();
-    }
-
     private async void ApplyQualityPolicyButton_Click(object sender, RoutedEventArgs e)
     {
         var targetSlots = GetVisibleNonBlankSlots();
@@ -609,12 +583,9 @@ public partial class MainWindow : Window
         await ApplyQualityPolicyToSlotsAsync(targetSlots);
     }
 
-    private async void QualityPolicyControl_Changed(object sender, RoutedEventArgs e)
+    private async void AudibleQualityComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!IsInitialized ||
-            QualityLockCheckBox is null ||
-            AudibleQualityComboBox is null ||
-            MutedQualityComboBox is null)
+        if (!IsInitialized || AudibleQualityComboBox is null)
         {
             return;
         }
@@ -624,8 +595,7 @@ public partial class MainWindow : Window
 
     private async void SlotView_MuteChanged(StreamSlotView slot)
     {
-        if (!IsQualityPolicyEnabled() ||
-            slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+        if (slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -635,10 +605,7 @@ public partial class MainWindow : Window
 
     private async Task NavigateSlotAsync(StreamSlotView slot, string url, string? streamName = null)
     {
-        if (IsQualityPolicyEnabled())
-        {
-            await ApplyQualityPolicyToSlotAsync(slot);
-        }
+        await ApplyQualityPolicyToSlotAsync(slot);
 
         await slot.NavigateAsync(url, streamName);
     }
@@ -683,15 +650,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!IsQualityPolicyEnabled())
-        {
-            StatusTextBlock.Text = "화질 고정이 비활성화되어 있습니다.";
-            return;
-        }
-
-        var policyText = IsQualityPolicyEnabled()
-            ? $"소리 {GetQualityLabel(AudibleQualityComboBox)}, 무음 {GetQualityLabel(MutedQualityComboBox)}"
-            : "자동";
+        var policyText = GetQualityLabel(AudibleQualityComboBox);
         StatusTextBlock.Text = $"화질 정책 적용 중: {policyText} / {targetSlots.Count} slot(s)";
 
         var results = new List<(StreamSlotView Slot, StreamQualityApplyResult Result)>();
@@ -715,7 +674,7 @@ public partial class MainWindow : Window
 
     private Task<StreamQualityApplyResult> ApplyQualityPolicyToSlotAsync(StreamSlotView slot)
     {
-        var qualityKey = GetQualityKey(slot.IsMuted ? MutedQualityComboBox : AudibleQualityComboBox);
+        var qualityKey = GetQualityKey(AudibleQualityComboBox);
         return slot.ApplyQualityAsync(qualityKey);
     }
 
@@ -735,9 +694,17 @@ public partial class MainWindow : Window
             .ToArray();
     }
 
-    private bool IsQualityPolicyEnabled()
+    private static string? NormalizeQualityKey(string? qualityKey)
     {
-        return QualityLockCheckBox.IsChecked == true;
+        return qualityKey?.Trim().ToLowerInvariant() switch
+        {
+            "original" => "original",
+            "master" => "master",
+            "hd4k" => "hd4k",
+            "hd" => "hd",
+            "sd" => "sd",
+            _ => null
+        };
     }
 
     private static void SetQualityComboBoxSelection(ComboBox comboBox, string qualityKey)

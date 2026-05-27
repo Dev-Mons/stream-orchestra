@@ -121,9 +121,7 @@ public sealed class PresetStorageService
             IsExplorerPanelVisible = appState.IsExplorerPanelVisible,
             AreSlotUrlEditorsVisible = appState.AreSlotUrlEditorsVisible,
             AreSlotControlBarsAlwaysVisible = appState.AreSlotControlBarsAlwaysVisible,
-            IsQualityLockEnabled = appState.IsQualityLockEnabled,
-            AudibleQualityKey = NormalizeQualityKey(appState.AudibleQualityKey, "original"),
-            MutedQualityKey = NormalizeQualityKey(appState.MutedQualityKey, "sd")
+            AudibleQualityKey = NormalizeQualityKey(appState.AudibleQualityKey, "original")
         };
     }
 

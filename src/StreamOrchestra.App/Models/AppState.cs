@@ -16,9 +16,5 @@ public sealed class AppState
 
     public bool AreSlotControlBarsAlwaysVisible { get; init; } = true;
 
-    public bool IsQualityLockEnabled { get; init; } = true;
-
     public string AudibleQualityKey { get; init; } = "original";
-
-    public string MutedQualityKey { get; init; } = "sd";
 }
