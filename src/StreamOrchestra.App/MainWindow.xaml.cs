@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 using StreamOrchestra.App.Views;
@@ -12,6 +13,9 @@ namespace StreamOrchestra.App;
 
 public partial class MainWindow : Window
 {
+    private const double AutoShowExplorerButtonWidth = 24;
+    private const double AutoShowExplorerHitTestWidth = 28;
+
     private readonly WebViewProfileService _profileService = new();
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
     private readonly PresetStorageService _presetStorageService = new();
@@ -29,12 +33,23 @@ public partial class MainWindow : Window
     private List<WorkspacePreset> _workspaces = [];
     private AppState? _loadedAppState;
     private readonly DispatcherTimer _diagnosticsTimer;
+    private readonly DispatcherTimer _autoShowExplorerTimer;
     private WorkspacePreset? _activeWorkspace;
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
     private bool _isExplorerPanelVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
     private LayoutPreset? _selectedLayout;
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out NativePoint point);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
 
     public MainWindow()
     {
@@ -52,6 +67,7 @@ public partial class MainWindow : Window
         CreateSlots();
         LoadLayouts();
         LoadWorkspacePresets();
+        _autoShowExplorerTimer = CreateAutoShowExplorerTimer();
         ApplyViewState(_loadedAppState);
         _diagnosticsTimer = CreateDiagnosticsTimer();
         StatusTextBlock.Text = $"Profile data persists under: {_profileService.BaseProfileFolder}";
@@ -255,21 +271,28 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_loadedAppState?.LastSession is not null)
+        try
         {
-            _activeWorkspace = _workspaces.FirstOrDefault(workspace => workspace.Id == _loadedAppState.LastWorkspaceId);
-            RefreshWorkspaceComboBox();
-            await ApplyWorkspaceAsync(_loadedAppState.LastSession, setActiveWorkspace: false);
-            SelectSlotFromState(_loadedAppState.SelectedSlotId);
-            StatusTextBlock.Text = $"Last session restored. Presets are stored under: {_presetStorageService.DataFolder}";
-            return;
-        }
+            if (_loadedAppState?.LastSession is not null)
+            {
+                _activeWorkspace = _workspaces.FirstOrDefault(workspace => workspace.Id == _loadedAppState.LastWorkspaceId);
+                RefreshWorkspaceComboBox();
+                await ApplyWorkspaceAsync(_loadedAppState.LastSession, setActiveWorkspace: false);
+                SelectSlotFromState(_loadedAppState.SelectedSlotId);
+                StatusTextBlock.Text = $"Last session restored. Presets are stored under: {_presetStorageService.DataFolder}";
+                return;
+            }
 
-        var lastWorkspace = _workspaces.FirstOrDefault(workspace => workspace.Id == _loadedAppState?.LastWorkspaceId);
-        if (lastWorkspace is not null)
+            var lastWorkspace = _workspaces.FirstOrDefault(workspace => workspace.Id == _loadedAppState?.LastWorkspaceId);
+            if (lastWorkspace is not null)
+            {
+                await ApplyWorkspaceAsync(lastWorkspace, setActiveWorkspace: true);
+                SelectSlotFromState(_loadedAppState?.SelectedSlotId);
+            }
+        }
+        finally
         {
-            await ApplyWorkspaceAsync(lastWorkspace, setActiveWorkspace: true);
-            SelectSlotFromState(_loadedAppState?.SelectedSlotId);
+            RefreshAutoShowExplorerPopupFromCursorPosition();
         }
     }
 
@@ -277,6 +300,25 @@ public partial class MainWindow : Window
     {
         SetExplorerPanelVisible(!_isExplorerPanelVisible);
         StatusTextBlock.Text = _isExplorerPanelVisible ? "Explorer panel shown." : "Explorer panel hidden.";
+    }
+
+    private void AutoShowExplorerButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetExplorerPanelVisible(true);
+        StatusTextBlock.Text = "Explorer panel shown.";
+    }
+
+    private void AutoShowExplorerButton_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (!_isExplorerPanelVisible)
+        {
+            OpenAutoShowExplorerPopup();
+        }
+    }
+
+    private void AutoShowExplorerButton_MouseLeave(object sender, MouseEventArgs e)
+    {
+        RefreshAutoShowExplorerPopupFromCursorPosition();
     }
 
     private async void SlotView_StreamUrlDropRequested(StreamSlotView targetSlot, string url, string? streamName)
@@ -627,10 +669,149 @@ public partial class MainWindow : Window
         ExplorerColumn.Width = isVisible ? _lastExplorerColumnWidth : new GridLength(0);
         ExplorerSplitterColumn.Width = isVisible ? new GridLength(6) : new GridLength(0);
         ToggleExplorerButton.Content = isVisible ? "탐색 숨김" : "탐색 표시";
+
+        if (isVisible)
+        {
+            _autoShowExplorerTimer.Stop();
+            AutoShowExplorerPopup.IsOpen = false;
+            return;
+        }
+
+        _autoShowExplorerTimer.Start();
+        RefreshAutoShowExplorerPopupFromCursorPosition();
+    }
+
+    private DispatcherTimer CreateAutoShowExplorerTimer()
+    {
+        var timer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(60)
+        };
+
+        timer.Tick += (_, _) => RefreshAutoShowExplorerPopupFromCursorPosition();
+
+        return timer;
+    }
+
+    private void RefreshAutoShowExplorerPopupFromCursorPosition()
+    {
+        if (_isExplorerPanelVisible)
+        {
+            AutoShowExplorerPopup.IsOpen = false;
+            return;
+        }
+
+        if (!TryGetCursorPositionInMainContentGrid(out var position))
+        {
+            AutoShowExplorerPopup.IsOpen = false;
+            return;
+        }
+
+        var isInHitTestArea =
+            position.X >= 0 &&
+            position.X <= AutoShowExplorerHitTestWidth &&
+            position.Y >= 0 &&
+            position.Y <= MainContentGrid.ActualHeight;
+
+        if (isInHitTestArea)
+        {
+            OpenAutoShowExplorerPopup();
+            return;
+        }
+
+        AutoShowExplorerPopup.IsOpen = false;
+    }
+
+    private bool TryGetCursorPositionInMainContentGrid(out Point position)
+    {
+        position = default;
+
+        if (!IsLoaded ||
+            !MainContentGrid.IsLoaded ||
+            MainContentGrid.ActualWidth <= 0 ||
+            MainContentGrid.ActualHeight <= 0)
+        {
+            return false;
+        }
+
+        var presentationSource = PresentationSource.FromVisual(this);
+        if (presentationSource?.CompositionTarget is null)
+        {
+            return false;
+        }
+
+        if (!GetCursorPos(out var cursorPosition))
+        {
+            return false;
+        }
+
+        try
+        {
+            var transformFromDevice = presentationSource.CompositionTarget.TransformFromDevice;
+            var cursorPoint = transformFromDevice.Transform(new Point(cursorPosition.X, cursorPosition.Y));
+            var mainContentTopLeft = transformFromDevice.Transform(MainContentGrid.PointToScreen(new Point(0, 0)));
+
+            position = new Point(
+                cursorPoint.X - mainContentTopLeft.X,
+                cursorPoint.Y - mainContentTopLeft.Y);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private void OpenAutoShowExplorerPopup()
+    {
+        if (!TryGetMainContentGridScreenBounds(out var topLeft, out var height))
+        {
+            AutoShowExplorerPopup.IsOpen = false;
+            return;
+        }
+
+        AutoShowExplorerButton.Width = AutoShowExplorerButtonWidth;
+        AutoShowExplorerButton.Height = height;
+        AutoShowExplorerPopup.HorizontalOffset = topLeft.X;
+        AutoShowExplorerPopup.VerticalOffset = topLeft.Y;
+        AutoShowExplorerPopup.IsOpen = true;
+    }
+
+    private bool TryGetMainContentGridScreenBounds(out Point topLeft, out double height)
+    {
+        topLeft = default;
+        height = 0;
+
+        if (!IsLoaded ||
+            !MainContentGrid.IsLoaded ||
+            MainContentGrid.ActualHeight <= 0)
+        {
+            return false;
+        }
+
+        var presentationSource = PresentationSource.FromVisual(this);
+        if (presentationSource?.CompositionTarget is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            topLeft = presentationSource.CompositionTarget.TransformFromDevice.Transform(
+                MainContentGrid.PointToScreen(new Point(0, 0)));
+            height = MainContentGrid.ActualHeight;
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        _autoShowExplorerTimer.Stop();
+        AutoShowExplorerPopup.IsOpen = false;
         _presetStorageService.SaveAppState(CaptureAppState());
     }
 

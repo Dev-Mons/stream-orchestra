@@ -22,16 +22,51 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
-    public void ViewToolbar_ProvidesOnlyExplorerToggle()
+    public void ExplorerSidebar_ProvidesExplorerToggleInTopRightCorner()
     {
         var document = LoadMainWindowDocument();
         var button = FindElementByName(document, "ToggleExplorerButton");
 
         Assert.Equal("ToggleExplorerButton_Click", GetAttribute(button, "Click"));
+        Assert.Equal("Right", GetAttribute(button, "HorizontalAlignment"));
+        Assert.Equal("Top", GetAttribute(button, "VerticalAlignment"));
+        Assert.Contains(button.Ancestors(), ancestor => GetAttribute(ancestor, "Name") == "ExplorerBorder");
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Attributes().Any(attribute =>
                 attribute.Name.LocalName == "Name" &&
                 attribute.Value is "ToggleSlotUrlEditorsButton" or "ToggleSlotControlBarsButton"));
+    }
+
+    [Fact]
+    public void HiddenExplorer_EdgeToggleUsesPopupOverlayAndCursorPolling()
+    {
+        var document = LoadMainWindowDocument();
+        var mainContentGrid = FindElementByName(document, "MainContentGrid");
+        var popup = FindElementByName(document, "AutoShowExplorerPopup");
+        var button = FindElementByName(document, "AutoShowExplorerButton");
+        var codeBehindPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "MainWindow.xaml.cs"));
+        var codeBehind = File.ReadAllText(codeBehindPath);
+
+        Assert.Equal("1", GetAttribute(mainContentGrid, "Grid.Row"));
+        Assert.Equal("AbsolutePoint", GetAttribute(popup, "Placement"));
+        Assert.Equal("True", GetAttribute(popup, "AllowsTransparency"));
+        Assert.Equal("True", GetAttribute(popup, "StaysOpen"));
+        Assert.Equal("AutoShowExplorerButton_Click", GetAttribute(button, "Click"));
+        Assert.Equal("AutoShowExplorerButton_MouseEnter", GetAttribute(button, "MouseEnter"));
+        Assert.Equal("AutoShowExplorerButton_MouseLeave", GetAttribute(button, "MouseLeave"));
+        Assert.Contains("GetCursorPos", codeBehind);
+        Assert.Contains("DispatcherTimer _autoShowExplorerTimer", codeBehind);
+        Assert.Contains("RefreshAutoShowExplorerPopupFromCursorPosition", codeBehind);
+        Assert.Contains("PresentationSource.FromVisual(this)", codeBehind);
+        Assert.Contains("MainContentGrid.PointToScreen(new Point(0, 0))", codeBehind);
+        Assert.Contains("AutoShowExplorerPopup.IsOpen = false", codeBehind);
     }
 
     [Fact]
