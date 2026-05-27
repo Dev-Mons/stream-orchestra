@@ -1833,6 +1833,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Suggested record shapes:", text);
         Assert.Contains("record --group A --outcome partial --account --profile-groups A", text);
         Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
+        Assert.Contains("record --count 9 --outcome partial --account --profile-groups A,B,C", text);
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100>", text);
         Assert.Contains("--account-label <label>", text);
         Assert.Contains("record --count 16 --outcome partial --account --profile-groups A,B,C,D", text);
@@ -1867,6 +1868,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pending] Manual feasibility result recorded", fileText);
         Assert.Contains("Required evidence: record live SOOP 4-slot Group A", fileText);
         Assert.Contains("Suggested record shapes:", fileText);
+        Assert.Contains("record --count 9 --outcome partial --account --profile-groups A,B,C", fileText);
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C", fileText);
         Assert.Equal("", error.ToString());
     }

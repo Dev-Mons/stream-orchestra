@@ -1015,6 +1015,27 @@ public sealed class FeasibilityAuditServiceTests
         Assert.True(nineSuccessIndex > groupDAccountIndex);
     }
 
+    [Fact]
+    public void CreateSuggestedRecordShapes_IncludesNineSlotPartialThresholdBeforeFinalSuccess()
+    {
+        var decision = new FeasibilityDecisionService().Decide([]);
+        var service = new FeasibilityAuditService();
+        var auditItems = service.CreateAudit([], decision);
+
+        var suggestions = service.CreateSuggestedRecordShapes(auditItems).ToArray();
+
+        var ninePartialIndex = Array.FindIndex(
+            suggestions,
+            suggestion => suggestion.Contains("record --count 9 --outcome partial", StringComparison.OrdinalIgnoreCase));
+        var nineSuccessIndex = Array.FindIndex(
+            suggestions,
+            suggestion => suggestion.Contains("record --count 9 --outcome success", StringComparison.OrdinalIgnoreCase));
+        Assert.True(ninePartialIndex >= 0);
+        Assert.True(nineSuccessIndex >= 0);
+        Assert.True(ninePartialIndex < nineSuccessIndex);
+        Assert.Contains("--account-label <label>", suggestions[ninePartialIndex]);
+    }
+
     public static IEnumerable<object[]> InvalidResourceObservationResults()
     {
         yield return

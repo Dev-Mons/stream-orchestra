@@ -521,6 +521,7 @@ public sealed class FeasibilityAuditService
             ],
             "nine_plus_playback" =>
             [
+                CreateNineSlotPartialRecordShape(),
                 CreateNineSlotSuccessRecordShape()
             ],
             "twelve_slot_playback" =>
@@ -549,6 +550,11 @@ public sealed class FeasibilityAuditService
     private static string CreateNineSlotSuccessRecordShape()
     {
         return "record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value> --account-label <label> --notes \"9-slot SOOP threshold\"";
+    }
+
+    private static string CreateNineSlotPartialRecordShape()
+    {
+        return "record --count 9 --outcome partial --account --profile-groups A,B,C --account-label <label> --notes \"9-slot SOOP threshold playback\"";
     }
 
     private static bool IsNineSlotSuccessRecordShape(string suggestion)
