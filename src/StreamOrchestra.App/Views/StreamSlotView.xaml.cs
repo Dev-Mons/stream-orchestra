@@ -14,6 +14,7 @@ public partial class StreamSlotView : UserControl
 {
     private const int MinVolumePercent = 0;
     private const int MaxVolumePercent = 100;
+    private const int InitialVolumePercent = 100;
     private const int VolumeStepPercent = 10;
 
     private static readonly Brush DefaultBorderBrush = new SolidColorBrush(Color.FromRgb(45, 54, 66));
@@ -24,7 +25,7 @@ public partial class StreamSlotView : UserControl
     private readonly DispatcherTimer _volumeOverlayTimer;
     private bool _isInitialized;
     private bool _isMuted;
-    private int _volumePercent = MaxVolumePercent;
+    private int _volumePercent = InitialVolumePercent;
     private bool _hasExplicitStreamName;
     private string _preferredQualityKey = "master";
     private string? _playbackViewportScriptId;

@@ -120,17 +120,21 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
+    public void StreamSlotView_DefaultsVolumeToOneHundredPercent()
+    {
+        var xaml = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml"));
+        var codeBehind = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+
+        Assert.Contains("Text=\"100%\"", xaml);
+        Assert.Contains("private const int InitialVolumePercent = 100;", codeBehind);
+        Assert.Contains("_volumePercent = InitialVolumePercent", codeBehind);
+        Assert.Contains("window.__streamOrchestraVolumePercent = 100;", codeBehind);
+    }
+
+    [Fact]
     public void CodeBehind_ProvidesBestEffortQualityControlAutomation()
     {
-        var path = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..",
-            "..",
-            "..",
-            "..",
-            "StreamOrchestra.App",
-            "Views",
-            "StreamSlotView.xaml.cs"));
+        var path = GetAppViewPath("StreamSlotView.xaml.cs");
         var text = File.ReadAllText(path);
 
         Assert.Contains("ApplyQualityAsync", text);
@@ -145,7 +149,12 @@ public sealed class StreamSlotViewLayoutTests
 
     private static XDocument LoadStreamSlotViewDocument()
     {
-        var path = Path.GetFullPath(Path.Combine(
+        return XDocument.Load(GetAppViewPath("StreamSlotView.xaml"));
+    }
+
+    private static string GetAppViewPath(string fileName)
+    {
+        return Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
             "..",
             "..",
@@ -153,9 +162,7 @@ public sealed class StreamSlotViewLayoutTests
             "..",
             "StreamOrchestra.App",
             "Views",
-            "StreamSlotView.xaml"));
-
-        return XDocument.Load(path);
+            fileName));
     }
 
     private static XElement FindElementByName(XDocument document, string name)
