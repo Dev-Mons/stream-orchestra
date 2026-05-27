@@ -132,19 +132,19 @@ Use `--data-folder <path>` to inspect a non-default data folder.
 - The selected profile group can also be tested in isolation, blanking all other groups before loading.
 - Whole-app and group loads switch to a layout that contains the target slots before loading, so hidden slots are not started by accident.
 - 4, 8, 9, 12, and 16 slot playback test buttons load the first N slots and blank the rest; 12/16-slot tests switch to a layout that shows enough slots.
-- Each slot has an individual URL box, load action, compact refresh/mute/menu controls, and pinned-or-hover control bar mode; the slot menu can copy the current URL, clear the slot, or load SOOP home.
-- Click a slot control bar to select it.
-- Slot control bars show `Slot N / stream name`; names are saved in presets and move with the stream during slot swaps.
+- Slot playback uses the full slot area; per-slot chrome stays collapsed so the WebView does not lose height to controls.
+- Click a slot playback area to select it.
+- Slot stream names are saved in presets and follow the stream URL during slot swaps.
 - Slot saved URLs follow WebView navigation, redirects, and source changes, so restored sessions use the latest observed slot URL.
 - Slot display names use the loaded page title when no explicit favorite or preset name was supplied.
 - The left SOOP explorer panel can load a page and send the current URL into the selected slot.
 - The explorer panel can save app-local favorites and load them into the selected slot.
-- Explorer and favorite insertion are button-based for the MVP; drag insertion from the explorer/favorites is intentionally not exposed.
+- Drag the current explorer URL or a SOOP link/card from the explorer panel onto a visible playback area to load that URL into the target slot.
 - App-local favorites are shown by most recent use, then by name.
 - Restored or layout-changed selections are kept on visible slots, so explorer and favorite insertion cannot accidentally start a hidden slot.
 - Explorer current URL and default favorite names follow WebView source/title changes.
-- The explorer panel, per-slot URL editors, and slot control bars can be hidden to maximize video area; those view options are restored on next launch.
-- Drag the `⋮⋮` handle from one slot to another to swap only the stream URLs. Mute state and profile group stay attached to the slot.
+- The explorer panel can be hidden to maximize video area; that view option is restored on next launch.
+- Slot stream swaps keep mute state and profile group attached to the physical slot.
 - Presets, favorites, and the last session are saved as JSON under `%LOCALAPPDATA%\StreamOrchestra\Data`; saves are written through a same-folder temporary file before replacing the target JSON.
 - The preset toolbar supports loading, saving the current preset, saving as a new preset, and reverting transient edits back to the active saved preset.
 - Closing the app saves the current transient session separately from named presets.

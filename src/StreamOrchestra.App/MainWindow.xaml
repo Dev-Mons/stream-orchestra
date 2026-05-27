@@ -37,12 +37,14 @@
                                 MinWidth="86"
                                 Margin="8,0,0,0"
                                 Padding="10,0"
+                                Visibility="Collapsed"
                                 Click="ToggleSlotUrlEditorsButton_Click" />
                         <Button x:Name="ToggleSlotControlBarsButton"
                                 Height="30"
                                 MinWidth="86"
                                 Margin="8,0,0,0"
                                 Padding="10,0"
+                                Visibility="Collapsed"
                                 Click="ToggleSlotControlBarsButton_Click" />
                         <ComboBox x:Name="LayoutComboBox"
                                   Width="170"
@@ -381,7 +383,11 @@
 
             <Grid x:Name="SlotsGrid"
                   Grid.Column="2"
-                  Margin="6" />
+                  Margin="6"
+                  Background="#05070A"
+                  AllowDrop="True"
+                  DragOver="SlotsGrid_DragOver"
+                  Drop="SlotsGrid_Drop" />
         </Grid>
 
         <Border Grid.Row="2"

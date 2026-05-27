@@ -593,6 +593,83 @@ public partial class MainWindow : Window
 
     private async void SlotView_StreamUrlDropRequested(StreamSlotView targetSlot, string url, string? streamName)
     {
+        await LoadDroppedStreamIntoSlotAsync(targetSlot, url, streamName);
+    }
+
+    private void SlotsGrid_DragOver(object sender, DragEventArgs e)
+    {
+        var hasTargetSlot = TryGetDropTargetSlot(e.GetPosition(SlotsGrid), out _);
+
+        if (hasTargetSlot && e.Data.GetDataPresent(StreamDragDataFormats.SlotId))
+        {
+            e.Effects = DragDropEffects.Move;
+        }
+        else if (hasTargetSlot && StreamDropDataReader.TryGetDroppedStream(e.Data, _streamNavigationService, out _, out _))
+        {
+            e.Effects = DragDropEffects.Copy;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+
+        e.Handled = true;
+    }
+
+    private async void SlotsGrid_Drop(object sender, DragEventArgs e)
+    {
+        if (!TryGetDropTargetSlot(e.GetPosition(SlotsGrid), out var targetSlot) || targetSlot is null)
+        {
+            StatusTextBlock.Text = "Drop the stream over a visible playback area.";
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Data.GetDataPresent(StreamDragDataFormats.SlotId))
+        {
+            if (e.Data.GetData(StreamDragDataFormats.SlotId) is int sourceSlotId)
+            {
+                SlotView_SlotSwapRequested(targetSlot, sourceSlotId);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        if (StreamDropDataReader.TryGetDroppedStream(e.Data, _streamNavigationService, out var url, out var streamName))
+        {
+            await LoadDroppedStreamIntoSlotAsync(targetSlot, url, streamName);
+            e.Handled = true;
+        }
+    }
+
+    private bool TryGetDropTargetSlot(Point position, out StreamSlotView? targetSlot)
+    {
+        targetSlot = null;
+        var visibleSlots = SlotsGrid.Children.OfType<StreamSlotView>().ToArray();
+
+        foreach (var slot in visibleSlots.Reverse())
+        {
+            var topLeft = slot.TranslatePoint(new Point(0, 0), SlotsGrid);
+            var bounds = new Rect(topLeft, slot.RenderSize);
+            if (bounds.Contains(position))
+            {
+                targetSlot = slot;
+                return true;
+            }
+        }
+
+        if (visibleSlots.Length == 1)
+        {
+            targetSlot = visibleSlots[0];
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task LoadDroppedStreamIntoSlotAsync(StreamSlotView targetSlot, string url, string? streamName)
+    {
         SelectSlot(targetSlot);
         await NavigateSlotAsync(targetSlot, url, streamName);
 

@@ -13,6 +13,7 @@ public partial class ExplorerPanel : UserControl
     private readonly StreamNavigationService _navigationService;
     private bool _isInitialized;
     private Point? _dragStartPoint;
+    private string? _linkDragScriptId;
 
     public ExplorerPanel(WebViewProfileService profileService, StreamNavigationService navigationService)
     {
@@ -79,11 +80,72 @@ public partial class ExplorerPanel : UserControl
 
         var environment = await _profileService.GetEnvironmentAsync(_profileService.ExplorerGroup);
         await Browser.EnsureCoreWebView2Async(environment);
+        await InstallLinkDragScriptAsync();
 
         Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
         Browser.CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
         Browser.CoreWebView2.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
         _isInitialized = true;
+    }
+
+    private async Task InstallLinkDragScriptAsync()
+    {
+        if (_linkDragScriptId is not null || Browser.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        _linkDragScriptId = await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+            CreateLinkDragScript());
+    }
+
+    private static string CreateLinkDragScript()
+    {
+        return """
+(() => {
+  if (window.__streamOrchestraLinkDragInstalled) {
+    return;
+  }
+
+  window.__streamOrchestraLinkDragInstalled = true;
+
+  document.addEventListener("dragstart", event => {
+    const anchor = event.target?.closest?.("a[href]");
+    if (!anchor || !event.dataTransfer) {
+      return;
+    }
+
+    let url = "";
+    try {
+      url = new URL(anchor.getAttribute("href"), document.baseURI).href;
+    } catch {
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+      return;
+    }
+
+    const title = anchor.textContent?.trim() || anchor.getAttribute("title") || url;
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("text/plain", url);
+    event.dataTransfer.setData("text/uri-list", url);
+    event.dataTransfer.setData("text/html", `<a href="${escapeAttribute(url)}">${escapeHtml(title)}</a>`);
+  }, true);
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(value).replaceAll("'", "&#39;");
+  }
+})();
+""";
     }
 
     private void CoreWebView2_SourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)

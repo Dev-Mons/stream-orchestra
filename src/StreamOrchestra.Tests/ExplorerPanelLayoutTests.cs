@@ -53,6 +53,27 @@ public sealed class ExplorerPanelLayoutTests
         Assert.Equal("ExplorerDragSource_MouseMove", GetAttribute(dragSource, "MouseMove"));
     }
 
+    [Fact]
+    public void CodeBehind_AddsSoopLinkUrlsToDragData()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "Views",
+            "ExplorerPanel.xaml.cs"));
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("CreateLinkDragScript", text);
+        Assert.Contains("dragstart", text);
+        Assert.Contains("a[href]", text);
+        Assert.Contains("text/plain", text);
+        Assert.Contains("text/uri-list", text);
+    }
+
     private static XDocument LoadExplorerPanelDocument()
     {
         var path = Path.GetFullPath(Path.Combine(

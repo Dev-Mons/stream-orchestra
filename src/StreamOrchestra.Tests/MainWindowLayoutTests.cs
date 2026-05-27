@@ -44,6 +44,33 @@ public sealed class MainWindowLayoutTests
 
             Assert.Equal(clickHandler, GetAttribute(button, "Click"));
         }
+
+        Assert.Equal("Collapsed", GetAttribute(FindElementByName(document, "ToggleSlotUrlEditorsButton"), "Visibility"));
+        Assert.Equal("Collapsed", GetAttribute(FindElementByName(document, "ToggleSlotControlBarsButton"), "Visibility"));
+    }
+
+    [Fact]
+    public void PlaybackGrid_AcceptsDroppedStreamsOverTheScreenArea()
+    {
+        var document = LoadMainWindowDocument();
+        var slotsGrid = FindElementByName(document, "SlotsGrid");
+        var codeBehindPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "MainWindow.xaml.cs"));
+        var codeBehind = File.ReadAllText(codeBehindPath);
+
+        Assert.Equal("True", GetAttribute(slotsGrid, "AllowDrop"));
+        Assert.Equal("SlotsGrid_DragOver", GetAttribute(slotsGrid, "DragOver"));
+        Assert.Equal("SlotsGrid_Drop", GetAttribute(slotsGrid, "Drop"));
+        Assert.Equal("#05070A", GetAttribute(slotsGrid, "Background"));
+        Assert.Contains("TryGetDropTargetSlot", codeBehind);
+        Assert.Contains("LoadDroppedStreamIntoSlotAsync", codeBehind);
+        Assert.Contains("StreamDropDataReader.TryGetDroppedStream", codeBehind);
     }
 
     [Fact]

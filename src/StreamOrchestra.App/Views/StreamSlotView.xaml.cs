@@ -2,10 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.IO;
-using System.Net;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
@@ -26,6 +23,7 @@ public partial class StreamSlotView : UserControl
     private bool _hasExplicitStreamName;
     private Point? _dragStartPoint;
     private string _preferredQualityKey = "master";
+    private string? _playbackViewportScriptId;
     private string? _qualityObserverScriptId;
 
     public StreamSlotView(
@@ -176,10 +174,12 @@ public partial class StreamSlotView : UserControl
 
         var environment = await _profileService.GetEnvironmentAsync(Configuration.ProfileGroup);
         await Browser.EnsureCoreWebView2Async(environment);
+        await InstallPlaybackViewportScriptAsync();
 
         Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
         Browser.CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
         Browser.CoreWebView2.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
+        Browser.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
         Browser.CoreWebView2.IsMuted = _isMuted;
         _isInitialized = true;
 
@@ -232,6 +232,32 @@ public partial class StreamSlotView : UserControl
         }
 
         InitializationOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        PlaybackDropMessage? message;
+        try
+        {
+            message = JsonSerializer.Deserialize<PlaybackDropMessage>(e.WebMessageAsJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (message is null ||
+            !message.Type.Equals("stream-drop", StringComparison.OrdinalIgnoreCase) ||
+            !StreamDropDataReader.TryNormalizeDroppedText(message.Url, _navigationService, out var url))
+        {
+            return;
+        }
+
+        SlotSelected?.Invoke(this);
+        StreamUrlDropRequested?.Invoke(this, url, message.StreamName);
     }
 
     private async void LoadButton_Click(object sender, RoutedEventArgs e)
@@ -301,6 +327,11 @@ public partial class StreamSlotView : UserControl
         SetMuted(!_isMuted);
     }
 
+    private void SlotBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        SlotSelected?.Invoke(this);
+    }
+
     private void ControlBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         SlotSelected?.Invoke(this);
@@ -352,7 +383,7 @@ public partial class StreamSlotView : UserControl
         {
             e.Effects = DragDropEffects.Move;
         }
-        else if (TryGetDroppedStream(e.Data, out _, out _))
+        else if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out _, out _))
         {
             e.Effects = DragDropEffects.Copy;
         }
@@ -374,102 +405,11 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
-        if (TryGetDroppedStream(e.Data, out var url, out var streamName))
+        if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out var url, out var streamName))
         {
             SlotSelected?.Invoke(this);
             StreamUrlDropRequested?.Invoke(this, url, streamName);
             e.Handled = true;
-        }
-    }
-
-    private bool TryGetDroppedStream(IDataObject data, out string url, out string? streamName)
-    {
-        url = "";
-        streamName = null;
-
-        if (TryGetStringData(data, StreamDragDataFormats.StreamName, out var droppedStreamName))
-        {
-            streamName = droppedStreamName.Trim();
-        }
-
-        if (TryGetStringData(data, StreamDragDataFormats.StreamUrl, out var customUrl) &&
-            TryNormalizeDroppedUrl(customUrl, out url))
-        {
-            return true;
-        }
-
-        if (TryGetStringData(data, DataFormats.Html, out var html) &&
-            TryExtractUrlFromHtml(html, out var htmlUrl) &&
-            TryNormalizeDroppedUrl(htmlUrl, out url))
-        {
-            return true;
-        }
-
-        foreach (var format in new[] { DataFormats.UnicodeText, DataFormats.Text, "UniformResourceLocatorW", "UniformResourceLocator" })
-        {
-            if (TryGetStringData(data, format, out var text) &&
-                TryNormalizeDroppedUrl(text, out url))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private bool TryNormalizeDroppedUrl(string candidate, out string url)
-    {
-        url = _navigationService.NormalizeUrl(candidate);
-        return !url.Equals("about:blank", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool TryExtractUrlFromHtml(string html, out string url)
-    {
-        url = "";
-        var match = Regex.Match(
-            html,
-            "href\\s*=\\s*(?:\"(?<url>[^\"]+)\"|'(?<url>[^']+)'|(?<url>[^\\s>]+))",
-            RegexOptions.IgnoreCase);
-        if (!match.Success)
-        {
-            return false;
-        }
-
-        url = WebUtility.HtmlDecode(match.Groups["url"].Value);
-        return !string.IsNullOrWhiteSpace(url);
-    }
-
-    private static bool TryGetStringData(IDataObject data, string format, out string value)
-    {
-        value = "";
-        if (!data.GetDataPresent(format))
-        {
-            return false;
-        }
-
-        value = data.GetData(format) switch
-        {
-            string text => text,
-            MemoryStream stream => ReadStreamText(stream),
-            byte[] bytes => System.Text.Encoding.Unicode.GetString(bytes).TrimEnd('\0'),
-            _ => ""
-        };
-
-        return !string.IsNullOrWhiteSpace(value);
-    }
-
-    private static string ReadStreamText(MemoryStream stream)
-    {
-        var position = stream.Position;
-        try
-        {
-            stream.Position = 0;
-            using var reader = new StreamReader(stream, System.Text.Encoding.Unicode, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-            return reader.ReadToEnd().TrimEnd('\0');
-        }
-        finally
-        {
-            stream.Position = position;
         }
     }
 
@@ -497,6 +437,141 @@ public partial class StreamSlotView : UserControl
             "sd" => "360p",
             _ => qualityKey
         };
+    }
+
+    private async Task InstallPlaybackViewportScriptAsync()
+    {
+        if (_playbackViewportScriptId is not null || Browser.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        _playbackViewportScriptId = await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+            CreatePlaybackViewportScript());
+    }
+
+    private static string CreatePlaybackViewportScript()
+    {
+        return """
+(() => {
+  if (window.__streamOrchestraPlaybackViewportInstalled) {
+    return;
+  }
+
+  window.__streamOrchestraPlaybackViewportInstalled = true;
+
+  const styleText = `
+    html, body {
+      width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      background: #000 !important;
+    }
+
+    video {
+      max-width: 100vw !important;
+      max-height: 100vh !important;
+      object-fit: contain !important;
+    }
+  `;
+
+  function installStyle() {
+    const root = document.head || document.documentElement;
+    if (!root || document.getElementById("stream-orchestra-playback-viewport")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "stream-orchestra-playback-viewport";
+    style.textContent = styleText;
+    root.appendChild(style);
+  }
+
+  installStyle();
+  window.addEventListener("DOMContentLoaded", installStyle, { once: true });
+
+  document.addEventListener("dragover", event => {
+    if (!hasStreamUrlData(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+  }, true);
+
+  document.addEventListener("drop", event => {
+    const payload = readStreamDropPayload(event.dataTransfer);
+    if (!payload?.url) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    window.chrome?.webview?.postMessage({
+      type: "stream-drop",
+      url: payload.url,
+      streamName: payload.streamName || ""
+    });
+  }, true);
+
+  function hasStreamUrlData(dataTransfer) {
+    if (!dataTransfer) {
+      return false;
+    }
+
+    return Array.from(dataTransfer.types || []).some(type =>
+      ["text/plain", "text/uri-list", "text/html", "Text"].includes(type));
+  }
+
+  function readStreamDropPayload(dataTransfer) {
+    if (!dataTransfer) {
+      return null;
+    }
+
+    const uriList = dataTransfer.getData("text/uri-list");
+    const plainText = dataTransfer.getData("text/plain") || dataTransfer.getData("Text");
+    const html = dataTransfer.getData("text/html");
+    const htmlPayload = readHtmlPayload(html);
+    const url = firstWebUrl(uriList) || htmlPayload.url || firstWebUrl(plainText);
+
+    return url
+      ? { url, streamName: htmlPayload.streamName || "" }
+      : null;
+  }
+
+  function readHtmlPayload(html) {
+    if (!html) {
+      return { url: "", streamName: "" };
+    }
+
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const anchor = template.content.querySelector("a[href]");
+    if (!anchor) {
+      return { url: firstWebUrl(html), streamName: "" };
+    }
+
+    let url = "";
+    try {
+      url = new URL(anchor.getAttribute("href"), document.baseURI).href;
+    } catch {
+      url = firstWebUrl(html);
+    }
+
+    return {
+      url,
+      streamName: anchor.textContent?.trim() || anchor.getAttribute("title") || ""
+    };
+  }
+
+  function firstWebUrl(value) {
+    const match = String(value || "").match(/https?:\/\/[^\s"'<>]+/i);
+    return match?.[0] || "";
+  }
+})();
+""";
     }
 
     private async Task RefreshQualityObserverScriptAsync()
@@ -670,6 +745,7 @@ public partial class StreamSlotView : UserControl
 
     private void UpdateControlBarVisibility()
     {
+        SlotChrome.Visibility = Visibility.Collapsed;
         var shouldShowControlBar = _areControlBarsAlwaysVisible || _isPointerOverChrome;
 
         ControlBar.Visibility = shouldShowControlBar ? Visibility.Visible : Visibility.Collapsed;
@@ -682,6 +758,15 @@ public partial class StreamSlotView : UserControl
     {
         InitializationOverlay.Visibility = Visibility.Visible;
         InitializationTextBlock.Text = ex.Message;
+    }
+
+    private sealed class PlaybackDropMessage
+    {
+        public string Type { get; init; } = "";
+
+        public string Url { get; init; } = "";
+
+        public string? StreamName { get; init; }
     }
 
 }

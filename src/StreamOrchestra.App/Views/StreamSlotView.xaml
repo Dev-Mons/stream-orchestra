@@ -14,7 +14,8 @@
             Background="#0F141B"
             AllowDrop="True"
             DragOver="SlotBorder_DragOver"
-            Drop="SlotBorder_Drop">
+            Drop="SlotBorder_Drop"
+            PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -23,6 +24,7 @@
 
             <Grid x:Name="SlotChrome"
                   Grid.Row="0"
+                  Visibility="Collapsed"
                   MouseEnter="SlotChrome_MouseEnter"
                   MouseLeave="SlotChrome_MouseLeave">
                 <Grid.RowDefinitions>
@@ -149,10 +151,11 @@
             <Grid Grid.Row="1"
                   Background="#05070A">
                 <wv2:WebView2 x:Name="Browser"
-                              AllowExternalDrop="False"
+                              AllowExternalDrop="True"
                               AllowDrop="True"
                               DragOver="SlotBorder_DragOver"
-                              Drop="SlotBorder_Drop" />
+                              Drop="SlotBorder_Drop"
+                              PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown" />
                 <Border x:Name="InitializationOverlay"
                         Background="#05070A">
                     <StackPanel HorizontalAlignment="Center"

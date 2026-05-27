@@ -11,7 +11,7 @@ dotnet build StreamOrchestra.slnx
 dotnet test StreamOrchestra.slnx --no-build
 ```
 
-Current automated test coverage: 495 passing tests.
+Current automated test coverage: 499 passing tests.
 
 ## Phase 0 Feasibility Spike
 
@@ -23,7 +23,7 @@ Current automated test coverage: 495 passing tests.
 | 4x4 grid | Implemented | `data/layouts.json` / `layout_4x4` |
 | Profile Group A/B/C/D | Implemented | `WebViewProfileService.GetGroupForSlot()` maps slots 1-4, 5-8, 9-12, and 13-16 to A-D, and tests verify the public slot profile groups expose exactly A-D |
 | Separate persistent user data folders | Implemented | `%LOCALAPPDATA%\StreamOrchestra\Profiles\GroupA` through `GroupD`; tests verify A-D use distinct persistent folders under the profile root |
-| URL input and load | Implemented | Global URL bar, group load, whole-app load, blank-all action, and per-slot URL editor; XAML tests verify the global URL input, scope selector, and load buttons are wired |
+| URL input and load | Implemented | Global URL bar, group load, whole-app load, blank-all action, selected-slot explorer/favorite insertion, and screen-area drag insertion; XAML tests verify the global URL input, scope selector, load buttons, and playback-grid drop target are wired |
 | Isolated profile group playback test | Implemented | `그룹 단독` blanks non-selected groups before loading the selected group, and XAML tests verify the A-D scope selector plus isolated-load action |
 | 4/8/9/12/16 playback test buttons | Implemented | `PlaybackTestPlanService` |
 | Playback test layout visibility | Implemented | 12/16 tests auto-select a layout that contains the actual playback-plan slot IDs, preflight checks the same 4/8/9/12/16 slot coverage, and the app fails explicitly if no such layout exists |
@@ -59,17 +59,17 @@ Current automated test coverage: 495 passing tests.
 | Slot URL normalization | Implemented | `StreamNavigationService` keeps valid `http`/`https` URLs and `about:blank`, infers `https://` for bare web domains, and blanks malformed HTTP inputs or non-web schemes before workspace/favorite/swap persistence; diagnostic active-stream counts and external-browser fallback planning use the same URL normalization |
 | Slot URL sync after WebView navigation | Implemented | `StreamSlotView` listens to WebView2 source changes before saving presets/session state |
 | Slot display names from page title | Implemented | `StreamSlotView` uses WebView2 document titles when no explicit stream name was supplied |
-| Slot stream name display/storage | Implemented | `WorkspaceSlot.StreamName`, `StreamSlotView` control bar |
+| Slot stream name storage | Implemented | `WorkspaceSlot.StreamName`, `StreamSlotView` runtime state |
 | Last state restore on launch | Implemented | `PresetStorageService`, `MainWindow_Loaded`; saved window placement is rejected for non-finite or invalid sizes and clamped to the current virtual screen before restore |
 | Preset save/load/revert | Implemented | Preset toolbar includes load, current-state save, save-as, and revert-to-active-preset actions; the save-as dialog requires a preset name and supports Enter-to-save plus cancel; `workspaces.json` and `appstate.json` keep saved presets separate from transient last sessions; JSON list loads ignore null entries, normalize blank/duplicate workspace IDs and blank names, normalize app-state workspace IDs, selected slots, null windows, and transient session metadata, save normalized workspace/app-state metadata, and write a same-folder temporary file before replacing the target; diagnostic reports include saved workspace count, favorite count, last-session presence, selected slot, layout, slot count, and active stream URL count |
-| Slot top control bar | Implemented | `StreamSlotView` uses compact drag, mute, refresh, and menu controls with title trimming; XAML tests verify the individual URL load controls, drag handle, drop target, mute, refresh, and slot menu actions |
-| Slot control bar auto-hide | Implemented | `ToggleSlotControlBarsButton`, `AppState.AreSlotControlBarsAlwaysVisible`; XAML tests also verify explorer, slot URL editor, and control-bar visibility toggles |
-| Drag handle slot swap | Implemented | `SlotSwapService`, `⋮⋮` drag handle, and XAML tests verify swap dragging starts from the handle while the slot border is the drop target; stream URL/name identity is normalized at the swap boundary while mute state and profile group remain attached to the slot |
-| SOOP explorer panel | Implemented | `ExplorerPanel` provides SOOP navigation, back, refresh, current URL insertion into the selected slot, current URL favorite creation, and favorite insertion into the selected slot |
+| Full-area slot playback | Implemented | `StreamSlotView` collapses per-slot chrome so playback uses the full slot area and installs a viewport script that hides page scrolling in playback slots |
+| Slot control view state | Implemented | Legacy URL/control-bar view-state values remain normalized in `AppState`, but slot chrome stays collapsed for full-area playback |
+| Slot stream swap service | Implemented | `SlotSwapService` keeps stream URL/name identity normalized at the swap boundary while mute state and profile group remain attached to the slot |
+| SOOP explorer panel | Implemented | `ExplorerPanel` provides SOOP navigation, back, refresh, current URL insertion into the selected slot, current URL favorite creation, favorite insertion into the selected slot, and drag data for SOOP links/cards |
 | Explorer current URL/title sync | Implemented | `ExplorerPanel` listens to WebView2 source and title changes before inserting current URL or creating a favorite |
 | App-local favorites | Implemented | `FavoriteStorageService`, `favorites.json`; favorites are shown by most recent use, then by name; blank favorite names fall back to URL-derived names and stable `favorite` IDs with collision suffixes; malformed hand-edited favorite lists ignore blank URLs, trim text fields, de-duplicate IDs, and saves go through the shared temporary-file JSON writer |
 | Selected slot insertion | Implemented | Explorer and favorite insertion into selected slot |
-| MVP drag insertion deferral | Implemented | Explorer/favorite insertion remains button-based; `ExplorerPanelLayoutTests` verifies drag/drop registration is not exposed for MVP favorite insertion |
+| Screen-area drag insertion | Implemented | `SlotsGrid` handles grid-gap drops, and playback WebView2 instances receive in-video drops via injected `drop`/`postMessage` handling before loading the URL into the target slot |
 | Visible selected slot guard | Implemented | `SlotSelectionService` keeps restored/layout-changed selections on visible slots before explorer or favorite insertion and tolerates null saved layout slot collections/entries plus out-of-range layout slot IDs |
 | Slot mute state persists | Implemented | `WorkspaceSlot.Muted`, `AppState.LastSession` |
 | Slot profile group persists | Implemented | Profile group is slot-derived and stays with slot |

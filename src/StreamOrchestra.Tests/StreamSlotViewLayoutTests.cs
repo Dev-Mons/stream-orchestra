@@ -66,23 +66,27 @@ public sealed class StreamSlotViewLayoutTests
         var dragHandle = FindElementByName(document, "DragHandleTextBlock");
         var slotBorder = FindElementByName(document, "SlotBorder");
         var controlBar = FindElementByName(document, "ControlBar");
+        var slotChrome = FindElementByName(document, "SlotChrome");
 
+        Assert.Equal("Collapsed", GetAttribute(slotChrome, "Visibility"));
+        Assert.Equal("SlotBorder_PreviewMouseLeftButtonDown", GetAttribute(slotBorder, "PreviewMouseLeftButtonDown"));
         Assert.Equal("DragHandleTextBlock_MouseLeftButtonDown", GetAttribute(dragHandle, "MouseLeftButtonDown"));
         Assert.Equal("DragHandleTextBlock_MouseMove", GetAttribute(dragHandle, "MouseMove"));
         Assert.Equal("SizeAll", GetAttribute(dragHandle, "Cursor"));
         Assert.Equal("True", GetAttribute(slotBorder, "AllowDrop"));
         Assert.Equal("SlotBorder_DragOver", GetAttribute(slotBorder, "DragOver"));
         Assert.Equal("SlotBorder_Drop", GetAttribute(slotBorder, "Drop"));
-        Assert.Equal("False", GetAttribute(FindElementByName(document, "Browser"), "AllowExternalDrop"));
+        Assert.Equal("True", GetAttribute(FindElementByName(document, "Browser"), "AllowExternalDrop"));
         Assert.Equal("SlotBorder_DragOver", GetAttribute(FindElementByName(document, "Browser"), "DragOver"));
         Assert.Equal("SlotBorder_Drop", GetAttribute(FindElementByName(document, "Browser"), "Drop"));
+        Assert.Equal("SlotBorder_PreviewMouseLeftButtonDown", GetAttribute(FindElementByName(document, "Browser"), "PreviewMouseLeftButtonDown"));
         Assert.Null(GetAttribute(controlBar, "MouseMove"));
     }
 
     [Fact]
     public void CodeBehind_AcceptsExplorerUrlDropsOnSlots()
     {
-        var path = Path.GetFullPath(Path.Combine(
+        var slotPath = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
             "..",
             "..",
@@ -91,12 +95,26 @@ public sealed class StreamSlotViewLayoutTests
             "StreamOrchestra.App",
             "Views",
             "StreamSlotView.xaml.cs"));
-        var text = File.ReadAllText(path);
+        var dropReaderPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "Views",
+            "StreamDropDataReader.cs"));
+        var slotText = File.ReadAllText(slotPath);
+        var dropReaderText = File.ReadAllText(dropReaderPath);
 
-        Assert.Contains("StreamUrlDropRequested?.Invoke", text);
-        Assert.Contains("StreamDragDataFormats.StreamUrl", text);
-        Assert.Contains("DataFormats.UnicodeText", text);
-        Assert.Contains("DragDropEffects.Copy", text);
+        Assert.Contains("StreamUrlDropRequested?.Invoke", slotText);
+        Assert.Contains("StreamDropDataReader.TryGetDroppedStream", slotText);
+        Assert.Contains("CoreWebView2_WebMessageReceived", slotText);
+        Assert.Contains("stream-drop", slotText);
+        Assert.Contains("StreamDragDataFormats.StreamUrl", dropReaderText);
+        Assert.Contains("DataFormats.UnicodeText", dropReaderText);
+        Assert.Contains("PlainTextUrlPattern", dropReaderText);
+        Assert.Contains("DragDropEffects.Copy", slotText);
     }
 
     [Fact]
