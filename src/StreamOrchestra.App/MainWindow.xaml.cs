@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using System.ComponentModel;
 using StreamOrchestra.App.Models;
@@ -33,6 +34,7 @@ public partial class MainWindow : Window
     private ExplorerPanel? _explorerPanel;
     private bool _isExplorerPanelVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
+    private LayoutPreset? _selectedLayout;
 
     public MainWindow()
     {
@@ -83,17 +85,67 @@ public partial class MainWindow : Window
 
     private void LoadLayouts(string? selectedLayoutId = null)
     {
-        var currentLayoutId = selectedLayoutId ?? (LayoutComboBox.SelectedItem as LayoutPreset)?.Id;
+        var currentLayoutId = selectedLayoutId ?? _selectedLayout?.Id;
         _builtInLayouts = _layoutPresetService.LoadBuiltInLayouts();
         _customLayouts = _layoutPresetService.LoadCustomLayouts().ToList();
         _layouts = LayoutPresetService.CombineLayouts(_builtInLayouts, _customLayouts);
 
-        LayoutComboBox.ItemsSource = null;
-        LayoutComboBox.ItemsSource = _layouts;
-        LayoutComboBox.SelectedItem = string.IsNullOrWhiteSpace(currentLayoutId)
+        _selectedLayout = string.IsNullOrWhiteSpace(currentLayoutId)
             ? LayoutPresetService.SelectDefaultLayout(_layouts)
             : _layouts.FirstOrDefault(layout => layout.Id.Equals(currentLayoutId, StringComparison.OrdinalIgnoreCase))
               ?? LayoutPresetService.SelectDefaultLayout(_layouts);
+
+        RefreshLayoutSelector();
+        ApplyLayout(_selectedLayout);
+    }
+
+    private void RefreshLayoutSelector()
+    {
+        LayoutSelectorPanel.Children.Clear();
+
+        foreach (var layout in _layouts)
+        {
+            var isSelected = _selectedLayout?.Id.Equals(layout.Id, StringComparison.OrdinalIgnoreCase) == true;
+            var button = CreateLayoutSelectorButton(layout, isSelected);
+            button.Click += LayoutButton_Click;
+            LayoutSelectorPanel.Children.Add(button);
+        }
+    }
+
+    private static Button CreateLayoutSelectorButton(LayoutPreset layout, bool isSelected)
+    {
+        var button = new Button
+        {
+            Tag = layout,
+            Width = 150,
+            Height = 72,
+            Padding = new Thickness(6),
+            Margin = new Thickness(0, 0, 8, 0),
+            Background = new SolidColorBrush(Color.FromRgb(16, 24, 32)),
+            BorderBrush = isSelected
+                ? new SolidColorBrush(Color.FromRgb(243, 246, 250))
+                : new SolidColorBrush(Color.FromRgb(45, 54, 66)),
+            BorderThickness = isSelected ? new Thickness(2) : new Thickness(1),
+            Foreground = Brushes.White,
+            ToolTip = layout.Name
+        };
+
+        var panel = new DockPanel { LastChildFill = true };
+        var title = new TextBlock
+        {
+            Text = layout.Name,
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.White,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        DockPanel.SetDock(title, Dock.Top);
+        panel.Children.Add(title);
+        panel.Children.Add(LayoutPreviewBuilder.Build(layout, 132, 44, showSlotNumbers: false));
+        button.Content = panel;
+
+        return button;
     }
 
     private void LoadWorkspacePresets()
@@ -150,19 +202,30 @@ public partial class MainWindow : Window
             : 1;
     }
 
-    private async void LayoutComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void LayoutButton_Click(object sender, RoutedEventArgs e)
     {
-        if (LayoutComboBox.SelectedItem is LayoutPreset layout)
+        if (sender is Button { Tag: LayoutPreset layout })
         {
-            ApplyLayout(layout);
-            EnsureSelectedSlotVisible(layout);
+            await ApplySelectedLayoutAsync(layout, clearHiddenSlots: true);
+        }
+    }
+
+    private async Task ApplySelectedLayoutAsync(LayoutPreset layout, bool clearHiddenSlots)
+    {
+        _selectedLayout = layout;
+        RefreshLayoutSelector();
+        ApplyLayout(layout);
+        EnsureSelectedSlotVisible(layout);
+
+        if (clearHiddenSlots)
+        {
             await ClearHiddenNonBlankSlotsAsync(layout);
         }
     }
 
     private void EditLayoutsButton_Click(object sender, RoutedEventArgs e)
     {
-        var currentLayout = LayoutComboBox.SelectedItem as LayoutPreset;
+        var currentLayout = _selectedLayout;
         var dialog = new LayoutEditorDialog(
             _layoutPresetService,
             _builtInLayouts,
@@ -360,7 +423,7 @@ public partial class MainWindow : Window
 
     private WorkspacePreset CaptureWorkspace(string id, string name)
     {
-        var selectedLayout = LayoutComboBox.SelectedItem as LayoutPreset;
+        var selectedLayout = _selectedLayout;
         var layoutId = selectedLayout is not null
             ? selectedLayout.Id
             : LayoutPresetIds.Default;
@@ -418,9 +481,9 @@ public partial class MainWindow : Window
         var preparedWorkspace = _workspaceRestoreService.Prepare(workspace, _layouts);
         workspace = preparedWorkspace.Workspace;
         var layout = preparedWorkspace.Layout;
-        if (!ReferenceEquals(LayoutComboBox.SelectedItem, layout))
+        if (_selectedLayout?.Id.Equals(layout.Id, StringComparison.OrdinalIgnoreCase) != true)
         {
-            LayoutComboBox.SelectedItem = layout;
+            await ApplySelectedLayoutAsync(layout, clearHiddenSlots: false);
         }
         else
         {
@@ -488,7 +551,7 @@ public partial class MainWindow : Window
     private void SelectSlotFromState(int? selectedSlotId)
     {
         var targetSlotId = selectedSlotId;
-        if (LayoutComboBox.SelectedItem is LayoutPreset layout)
+        if (_selectedLayout is LayoutPreset layout)
         {
             targetSlotId = _slotSelectionService.ResolveVisibleSlotId(layout, selectedSlotId);
         }
@@ -681,7 +744,7 @@ public partial class MainWindow : Window
     private StreamSlotView[] GetVisibleNonBlankSlots()
     {
         HashSet<int>? visibleSlotIds = null;
-        if (LayoutComboBox.SelectedItem is LayoutPreset layout)
+        if (_selectedLayout is LayoutPreset layout)
         {
             visibleSlotIds = layout.Slots
                 .Select(slot => slot.SlotId)

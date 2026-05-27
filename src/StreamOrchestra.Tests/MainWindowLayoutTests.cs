@@ -10,6 +10,8 @@ public sealed class MainWindowLayoutTests
         var document = LoadMainWindowDocument();
 
         Assert.Equal("EditLayoutsButton_Click", GetAttribute(FindButton(document, "레이아웃 편집"), "Click"));
+        Assert.NotNull(FindElementByName(document, "LayoutSelectorPanel"));
+        Assert.Null(FindElementByNameOrDefault(document, "LayoutComboBox"));
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Attributes().Any(attribute =>
                 attribute.Name.LocalName == "Name" &&
@@ -86,6 +88,26 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
+    public void CodeBehind_UsesPreviewButtonsForLayoutSelection()
+    {
+        var codeBehindPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "MainWindow.xaml.cs"));
+        var codeBehind = File.ReadAllText(codeBehindPath);
+
+        Assert.Contains("RefreshLayoutSelector", codeBehind);
+        Assert.Contains("LayoutButton_Click", codeBehind);
+        Assert.Contains("ApplySelectedLayoutAsync", codeBehind);
+        Assert.DoesNotContain("LayoutComboBox", codeBehind);
+        Assert.DoesNotContain("LayoutComboBox_SelectionChanged", codeBehind);
+    }
+
+    [Fact]
     public void PresetToolbar_ProvidesPlanRequiredPresetActions()
     {
         var document = LoadMainWindowDocument();
@@ -126,6 +148,15 @@ public sealed class MainWindowLayoutTests
         return document
             .Descendants()
             .Single(element => element.Attributes().Any(attribute =>
+                attribute.Name.LocalName == "Name" &&
+                attribute.Value == name));
+    }
+
+    private static XElement? FindElementByNameOrDefault(XDocument document, string name)
+    {
+        return document
+            .Descendants()
+            .SingleOrDefault(element => element.Attributes().Any(attribute =>
                 attribute.Name.LocalName == "Name" &&
                 attribute.Value == name));
     }

@@ -32,12 +32,14 @@
                                 MinWidth="86"
                                 Padding="10,0"
                                 Click="ToggleExplorerButton_Click" />
-                        <ComboBox x:Name="LayoutComboBox"
-                                  Width="170"
-                                  Height="30"
-                                  Margin="8,0,0,0"
-                                  DisplayMemberPath="Name"
-                                  SelectionChanged="LayoutComboBox_SelectionChanged" />
+                        <ScrollViewer Width="520"
+                                      Height="86"
+                                      Margin="8,0,0,0"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled">
+                            <StackPanel x:Name="LayoutSelectorPanel"
+                                        Orientation="Horizontal" />
+                        </ScrollViewer>
                         <Button Content="레이아웃 편집"
                                 Height="30"
                                 MinWidth="96"

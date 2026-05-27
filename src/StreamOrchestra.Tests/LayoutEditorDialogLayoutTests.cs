@@ -17,17 +17,23 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.Equal(["템플릿", "사용자 지정"], tabHeaders);
         Assert.NotNull(FindElementByName(document, "TemplateListPanel"));
         Assert.NotNull(FindElementByName(document, "TemplatePreviewHost"));
-        Assert.NotNull(FindElementByName(document, "CustomLayoutListBox"));
+        Assert.Null(FindElementByNameOrDefault(document, "CustomLayoutListBox"));
+        Assert.NotNull(FindElementByName(document, "CustomLayoutListPanel"));
         Assert.NotNull(FindElementByName(document, "SplitEditorHost"));
+        Assert.Null(FindElementByNameOrDefault(document, "LayoutNameTextBox"));
         Assert.Equal("VerticalSplitButton_Click", GetAttribute(FindElementByName(document, "VerticalSplitButton"), "Click"));
         Assert.Equal("HorizontalSplitButton_Click", GetAttribute(FindElementByName(document, "HorizontalSplitButton"), "Click"));
         Assert.Equal("RemoveSelectedSlotButton_Click", GetAttribute(FindElementByName(document, "RemoveSelectedSlotButton"), "Click"));
         Assert.Equal("MergeSelectedZonesButton_Click", GetAttribute(FindElementByName(document, "MergeSelectedZonesButton"), "Click"));
-        Assert.Equal("DecreaseWidthButton_Click", GetAttribute(FindElementByName(document, "DecreaseWidthButton"), "Click"));
-        Assert.Equal("IncreaseWidthButton_Click", GetAttribute(FindElementByName(document, "IncreaseWidthButton"), "Click"));
-        Assert.Equal("DecreaseHeightButton_Click", GetAttribute(FindElementByName(document, "DecreaseHeightButton"), "Click"));
-        Assert.Equal("IncreaseHeightButton_Click", GetAttribute(FindElementByName(document, "IncreaseHeightButton"), "Click"));
         Assert.Equal("ResetZoneSizeButton_Click", GetAttribute(FindElementByName(document, "ResetZoneSizeButton"), "Click"));
+        Assert.Null(FindElementByNameOrDefault(document, "DecreaseWidthButton"));
+        Assert.Null(FindElementByNameOrDefault(document, "IncreaseWidthButton"));
+        Assert.Null(FindElementByNameOrDefault(document, "DecreaseHeightButton"));
+        Assert.Null(FindElementByNameOrDefault(document, "IncreaseHeightButton"));
+        Assert.Null(FindButtonOrDefault(document, "폭 -"));
+        Assert.Null(FindButtonOrDefault(document, "폭 +"));
+        Assert.Null(FindButtonOrDefault(document, "높이 -"));
+        Assert.Null(FindButtonOrDefault(document, "높이 +"));
         Assert.Equal("CopyTemplateToCustomButton_Click", GetAttribute(FindButton(document, "사용자 지정으로 복사"), "Click"));
         Assert.Equal("NewCustomLayoutButton_Click", GetAttribute(FindButton(document, "새 레이아웃"), "Click"));
         Assert.Equal("SaveCustomLayoutButton_Click", GetAttribute(FindButton(document, "저장"), "Click"));
@@ -49,17 +55,21 @@ public sealed class LayoutEditorDialogLayoutTests
         var text = File.ReadAllText(path);
 
         Assert.Contains("SaveCustomLayouts", text);
+        Assert.Contains("CustomLayoutButton_Click", text);
+        Assert.Contains("CreateCustomLayoutName", text);
         Assert.Contains("SplitSelectedZone", text);
         Assert.Contains("SplitAxis.Vertical", text);
         Assert.Contains("SplitAxis.Horizontal", text);
         Assert.Contains("NormalizeZoneIdsFromVisualOrder", text);
         Assert.Contains("LoadZoneEditorFromLayout", text);
+        Assert.DoesNotContain("CustomLayoutListBox", text);
+        Assert.DoesNotContain("LayoutNameTextBox", text);
         Assert.Contains("RemoveSelectedZone", text);
         Assert.Contains("MergeSelectedZones", text);
         Assert.Contains("InsertColumn", text);
         Assert.Contains("InsertRow", text);
-        Assert.Contains("AdjustSelectedZoneWidth", text);
-        Assert.Contains("AdjustSelectedZoneHeight", text);
+        Assert.DoesNotContain("AdjustSelectedZoneWidth", text);
+        Assert.DoesNotContain("AdjustSelectedZoneHeight", text);
         Assert.Contains("ColumnWeights", text);
         Assert.Contains("RowWeights", text);
         Assert.Contains("CreateCustomLayoutId", text);
@@ -89,11 +99,29 @@ public sealed class LayoutEditorDialogLayoutTests
                 attribute.Value == name));
     }
 
+    private static XElement? FindElementByNameOrDefault(XDocument document, string name)
+    {
+        return document
+            .Descendants()
+            .SingleOrDefault(element => element.Attributes().Any(attribute =>
+                attribute.Name.LocalName == "Name" &&
+                attribute.Value == name));
+    }
+
     private static XElement FindButton(XDocument document, string content)
     {
         return document
             .Descendants()
             .Single(element =>
+                element.Name.LocalName == "Button" &&
+                GetAttribute(element, "Content") == content);
+    }
+
+    private static XElement? FindButtonOrDefault(XDocument document, string content)
+    {
+        return document
+            .Descendants()
+            .SingleOrDefault(element =>
                 element.Name.LocalName == "Button" &&
                 GetAttribute(element, "Content") == content);
     }

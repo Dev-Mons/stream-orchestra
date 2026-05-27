@@ -127,12 +127,9 @@
                                             Click="ApplySelectedLayoutButton_Click" />
                                 </DockPanel>
                             </StackPanel>
-                            <ListBox x:Name="CustomLayoutListBox"
-                                     DisplayMemberPath="Name"
-                                     Background="#101820"
-                                     BorderBrush="#2D3642"
-                                     Foreground="#F3F6FA"
-                                     SelectionChanged="CustomLayoutListBox_SelectionChanged" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="CustomLayoutListPanel" />
+                            </ScrollViewer>
                         </DockPanel>
                     </Border>
 
@@ -150,15 +147,6 @@
 
                             <WrapPanel Grid.Row="0"
                                        Margin="0,0,0,10">
-                                <TextBlock Text="이름"
-                                           Foreground="#B9C2CC"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,6,0" />
-                                <TextBox x:Name="LayoutNameTextBox"
-                                         Width="210"
-                                         Height="28"
-                                         VerticalContentAlignment="Center"
-                                         Margin="0,0,10,0" />
                                 <Button x:Name="VerticalSplitButton"
                                         Content="세로분할"
                                         Height="28"
@@ -187,38 +175,6 @@
                                         Margin="0,0,8,0"
                                         ToolTip="Ctrl+클릭으로 선택한 인접 zone을 하나로 병합"
                                         Click="MergeSelectedZonesButton_Click" />
-                                <TextBlock Text="크기"
-                                           Foreground="#B9C2CC"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,6,0" />
-                                <Button x:Name="DecreaseWidthButton"
-                                        Content="폭 -"
-                                        Height="28"
-                                        MinWidth="58"
-                                        Margin="0,0,6,0"
-                                        ToolTip="선택 슬롯이 차지한 열 비율 축소"
-                                        Click="DecreaseWidthButton_Click" />
-                                <Button x:Name="IncreaseWidthButton"
-                                        Content="폭 +"
-                                        Height="28"
-                                        MinWidth="58"
-                                        Margin="0,0,6,0"
-                                        ToolTip="선택 슬롯이 차지한 열 비율 확대"
-                                        Click="IncreaseWidthButton_Click" />
-                                <Button x:Name="DecreaseHeightButton"
-                                        Content="높이 -"
-                                        Height="28"
-                                        MinWidth="66"
-                                        Margin="0,0,6,0"
-                                        ToolTip="선택 슬롯이 차지한 행 비율 축소"
-                                        Click="DecreaseHeightButton_Click" />
-                                <Button x:Name="IncreaseHeightButton"
-                                        Content="높이 +"
-                                        Height="28"
-                                        MinWidth="66"
-                                        Margin="0,0,6,0"
-                                        ToolTip="선택 슬롯이 차지한 행 비율 확대"
-                                        Click="IncreaseHeightButton_Click" />
                                 <Button x:Name="ResetZoneSizeButton"
                                         Content="비율 초기화"
                                         Height="28"
@@ -243,7 +199,7 @@
 
                             <TextBlock x:Name="SplitEditorHintTextBlock"
                                        Grid.Row="2"
-                                       Text="슬롯 내부를 드래그하면 드래그 방향·위치로 분할되고, 경계선을 드래그하면 비율이 실시간 조절됩니다. 클릭은 선택(Ctrl+클릭 다중 선택)."
+                                       Text="슬롯 내부 클릭은 선택(Ctrl+클릭 다중 선택)입니다. 슬롯 분할은 분할 버튼으로 수행하고, 경계선을 드래그하면 비율이 실시간 조절됩니다."
                                        Foreground="#788492"
                                        Margin="0,8,0,0" />
                         </Grid>
