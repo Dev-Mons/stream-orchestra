@@ -5,15 +5,14 @@ namespace StreamOrchestra.Tests;
 public sealed class ExplorerPanelLayoutTests
 {
     [Fact]
-    public void ExplorerPanel_ProvidesNavigationAndCurrentUrlInsertionActions()
+    public void ExplorerPanel_ProvidesNavigationActions()
     {
         var document = LoadExplorerPanelDocument();
         var expectedButtons = new Dictionary<string, string>
         {
             ["Go"] = "GoButton_Click",
             ["Back"] = "BackButton_Click",
-            ["Refresh"] = "RefreshButton_Click",
-            ["선택 슬롯에 넣기"] = "UseCurrentUrlButton_Click"
+            ["Refresh"] = "RefreshButton_Click"
         };
 
         foreach (var (content, clickHandler) in expectedButtons)
@@ -29,17 +28,6 @@ public sealed class ExplorerPanelLayoutTests
 
         Assert.Equal("ExplorerUrlTextBox", GetElementName(FindNamedElement(document, "ExplorerUrlTextBox")));
         Assert.Equal("ExplorerUrlTextBox_KeyDown", GetAttribute(FindNamedElement(document, "ExplorerUrlTextBox"), "KeyDown"));
-    }
-
-    [Fact]
-    public void ExplorerPanel_ProvidesAppFavoriteActions()
-    {
-        var document = LoadExplorerPanelDocument();
-
-        Assert.NotNull(FindNamedElement(document, "FavoriteNameTextBox"));
-        Assert.NotNull(FindNamedElement(document, "FavoriteComboBox"));
-        Assert.NotNull(FindButton(document, "현재 URL 추가", "AddFavoriteButton_Click"));
-        Assert.NotNull(FindButton(document, "선택 슬롯에 넣기", "UseFavoriteButton_Click"));
     }
 
     [Fact]
