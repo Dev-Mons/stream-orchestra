@@ -2,7 +2,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Microsoft.Web.WebView2.Core;
-using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 
 namespace StreamOrchestra.App.Views;
@@ -29,22 +28,9 @@ public partial class ExplorerPanel : UserControl
         Loaded += ExplorerPanel_Loaded;
     }
 
-    public event Action<string>? UseCurrentUrlRequested;
-
-    public event Action<string, string>? AddFavoriteRequested;
-
-    public event Action<StreamEntry>? UseFavoriteRequested;
-
     public string CurrentUrl { get; private set; }
 
     public string CurrentTitle { get; private set; } = "";
-
-    public void SetFavorites(IReadOnlyList<StreamEntry> favorites)
-    {
-        FavoriteComboBox.ItemsSource = null;
-        FavoriteComboBox.ItemsSource = FavoriteStorageService.OrderForDisplay(favorites);
-        FavoriteComboBox.SelectedIndex = FavoriteComboBox.Items.Count > 0 ? 0 : -1;
-    }
 
     private async void ExplorerPanel_Loaded(object sender, RoutedEventArgs e)
     {
@@ -223,11 +209,6 @@ public partial class ExplorerPanel : UserControl
         Browser.CoreWebView2?.Reload();
     }
 
-    private void UseCurrentUrlButton_Click(object sender, RoutedEventArgs e)
-    {
-        UseCurrentUrlRequested?.Invoke(CurrentUrl);
-    }
-
     private void ExplorerDragSource_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _dragStartPoint = e.GetPosition(this);
@@ -268,25 +249,6 @@ public partial class ExplorerPanel : UserControl
 
         DragDrop.DoDragDrop(ExplorerDragSource, data, DragDropEffects.Copy);
         _dragStartPoint = null;
-    }
-
-    private void AddFavoriteButton_Click(object sender, RoutedEventArgs e)
-    {
-        var favoriteName = FavoriteNameTextBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(favoriteName))
-        {
-            favoriteName = _navigationService.CreateDisplayName(CurrentUrl, CurrentTitle);
-        }
-
-        AddFavoriteRequested?.Invoke(favoriteName, CurrentUrl);
-    }
-
-    private void UseFavoriteButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (FavoriteComboBox.SelectedItem is StreamEntry favorite)
-        {
-            UseFavoriteRequested?.Invoke(favorite);
-        }
     }
 
     private void ShowInitializationError(Exception ex)

@@ -15,7 +15,6 @@ public partial class MainWindow : Window
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
     private readonly PresetStorageService _presetStorageService = new();
     private readonly LayoutPresetService _layoutPresetService;
-    private readonly FavoriteStorageService _favoriteStorageService = new();
     private readonly StreamNavigationService _streamNavigationService = new();
     private readonly SlotSelectionService _slotSelectionService = new();
     private readonly AppWindowPlacementService _appWindowPlacementService = new();
@@ -27,7 +26,6 @@ public partial class MainWindow : Window
     private List<LayoutPreset> _customLayouts = [];
     private IReadOnlyList<LayoutPreset> _layouts = [];
     private List<WorkspacePreset> _workspaces = [];
-    private List<StreamEntry> _favorites = [];
     private AppState? _loadedAppState;
     private readonly DispatcherTimer _diagnosticsTimer;
     private WorkspacePreset? _activeWorkspace;
@@ -49,7 +47,6 @@ public partial class MainWindow : Window
         RestoreWindowPlacement(_loadedAppState?.Window);
 
         CreateExplorerPanel();
-        LoadFavorites();
         CreateSlots();
         LoadLayouts();
         LoadWorkspacePresets();
@@ -66,18 +63,10 @@ public partial class MainWindow : Window
     private void CreateExplorerPanel()
     {
         var explorerPanel = new ExplorerPanel(_profileService, _streamNavigationService);
-        explorerPanel.UseCurrentUrlRequested += ExplorerPanel_UseCurrentUrlRequested;
-        explorerPanel.AddFavoriteRequested += ExplorerPanel_AddFavoriteRequested;
-        explorerPanel.UseFavoriteRequested += ExplorerPanel_UseFavoriteRequested;
         _explorerPanel = explorerPanel;
         ExplorerHost.Content = _explorerPanel;
     }
 
-    private void LoadFavorites()
-    {
-        _favorites = _favoriteStorageService.LoadFavorites().ToList();
-        RefreshExplorerFavorites();
-    }
 
     private void CreateSlots()
     {
@@ -299,61 +288,8 @@ public partial class MainWindow : Window
             : $"Dropped {streamName} into Slot {targetSlot.SlotId}: {url}";
     }
 
-    private async void ExplorerPanel_UseCurrentUrlRequested(string url)
-    {
-        if (!TryGetSelectedVisibleSlot("explorer URL", out var selectedSlot) || selectedSlot is null)
-        {
-            return;
-        }
 
-        await NavigateSlotAsync(selectedSlot, url);
-        StatusTextBlock.Text = $"Loaded explorer URL into Slot {selectedSlot.SlotId}: {url}";
-    }
 
-    private void ExplorerPanel_AddFavoriteRequested(string name, string url)
-    {
-        var existingFavorite = _favorites.FirstOrDefault(
-            favorite => favorite.Url.Equals(url, StringComparison.OrdinalIgnoreCase));
-        var favorite = new StreamEntry
-        {
-            Id = existingFavorite?.Id ?? FavoriteStorageService.CreateFavoriteId(name, _favorites),
-            Name = name,
-            Platform = "SOOP",
-            Url = url,
-            Memo = existingFavorite?.Memo ?? "",
-            LastUsedAt = DateTimeOffset.Now
-        };
-
-        UpsertFavorite(favorite);
-        _favoriteStorageService.SaveFavorites(_favorites);
-        RefreshExplorerFavorites();
-        StatusTextBlock.Text = $"Favorite saved: {favorite.Name}";
-    }
-
-    private async void ExplorerPanel_UseFavoriteRequested(StreamEntry favorite)
-    {
-        if (!TryGetSelectedVisibleSlot("favorite", out var selectedSlot) || selectedSlot is null)
-        {
-            return;
-        }
-
-        await NavigateSlotAsync(selectedSlot, favorite.Url, favorite.Name);
-
-        var updatedFavorite = new StreamEntry
-        {
-            Id = favorite.Id,
-            Name = favorite.Name,
-            Platform = favorite.Platform,
-            Url = favorite.Url,
-            Memo = favorite.Memo,
-            LastUsedAt = DateTimeOffset.Now
-        };
-
-        UpsertFavorite(updatedFavorite);
-        _favoriteStorageService.SaveFavorites(_favorites);
-        RefreshExplorerFavorites();
-        StatusTextBlock.Text = $"Loaded favorite into Slot {selectedSlot.SlotId}: {favorite.Name}";
-    }
 
     private async void LoadWorkspaceButton_Click(object sender, RoutedEventArgs e)
     {
@@ -565,22 +501,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpsertFavorite(StreamEntry favorite)
-    {
-        var existingIndex = _favorites.FindIndex(candidate => candidate.Id == favorite.Id);
-        if (existingIndex >= 0)
-        {
-            _favorites[existingIndex] = favorite;
-            return;
-        }
 
-        _favorites.Add(favorite);
-    }
-
-    private void RefreshExplorerFavorites()
-    {
-        _explorerPanel?.SetFavorites(_favorites);
-    }
 
     private void SelectSlotFromState(int? selectedSlotId)
     {
@@ -612,29 +533,6 @@ public partial class MainWindow : Window
         SelectSlotFromState(_selectedSlot.SlotId);
     }
 
-    private bool TryGetSelectedVisibleSlot(string itemName, out StreamSlotView? selectedSlot)
-    {
-        selectedSlot = null;
-        if (_selectedSlot is null)
-        {
-            StatusTextBlock.Text = $"Select a slot before inserting the {itemName}.";
-            return false;
-        }
-
-        if (LayoutComboBox.SelectedItem is LayoutPreset layout &&
-            !_slotSelectionService.IsSlotVisible(layout, _selectedSlot.SlotId))
-        {
-            SelectSlotFromState(_selectedSlot.SlotId);
-            if (_selectedSlot is null || !_slotSelectionService.IsSlotVisible(layout, _selectedSlot.SlotId))
-            {
-                StatusTextBlock.Text = $"Select a visible slot before inserting the {itemName}.";
-                return false;
-            }
-        }
-
-        selectedSlot = _selectedSlot;
-        return true;
-    }
 
     private void RestoreWindowPlacement(AppWindowState? windowState)
     {
