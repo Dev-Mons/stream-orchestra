@@ -149,6 +149,7 @@ public sealed class FeasibilityResultStorageService
         var normalizedOutcome = NormalizeOutcome(
             canonicalOutcome,
             result.PlaybackCount,
+            normalizedScenarioId,
             normalizedGroups,
             hasSameAccountEvidence,
             normalizedRestartSession,
@@ -216,6 +217,7 @@ public sealed class FeasibilityResultStorageService
     private static string NormalizeOutcome(
         string outcome,
         int playbackCount,
+        string scenarioId,
         IReadOnlyList<string> normalizedGroups,
         bool hasSameAccountEvidence,
         bool restartSession,
@@ -229,7 +231,14 @@ public sealed class FeasibilityResultStorageService
         var hasRequiredGroupEvidence = FeasibilityProfileGroupEvidenceService.HasRequiredGroups(
             playbackCount,
             normalizedGroups);
-        return playbackCount >= 9 &&
+        var isPlanSuccessScenario = FeasibilityScenarioService.IsPlanSuccessPlaybackScenario(new FeasibilityTestResult
+        {
+            PlaybackCount = playbackCount,
+            ScenarioId = scenarioId
+        });
+
+        return isPlanSuccessScenario &&
+            playbackCount >= 9 &&
             hasSameAccountEvidence &&
             hasRequiredGroupEvidence &&
             restartSession &&

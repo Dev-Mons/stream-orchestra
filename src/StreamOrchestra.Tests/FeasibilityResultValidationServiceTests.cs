@@ -25,6 +25,40 @@ public sealed class FeasibilityResultValidationServiceTests
     }
 
     [Fact]
+    public void Validate_RejectsSuccessWhenScenarioIsNotPlanSuccessScenario()
+    {
+        var service = new FeasibilityResultValidationService();
+
+        var customNineSlotError = service.Validate(
+            playbackCount: 9,
+            outcome: "success",
+            sameAccountSession: true,
+            restartSession: true,
+            resourceUsageAcceptable: true,
+            observedCpuPercent: 45,
+            observedGpuPercent: 60,
+            observedMemoryMegabytes: 12000,
+            verifiedProfileGroups: ["A", "B", "C"],
+            accountLabel: "main_soop",
+            scenarioId: "custom_9_slot_note");
+        var manualAllGroupsError = service.Validate(
+            playbackCount: 16,
+            outcome: "success",
+            sameAccountSession: true,
+            restartSession: true,
+            resourceUsageAcceptable: true,
+            observedCpuPercent: 45,
+            observedGpuPercent: 60,
+            observedMemoryMegabytes: 12000,
+            verifiedProfileGroups: ["A", "B", "C", "D"],
+            accountLabel: "main_soop",
+            scenarioId: "manual_all_groups");
+
+        Assert.Equal("Success requires a matching 9/12/16 plan playback scenario.", customNineSlotError);
+        Assert.Equal("Success requires a matching 9/12/16 plan playback scenario.", manualAllGroupsError);
+    }
+
+    [Fact]
     public void Validate_AllowsOutcomeWithDifferentCasing()
     {
         var service = new FeasibilityResultValidationService();

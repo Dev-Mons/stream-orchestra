@@ -3739,6 +3739,14 @@ public static class FeasibilityStatusCommand
             return ParseResult.Invalid("record requires --outcome.");
         }
 
+        var defaultScenario = isolatedGroupId is null
+            ? CreateDefaultRecordScenario(playbackCount.Value)
+            : new FeasibilityScenarioService().CreateIsolatedGroupScenario(isolatedGroupId, playbackCount.Value);
+        scenarioId ??= defaultScenario.Id;
+        scenarioName ??= scenarioId.Equals(defaultScenario.Id, StringComparison.OrdinalIgnoreCase)
+            ? defaultScenario.Name
+            : scenarioId;
+
         var validationError = new FeasibilityResultValidationService().Validate(
             playbackCount.Value,
             outcome,
@@ -3749,19 +3757,12 @@ public static class FeasibilityStatusCommand
             observedGpuPercent,
             observedMemoryMegabytes,
             verifiedProfileGroups,
-            accountLabel);
+            accountLabel,
+            scenarioId);
         if (validationError is not null)
         {
             return ParseResult.Invalid(validationError);
         }
-
-        var defaultScenario = isolatedGroupId is null
-            ? CreateDefaultRecordScenario(playbackCount.Value)
-            : new FeasibilityScenarioService().CreateIsolatedGroupScenario(isolatedGroupId, playbackCount.Value);
-        scenarioId ??= defaultScenario.Id;
-        scenarioName ??= scenarioId.Equals(defaultScenario.Id, StringComparison.OrdinalIgnoreCase)
-            ? defaultScenario.Name
-            : scenarioId;
 
         var scenarioPlaybackCountError = FeasibilityScenarioService.ValidatePlaybackCountConsistency(
             playbackCount.Value,

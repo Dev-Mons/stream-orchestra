@@ -852,6 +852,22 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
                 "id": "success_with_complete_evidence",
                 "capturedAt": "2026-05-26T12:10:00+00:00",
                 "playbackCount": 9,
+                "scenarioId": "custom_9_slot_note",
+                "scenarioName": "Custom 9-slot note",
+                "outcome": "success",
+                "isSameAccountSessionMaintained": true,
+                "accountLabel": "main_soop",
+                "verifiedProfileGroups": ["A", "B", "C"],
+                "isRestartSessionMaintained": true,
+                "isResourceUsageAcceptable": true,
+                "observedCpuPercent": 45.5,
+                "observedGpuPercent": 60,
+                "observedMemoryMegabytes": 12000
+              },
+              {
+                "id": "success_with_complete_plan_evidence",
+                "capturedAt": "2026-05-26T12:10:00+00:00",
+                "playbackCount": 9,
                 "scenarioId": "groups_a_b_c_9_slot_threshold",
                 "scenarioName": "Groups A/B/C, 9-slot success threshold",
                 "outcome": "success",
@@ -869,10 +885,11 @@ public sealed class FeasibilityResultStorageServiceTests : IDisposable
 
         var results = service.LoadResults();
 
-        Assert.Equal(3, results.Count);
+        Assert.Equal(4, results.Count);
         Assert.Equal("partial", results[0].Outcome);
         Assert.Equal("partial", results[1].Outcome);
-        Assert.Equal("success", results[2].Outcome);
+        Assert.Equal("partial", results[2].Outcome);
+        Assert.Equal("success", results[3].Outcome);
     }
 
     [Fact]

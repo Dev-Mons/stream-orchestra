@@ -1,3 +1,5 @@
+using StreamOrchestra.App.Models;
+
 namespace StreamOrchestra.App.Services;
 
 public sealed class FeasibilityResultValidationService
@@ -12,7 +14,8 @@ public sealed class FeasibilityResultValidationService
         double? observedGpuPercent = null,
         double? observedMemoryMegabytes = null,
         IReadOnlyList<string>? verifiedProfileGroups = null,
-        string? accountLabel = null)
+        string? accountLabel = null,
+        string? scenarioId = null)
     {
         if (playbackCount is < 1 or > PlaybackTestPlanService.MaxSlotCount)
         {
@@ -102,8 +105,31 @@ public sealed class FeasibilityResultValidationService
             observedCpuPercent,
             observedGpuPercent,
             observedMemoryMegabytes);
+        var successScenarioError = ValidateSuccessScenario(
+            playbackCount,
+            scenarioId);
 
-        return successResourceObservationError ?? accountEvidenceValidationError;
+        return successResourceObservationError
+            ?? accountEvidenceValidationError
+            ?? successScenarioError;
+    }
+
+    private static string? ValidateSuccessScenario(int playbackCount, string? scenarioId)
+    {
+        if (string.IsNullOrWhiteSpace(scenarioId))
+        {
+            return null;
+        }
+
+        var result = new FeasibilityTestResult
+        {
+            PlaybackCount = playbackCount,
+            ScenarioId = scenarioId
+        };
+
+        return FeasibilityScenarioService.IsPlanSuccessPlaybackScenario(result)
+            ? null
+            : "Success requires a matching 9/12/16 plan playback scenario.";
     }
 
     private static string? ValidateRestartSessionEvidence(

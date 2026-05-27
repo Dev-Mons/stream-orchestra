@@ -354,7 +354,8 @@ public partial class MainWindow : Window
             observedGpuPercent,
             observedMemoryMegabytes,
             verifiedProfileGroups,
-            accountLabel);
+            accountLabel,
+            _currentFeasibilityScenario.Id);
         if (validationError is not null)
         {
             StatusTextBlock.Text = validationError;
