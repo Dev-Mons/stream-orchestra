@@ -509,7 +509,7 @@ public partial class MainWindow : Window
             : $"현재 테스트: {_currentPlaybackTestCount} slots / {_currentFeasibilityScenario.Name}";
         CurrentFeasibilityScenarioTextBlock.ToolTip = _currentPlaybackTestCount <= 0
             ? "재생 테스트 또는 그룹 로드 후 검증 결과를 기록할 수 있습니다."
-            : $"{_currentFeasibilityScenario.Name} ({_currentFeasibilityScenario.Id})";
+            : $"{_currentFeasibilityScenario.Name} ({_currentFeasibilityScenario.Id}){Environment.NewLine}{FeasibilityScenarioService.CreatePlanGateHint(_currentPlaybackTestCount, _currentFeasibilityScenario.Id)}";
     }
 
     private void SaveDiagnosticReportButton_Click(object sender, RoutedEventArgs e)

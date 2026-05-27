@@ -88,4 +88,24 @@ public sealed class FeasibilityScenarioServiceTests
 
         Assert.Equal(expected, isPlanSuccessScenario);
     }
+
+    [Fact]
+    public void CreatePlanGateHint_ExplainsWhetherScenarioMatchesPlanGate()
+    {
+        Assert.Contains(
+            "Group A 4-slot playback gate",
+            FeasibilityScenarioService.CreatePlanGateHint(4, "isolated_group_a"));
+        Assert.Contains(
+            "9-slot threshold playback gate",
+            FeasibilityScenarioService.CreatePlanGateHint(9, "groups_a_b_c_9_slot_threshold"));
+        Assert.Contains(
+            "use the 16-slot playback button",
+            FeasibilityScenarioService.CreatePlanGateHint(16, "manual_all_groups"));
+        Assert.Contains(
+            "same-account evidence",
+            FeasibilityScenarioService.CreatePlanGateHint(4, "manual_group_d"));
+        Assert.Contains(
+            "named playback-test scenarios",
+            FeasibilityScenarioService.CreatePlanGateHint(9, "custom_manual_note"));
+    }
 }

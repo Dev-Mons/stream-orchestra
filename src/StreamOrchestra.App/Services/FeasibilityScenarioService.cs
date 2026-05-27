@@ -67,6 +67,46 @@ public sealed class FeasibilityScenarioService
         return IsPlanNinePlusPlaybackScenario(result);
     }
 
+    public static string CreatePlanGateHint(int playbackCount, string? scenarioId)
+    {
+        if (playbackCount <= 0)
+        {
+            return "Run a playback test or group load before recording a result.";
+        }
+
+        var normalizedScenarioId = scenarioId?.Trim().ToLowerInvariant() ?? "";
+        if (playbackCount == 4 &&
+            normalizedScenarioId is "group_a_first_slots" or "isolated_group_a" or "manual_group_a")
+        {
+            return "This result can satisfy the plan's Group A 4-slot playback gate.";
+        }
+
+        var planGateHint = (playbackCount, normalizedScenarioId) switch
+        {
+            (8, "groups_a_b_8_slots") => "This result can satisfy the plan's 8-slot playback gate.",
+            (9, "groups_a_b_c_9_slot_threshold") => "This result can satisfy the plan's 9-slot threshold playback gate.",
+            (12, "groups_a_b_c_12_slots") => "This result can satisfy the plan's 12-slot playback gate.",
+            (16, "groups_a_b_c_d_16_slots") => "This result can satisfy the plan's 16-slot playback gate.",
+            _ => null
+        };
+        if (planGateHint is not null)
+        {
+            return planGateHint;
+        }
+
+        if (normalizedScenarioId == "manual_all_groups")
+        {
+            return "Manual all-groups load can support account evidence, but use the 16-slot playback button for the plan playback gate.";
+        }
+
+        if (IsSingleProfileGroupScenario(normalizedScenarioId))
+        {
+            return "Manual group loads can support same-account evidence; only Group A 4-slot evidence satisfies a playback gate.";
+        }
+
+        return "Custom/manual scenarios may be useful notes, but plan playback gates require named playback-test scenarios.";
+    }
+
     public static string? ValidatePlaybackCountConsistency(int playbackCount, string? scenarioId)
     {
         if (!TryGetScenarioPlaybackCountRange(scenarioId, out var minimumCount, out var maximumCount))

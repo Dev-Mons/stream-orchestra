@@ -156,6 +156,27 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("ResourceAcceptableCheckBox.IsChecked = false;", text[handlerStart..]);
     }
 
+    [Fact]
+    public void CodeBehind_AddsPlanGateHintToCurrentScenarioTooltip()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "MainWindow.xaml.cs"));
+        var text = File.ReadAllText(path);
+        var methodStart = text.IndexOf(
+            "private void UpdateCurrentFeasibilityScenarioText()",
+            StringComparison.Ordinal);
+
+        Assert.True(methodStart >= 0);
+        Assert.Contains("FeasibilityScenarioService.CreatePlanGateHint", text[methodStart..]);
+        Assert.Contains("Environment.NewLine", text[methodStart..]);
+    }
+
     private static XDocument LoadMainWindowDocument()
     {
         var path = Path.GetFullPath(Path.Combine(

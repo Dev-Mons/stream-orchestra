@@ -152,7 +152,7 @@ The WPF app only records a feasibility result after a playback test, group load,
 
 In the WPF feasibility row, the account-label, A-D evidence, and restart controls are enabled only while `계정 유지` is checked and are cleared when `계정 유지` is unchecked, so playback-only partial records cannot accidentally keep stale account or restart evidence. Normalized result loading/saving also drops hand-edited account and restart flags unless same-account evidence has a label and at least one verified profile group.
 
-Before clicking `성공`, `부분`, or `실패`, check the `현재 테스트` label in the WPF feasibility row. It shows the scenario and playback count that will be saved.
+Before clicking `성공`, `부분`, or `실패`, check the `현재 테스트` label in the WPF feasibility row. It shows the scenario and playback count that will be saved, and its tooltip explains whether that scenario can satisfy a plan playback gate or is only useful as manual/account evidence.
 Use `감사 복사` to copy the current plan-gate audit text and suggested `record` shapes when you need to paste the verification status into an issue, note, or chat.
 
 Whole-app and group load actions switch to a layout that contains the target slots before loading. This keeps the manual evidence tied to visible playback slots instead of hidden background WebViews.
