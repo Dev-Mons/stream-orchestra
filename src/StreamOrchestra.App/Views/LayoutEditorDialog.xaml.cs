@@ -30,7 +30,7 @@ public partial class LayoutEditorDialog : Window
     private string _editingLayoutName = "Custom Layout";
 
     private Canvas? _editorCanvas;
-    private readonly List<(Button Button, int SlotId)> _editorZoneButtons = new();
+    private readonly List<(Button Button, int SlotId, TextBlock SizeTextBlock)> _editorZoneButtons = new();
     private readonly List<(Thumb Thumb, LayoutEditorSplitterSegment Segment)> _editorColumnSplitters = new();
     private readonly List<(Thumb Thumb, LayoutEditorSplitterSegment Segment)> _editorRowSplitters = new();
     private Size _editorSurfaceSize = new(760, 440);
@@ -607,9 +607,7 @@ public partial class LayoutEditorDialog : Window
             var button = new Button
             {
                 Tag = slot.SlotId,
-                Content = slot.SlotId.ToString(),
-                FontSize = 24,
-                FontWeight = FontWeights.Bold,
+                Content = CreateZoneButtonContent(slot.SlotId, out var sizeTextBlock),
                 Foreground = Brushes.Black,
                 Background = LayoutPreviewBuilder.GetSlotBrush(slot.SlotId),
                 BorderBrush = isSelected
@@ -617,11 +615,13 @@ public partial class LayoutEditorDialog : Window
                     : new SolidColorBrush(Color.FromRgb(45, 54, 66)),
                 BorderThickness = isSelected ? new Thickness(4) : new Thickness(1),
                 Cursor = Cursors.Cross,
-                ToolTip = "클릭: 선택"
+                ToolTip = "클릭: 선택",
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center
             };
             button.Click += Zone_Click;
             canvas.Children.Add(button);
-            _editorZoneButtons.Add((button, slot.SlotId));
+            _editorZoneButtons.Add((button, slot.SlotId, sizeTextBlock));
         }
 
         foreach (var segment in LayoutEditorGridGeometry.CreateVerticalSplitterSegments(layout))
@@ -646,6 +646,38 @@ public partial class LayoutEditorDialog : Window
 
         RepositionSurface();
         return canvas;
+    }
+
+    private static StackPanel CreateZoneButtonContent(int slotId, out TextBlock sizeTextBlock)
+    {
+        var slotNumberTextBlock = new TextBlock
+        {
+            Text = slotId.ToString(),
+            FontSize = 24,
+            FontWeight = FontWeights.Bold,
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        sizeTextBlock = new TextBlock
+        {
+            Text = "0x0",
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            Opacity = 0.78,
+            Margin = new Thickness(0, 2, 0, 0),
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        var panel = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        panel.Children.Add(slotNumberTextBlock);
+        panel.Children.Add(sizeTextBlock);
+        return panel;
     }
 
     private static Thumb CreateSplitter(bool isVertical)
@@ -698,7 +730,7 @@ public partial class LayoutEditorDialog : Window
         var rowOffsets = CumulativeOffsets(_rowWeights, height);
         var rects = GetZoneRects().ToDictionary(rect => rect.ZoneId);
 
-        foreach (var (button, slotId) in _editorZoneButtons)
+        foreach (var (button, slotId, sizeTextBlock) in _editorZoneButtons)
         {
             if (!rects.TryGetValue(slotId, out var rect))
             {
@@ -709,11 +741,14 @@ public partial class LayoutEditorDialog : Window
             var right = columnOffsets[rect.X + rect.W];
             var top = rowOffsets[rect.Y];
             var bottom = rowOffsets[rect.Y + rect.H];
+            var slotWidth = Math.Max(0, right - left);
+            var slotHeight = Math.Max(0, bottom - top);
 
             Canvas.SetLeft(button, left + ZoneGap);
             Canvas.SetTop(button, top + ZoneGap);
-            button.Width = Math.Max(0, right - left - 2 * ZoneGap);
-            button.Height = Math.Max(0, bottom - top - 2 * ZoneGap);
+            button.Width = Math.Max(0, slotWidth - 2 * ZoneGap);
+            button.Height = Math.Max(0, slotHeight - 2 * ZoneGap);
+            sizeTextBlock.Text = FormatSlotSizeLabel(slotWidth, slotHeight);
         }
 
         foreach (var (thumb, segment) in _editorColumnSplitters)
@@ -737,6 +772,13 @@ public partial class LayoutEditorDialog : Window
             thumb.Width = Math.Max(0, right - left);
             thumb.Height = SplitterThickness;
         }
+    }
+
+    private static string FormatSlotSizeLabel(double width, double height)
+    {
+        var roundedWidth = Math.Max(0, (int)Math.Round(width, MidpointRounding.AwayFromZero));
+        var roundedHeight = Math.Max(0, (int)Math.Round(height, MidpointRounding.AwayFromZero));
+        return $"{roundedWidth}x{roundedHeight}";
     }
 
     private static double[] CumulativeOffsets(IReadOnlyList<double> weights, double total)

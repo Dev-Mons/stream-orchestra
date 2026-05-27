@@ -79,7 +79,6 @@ public partial class MainWindow : Window
             var slotView = new StreamSlotView(configuration, _profileService, _streamNavigationService);
             slotView.SlotSelected += SelectSlot;
             slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
-            slotView.MuteChanged += SlotView_MuteChanged;
             _slots.Add(slotView);
         }
     }
@@ -701,16 +700,6 @@ public partial class MainWindow : Window
         {
             await ApplyQualityPolicyToSlotsAsync(GetVisibleNonBlankSlots());
         }
-    }
-
-    private async void SlotView_MuteChanged(StreamSlotView slot)
-    {
-        if (slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        await ApplyQualityPolicyToSlotsAsync([slot]);
     }
 
     private async Task NavigateSlotAsync(StreamSlotView slot, string url, string? streamName = null)

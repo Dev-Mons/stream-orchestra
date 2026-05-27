@@ -59,8 +59,6 @@ public partial class StreamSlotView : UserControl
 
     public event Action<StreamSlotView, string, string?>? StreamUrlDropRequested;
 
-    public event Action<StreamSlotView>? MuteChanged;
-
     public SlotConfiguration Configuration { get; }
 
     public int SlotId => Configuration.SlotId;

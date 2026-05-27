@@ -96,6 +96,24 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.Contains("CreateCustomLayoutId", text);
     }
 
+    [Theory]
+    [InlineData(360.0, 240.0, "360x240")]
+    [InlineData(360.4, 239.5, "360x240")]
+    [InlineData(360.5, 239.6, "361x240")]
+    [InlineData(-10.0, 0.0, "0x0")]
+    public void CodeBehind_FormatsCustomLayoutSlotExpectedSizeLabel(
+        double width,
+        double height,
+        string expectedLabel)
+    {
+        var method = typeof(StreamOrchestra.App.Views.LayoutEditorDialog).GetMethod(
+            "FormatSlotSizeLabel",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        Assert.NotNull(method);
+        Assert.Equal(expectedLabel, method!.Invoke(null, [width, height]));
+    }
+
     private static XDocument LoadLayoutEditorDialogDocument()
     {
         var path = Path.GetFullPath(Path.Combine(
