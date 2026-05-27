@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.IO;
 using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using StreamOrchestra.App.Models;
@@ -24,6 +25,8 @@ public partial class StreamSlotView : UserControl
     private bool _isPointerOverChrome;
     private bool _hasExplicitStreamName;
     private Point? _dragStartPoint;
+    private string _preferredQualityKey = "master";
+    private string? _qualityObserverScriptId;
 
     public StreamSlotView(
         SlotConfiguration configuration,
@@ -51,6 +54,8 @@ public partial class StreamSlotView : UserControl
     public event Action<StreamSlotView, int>? SlotSwapRequested;
 
     public event Action<StreamSlotView, string, string?>? StreamUrlDropRequested;
+
+    public event Action<StreamSlotView>? MuteChanged;
 
     public SlotConfiguration Configuration { get; }
 
@@ -91,6 +96,22 @@ public partial class StreamSlotView : UserControl
         UpdateCurrentLocation("about:blank", "Empty");
     }
 
+    public async Task<StreamQualityApplyResult> ApplyQualityAsync(string qualityKey)
+    {
+        try
+        {
+            _preferredQualityKey = NormalizeQualityKey(qualityKey);
+            await EnsureInitializedAsync();
+            await RefreshQualityObserverScriptAsync();
+
+            return await ClickCurrentPlayerQualityAsync(_preferredQualityKey);
+        }
+        catch (Exception ex)
+        {
+            return new StreamQualityApplyResult(false, ex.Message);
+        }
+    }
+
     public SlotRuntimeState CreateRuntimeState()
     {
         return new SlotRuntimeState(SlotId, CurrentStreamName, CurrentUrl, IsMuted, ProfileGroupId);
@@ -104,6 +125,7 @@ public partial class StreamSlotView : UserControl
 
     public void SetMuted(bool isMuted)
     {
+        var changed = _isMuted != isMuted;
         _isMuted = isMuted;
 
         if (Browser.CoreWebView2 is not null)
@@ -112,6 +134,11 @@ public partial class StreamSlotView : UserControl
         }
 
         UpdateMuteButton();
+
+        if (changed)
+        {
+            MuteChanged?.Invoke(this);
+        }
     }
 
     public void SetUrlEditorVisible(bool isVisible)
@@ -444,6 +471,184 @@ public partial class StreamSlotView : UserControl
         {
             stream.Position = position;
         }
+    }
+
+    private static string NormalizeQualityKey(string qualityKey)
+    {
+        return qualityKey.Trim().ToLowerInvariant() switch
+        {
+            "auto" or "adaptive" or "master" => "master",
+            "source" or "best" or "max" or "maximum" or "1080" or "1080p" or "original" => "original",
+            "720" or "720p" or "hd4k" => "hd4k",
+            "540" or "540p" or "hd" => "hd",
+            "360" or "360p" or "sd" => "sd",
+            _ => "master"
+        };
+    }
+
+    private static string FormatQualityLabel(string qualityKey)
+    {
+        return NormalizeQualityKey(qualityKey) switch
+        {
+            "master" => "auto",
+            "original" => "maximum",
+            "hd4k" => "720p",
+            "hd" => "540p",
+            "sd" => "360p",
+            _ => qualityKey
+        };
+    }
+
+    private async Task RefreshQualityObserverScriptAsync()
+    {
+        if (Browser.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        if (_qualityObserverScriptId is not null)
+        {
+            Browser.CoreWebView2.RemoveScriptToExecuteOnDocumentCreated(_qualityObserverScriptId);
+        }
+
+        _qualityObserverScriptId = await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+            CreateQualityObserverScript(_preferredQualityKey));
+    }
+
+    private async Task<StreamQualityApplyResult> ClickCurrentPlayerQualityAsync(string qualityKey)
+    {
+        var json = await Browser.CoreWebView2.ExecuteScriptAsync(CreateClickCurrentPlayerQualityScript(qualityKey));
+        return JsonSerializer.Deserialize<StreamQualityApplyResult>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        }) ?? new StreamQualityApplyResult(false, "SOOP player returned no quality result.");
+    }
+
+    private static string CreateQualityObserverScript(string qualityKey)
+    {
+        var qualityJson = JsonSerializer.Serialize(NormalizeQualityKey(qualityKey));
+
+        return $$"""
+(() => {
+  window.__streamOrchestraPreferredQuality = {{qualityJson}};
+  window.__streamOrchestraQualityApplied = false;
+  window.__streamOrchestraClickQuality = clickQuality;
+
+  if (window.__streamOrchestraQualityObserverInstalled) {
+    window.__streamOrchestraApplyQuality?.();
+    return;
+  }
+
+  window.__streamOrchestraQualityObserverInstalled = true;
+  window.__streamOrchestraApplyQuality = () => {
+    if (window.__streamOrchestraQualityApplied) {
+      return;
+    }
+
+    const result = window.__streamOrchestraClickQuality?.(window.__streamOrchestraPreferredQuality);
+    if (result?.isSuccess) {
+      window.__streamOrchestraQualityApplied = true;
+    }
+  };
+
+  const observer = new MutationObserver(() => window.__streamOrchestraApplyQuality());
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+  } else {
+    window.addEventListener("DOMContentLoaded", () => {
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+      window.__streamOrchestraApplyQuality();
+    });
+  }
+
+  window.__streamOrchestraApplyQuality();
+{{CreateQualityClickFunctionScript()}}
+})();
+""";
+    }
+
+    private static string CreateClickCurrentPlayerQualityScript(string qualityKey)
+    {
+        var qualityJson = JsonSerializer.Serialize(NormalizeQualityKey(qualityKey));
+
+        return $$"""
+(() => {
+  const targetQuality = {{qualityJson}};
+  window.__streamOrchestraPreferredQuality = targetQuality;
+  window.__streamOrchestraQualityApplied = false;
+  window.__streamOrchestraClickQuality = clickQuality;
+
+  return clickQuality(targetQuality);
+{{CreateQualityClickFunctionScript()}}
+})();
+""";
+    }
+
+    private static string CreateQualityClickFunctionScript()
+    {
+        return """
+  function clickQuality(qualityKey) {
+  const fixedTargets = {
+    master: ["자동"],
+    hd4k: ["720p"],
+    hd: ["540p"],
+    sd: ["360p"]
+  };
+
+  const qualityBoxes = Array.from(document.querySelectorAll(".quality_box"));
+  if (qualityBoxes.length === 0) {
+    return { isSuccess: false, message: "SOOP quality box was not found." };
+  }
+
+  for (const qualityBox of qualityBoxes) {
+    const button = findQualityButton(qualityBox, qualityKey);
+    if (!button) {
+      continue;
+    }
+
+    if (!button.classList.contains("on")) {
+      button.click();
+    }
+
+    return { isSuccess: true, message: "SOOP quality set to " + getQualityText(button) + "." };
+  }
+
+  return { isSuccess: false, message: "Requested SOOP quality was not available." };
+
+  function findQualityButton(qualityBox, qualityKey) {
+    const availableButtons = Array.from(qualityBox.querySelectorAll("ul button"))
+      .filter(isAvailable);
+    if (availableButtons.length === 0) {
+      return null;
+    }
+
+    if (qualityKey === "original") {
+      const priority = ["1440p", "1080p", "720p", "540p", "360p", "최대화질", "원본"];
+      return priority.map(text => findButtonByText(availableButtons, text)).find(Boolean) || null;
+    }
+
+    const targets = fixedTargets[qualityKey] || [];
+    return targets.map(text => findButtonByText(availableButtons, text)).find(Boolean) || null;
+  }
+
+  function findButtonByText(buttons, text) {
+    return buttons.find(button => getQualityText(button) === text) || null;
+  }
+
+  function isAvailable(button) {
+    const li = button.closest("li");
+    return Boolean(button) &&
+      (!li || li.style.display !== "none") &&
+      button.offsetParent !== null;
+  }
+
+  function getQualityText(button) {
+    return button?.querySelector("span")?.textContent?.trim() ||
+      button?.textContent?.trim() ||
+      "";
+  }
+  }
+""";
     }
 
     private void UpdateMuteButton()

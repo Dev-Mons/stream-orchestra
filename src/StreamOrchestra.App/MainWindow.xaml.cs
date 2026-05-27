@@ -101,6 +101,7 @@ public partial class MainWindow : Window
             slotView.SlotSelected += SelectSlot;
             slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
             slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
+            slotView.MuteChanged += SlotView_MuteChanged;
             _slots.Add(slotView);
         }
     }
@@ -583,8 +584,8 @@ public partial class MainWindow : Window
 
         var result = _slotSwapService.SwapStreams(sourceSlot.CreateRuntimeState(), targetSlot.CreateRuntimeState());
 
-        await sourceSlot.NavigateAsync(result.SourceSlot.StreamUrl, result.SourceSlot.StreamName);
-        await targetSlot.NavigateAsync(result.TargetSlot.StreamUrl, result.TargetSlot.StreamName);
+        await NavigateSlotAsync(sourceSlot, result.SourceSlot.StreamUrl, result.SourceSlot.StreamName);
+        await NavigateSlotAsync(targetSlot, result.TargetSlot.StreamUrl, result.TargetSlot.StreamName);
 
         StatusTextBlock.Text =
             $"Swapped streams: Slot {sourceSlot.SlotId} <-> Slot {targetSlot.SlotId}. Mute and profile group stayed with each slot.";
@@ -593,7 +594,7 @@ public partial class MainWindow : Window
     private async void SlotView_StreamUrlDropRequested(StreamSlotView targetSlot, string url, string? streamName)
     {
         SelectSlot(targetSlot);
-        await targetSlot.NavigateAsync(url, streamName);
+        await NavigateSlotAsync(targetSlot, url, streamName);
 
         StatusTextBlock.Text = string.IsNullOrWhiteSpace(streamName)
             ? $"Dropped URL into Slot {targetSlot.SlotId}: {url}"
@@ -607,7 +608,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await selectedSlot.NavigateAsync(url);
+        await NavigateSlotAsync(selectedSlot, url);
         StatusTextBlock.Text = $"Loaded explorer URL into Slot {selectedSlot.SlotId}: {url}";
     }
 
@@ -638,7 +639,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await selectedSlot.NavigateAsync(favorite.Url, favorite.Name);
+        await NavigateSlotAsync(selectedSlot, favorite.Url, favorite.Name);
 
         var updatedFavorite = new StreamEntry
         {
@@ -824,7 +825,7 @@ public partial class MainWindow : Window
             slot.SetMuted(workspaceSlot.Muted);
             if (layout.Slots.Any(layoutSlot => layoutSlot.SlotId == slot.SlotId))
             {
-                await slot.NavigateAsync(workspaceSlot.StreamUrl, workspaceSlot.StreamName);
+                await NavigateSlotAsync(slot, workspaceSlot.StreamUrl, workspaceSlot.StreamName);
             }
             else
             {
@@ -1016,6 +1017,42 @@ public partial class MainWindow : Window
         UpdateDiagnostics();
     }
 
+    private async void ApplyQualityPolicyButton_Click(object sender, RoutedEventArgs e)
+    {
+        var targetSlots = GetVisibleNonBlankSlots();
+        if (targetSlots.Length == 0)
+        {
+            StatusTextBlock.Text = "화질을 적용할 재생 중인 슬롯이 없습니다.";
+            return;
+        }
+
+        await ApplyQualityPolicyToSlotsAsync(targetSlots);
+    }
+
+    private async void QualityPolicyControl_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsInitialized ||
+            QualityLockCheckBox is null ||
+            AudibleQualityComboBox is null ||
+            MutedQualityComboBox is null)
+        {
+            return;
+        }
+
+        await ApplyQualityPolicyToSlotsAsync(GetVisibleNonBlankSlots());
+    }
+
+    private async void SlotView_MuteChanged(StreamSlotView slot)
+    {
+        if (!IsQualityPolicyEnabled() ||
+            slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await ApplyQualityPolicyToSlotsAsync([slot]);
+    }
+
     private async void GlobalUrlTextBox_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter)
@@ -1053,11 +1090,21 @@ public partial class MainWindow : Window
 
         foreach (var slot in slotList)
         {
-            await slot.NavigateAsync(url);
+            await NavigateSlotAsync(slot, url);
         }
 
         StatusTextBlock.Text = $"Loaded {slotList.Length} slot(s). Profile data persists under: {_profileService.BaseProfileFolder}";
         UpdateDiagnostics();
+    }
+
+    private async Task NavigateSlotAsync(StreamSlotView slot, string url, string? streamName = null)
+    {
+        if (IsQualityPolicyEnabled())
+        {
+            await ApplyQualityPolicyToSlotAsync(slot);
+        }
+
+        await slot.NavigateAsync(url, streamName);
     }
 
     private async Task ClearSlotsAsync(IEnumerable<StreamSlotView> slots, string statusPrefix)
@@ -1101,6 +1148,84 @@ public partial class MainWindow : Window
         }
 
         return "All";
+    }
+
+    private async Task ApplyQualityPolicyToSlotsAsync(IReadOnlyList<StreamSlotView> targetSlots)
+    {
+        if (targetSlots.Count == 0)
+        {
+            return;
+        }
+
+        if (!IsQualityPolicyEnabled())
+        {
+            StatusTextBlock.Text = "화질 고정이 비활성화되어 있습니다.";
+            return;
+        }
+
+        var policyText = IsQualityPolicyEnabled()
+            ? $"소리 {GetQualityLabel(AudibleQualityComboBox)}, 무음 {GetQualityLabel(MutedQualityComboBox)}"
+            : "자동";
+        StatusTextBlock.Text = $"화질 정책 적용 중: {policyText} / {targetSlots.Count} slot(s)";
+
+        var results = new List<(StreamSlotView Slot, StreamQualityApplyResult Result)>();
+        foreach (var slot in targetSlots)
+        {
+            results.Add((slot, await ApplyQualityPolicyToSlotAsync(slot)));
+        }
+
+        var successCount = results.Count(item => item.Result.IsSuccess);
+        if (successCount == results.Count)
+        {
+            StatusTextBlock.Text = $"화질 정책 적용 완료: {policyText} / {successCount}/{results.Count} slot(s)";
+            return;
+        }
+
+        var firstFailure = results.FirstOrDefault(item => !item.Result.IsSuccess);
+        StatusTextBlock.Text =
+            $"화질 정책 적용 일부 실패: {successCount}/{results.Count} slot(s). " +
+            $"Slot {firstFailure.Slot.SlotId}: {firstFailure.Result.Message}";
+    }
+
+    private Task<StreamQualityApplyResult> ApplyQualityPolicyToSlotAsync(StreamSlotView slot)
+    {
+        var qualityKey = GetQualityKey(slot.IsMuted ? MutedQualityComboBox : AudibleQualityComboBox);
+        return slot.ApplyQualityAsync(qualityKey);
+    }
+
+    private StreamSlotView[] GetVisibleNonBlankSlots()
+    {
+        HashSet<int>? visibleSlotIds = null;
+        if (LayoutComboBox.SelectedItem is LayoutPreset layout)
+        {
+            visibleSlotIds = layout.Slots
+                .Select(slot => slot.SlotId)
+                .ToHashSet();
+        }
+
+        return _slots
+            .Where(slot => visibleSlotIds is null || visibleSlotIds.Contains(slot.SlotId))
+            .Where(slot => !slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    private bool IsQualityPolicyEnabled()
+    {
+        return QualityLockCheckBox.IsChecked == true;
+    }
+
+    private static string GetQualityKey(ComboBox comboBox)
+    {
+        return comboBox.SelectedItem is ComboBoxItem { Tag: string qualityKey }
+            ? qualityKey
+            : "master";
+    }
+
+    private static string GetQualityLabel(ComboBox comboBox)
+    {
+        return comboBox.SelectedItem is ComboBoxItem { Content: object content }
+            ? content.ToString() ?? GetQualityKey(comboBox)
+            : GetQualityKey(comboBox);
     }
 
     private DispatcherTimer CreateDiagnosticsTimer()

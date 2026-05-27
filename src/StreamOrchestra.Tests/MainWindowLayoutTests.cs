@@ -50,6 +50,9 @@ public sealed class MainWindowLayoutTests
     public void PlaybackToolbar_RemovesPlanPlaybackTestShortcutsAfterVerification()
     {
         var document = LoadMainWindowDocument();
+        var audibleQualityComboBox = FindElementByName(document, "AudibleQualityComboBox");
+        var mutedQualityComboBox = FindElementByName(document, "MutedQualityComboBox");
+        var qualityLockCheckBox = FindElementByName(document, "QualityLockCheckBox");
 
         var playbackButtonTags = document
             .Descendants()
@@ -57,8 +60,23 @@ public sealed class MainWindowLayoutTests
                 GetAttribute(element, "Click") == "LoadFirstCountButton_Click")
             .Select(element => GetAttribute(element, "Tag"))
             .ToArray();
+        var audibleQualityOptions = audibleQualityComboBox
+            .Elements()
+            .Where(element => element.Name.LocalName == "ComboBoxItem")
+            .Select(element => $"{GetAttribute(element, "Tag")}:{GetAttribute(element, "Content")}")
+            .ToArray();
+        var mutedQualityOptions = mutedQualityComboBox
+            .Elements()
+            .Where(element => element.Name.LocalName == "ComboBoxItem")
+            .Select(element => $"{GetAttribute(element, "Tag")}:{GetAttribute(element, "Content")}")
+            .ToArray();
 
         Assert.Empty(playbackButtonTags);
+        Assert.Equal("True", GetAttribute(qualityLockCheckBox, "IsChecked"));
+        Assert.Equal("QualityPolicyControl_Changed", GetAttribute(qualityLockCheckBox, "Checked"));
+        Assert.Equal(["original:최대화질", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], audibleQualityOptions);
+        Assert.Equal(["original:최대화질", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], mutedQualityOptions);
+        Assert.Equal("ApplyQualityPolicyButton_Click", GetAttribute(FindButton(document, "화질 적용"), "Click"));
         Assert.Equal("RefreshDiagnosticsButton_Click", GetAttribute(FindButton(document, "진단 갱신"), "Click"));
     }
 

@@ -99,6 +99,29 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("DragDropEffects.Copy", text);
     }
 
+    [Fact]
+    public void CodeBehind_ProvidesBestEffortQualityControlAutomation()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "Views",
+            "StreamSlotView.xaml.cs"));
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("ApplyQualityAsync", text);
+        Assert.Contains(".quality_box", text);
+        Assert.Contains("ul button", text);
+        Assert.Contains("button.click();", text);
+        Assert.Contains("\"original\"", text);
+        Assert.Contains("\"hd4k\"", text);
+        Assert.Contains("\"sd\"", text);
+    }
+
     private static XDocument LoadStreamSlotViewDocument()
     {
         var path = Path.GetFullPath(Path.Combine(
