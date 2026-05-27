@@ -120,7 +120,23 @@ public sealed class PresetStorageService
                 : NormalizeWorkspace(appState.LastSession, new HashSet<string>(StringComparer.OrdinalIgnoreCase)),
             IsExplorerPanelVisible = appState.IsExplorerPanelVisible,
             AreSlotUrlEditorsVisible = appState.AreSlotUrlEditorsVisible,
-            AreSlotControlBarsAlwaysVisible = appState.AreSlotControlBarsAlwaysVisible
+            AreSlotControlBarsAlwaysVisible = appState.AreSlotControlBarsAlwaysVisible,
+            IsQualityLockEnabled = appState.IsQualityLockEnabled,
+            AudibleQualityKey = NormalizeQualityKey(appState.AudibleQualityKey, "original"),
+            MutedQualityKey = NormalizeQualityKey(appState.MutedQualityKey, "sd")
+        };
+    }
+
+    private static string NormalizeQualityKey(string? qualityKey, string fallback)
+    {
+        return qualityKey?.Trim().ToLowerInvariant() switch
+        {
+            "original" => "original",
+            "master" => "master",
+            "hd4k" => "hd4k",
+            "hd" => "hd",
+            "sd" => "sd",
+            _ => fallback
         };
     }
 

@@ -159,6 +159,9 @@ public sealed class PresetStorageServiceTests : IDisposable
             IsExplorerPanelVisible = false,
             AreSlotUrlEditorsVisible = false,
             AreSlotControlBarsAlwaysVisible = false,
+            IsQualityLockEnabled = false,
+            AudibleQualityKey = "hd4k",
+            MutedQualityKey = "master",
             Window = new AppWindowState
             {
                 X = 10,
@@ -179,6 +182,9 @@ public sealed class PresetStorageServiceTests : IDisposable
         Assert.False(loadedAppState.IsExplorerPanelVisible);
         Assert.False(loadedAppState.AreSlotUrlEditorsVisible);
         Assert.False(loadedAppState.AreSlotControlBarsAlwaysVisible);
+        Assert.False(loadedAppState.IsQualityLockEnabled);
+        Assert.Equal("hd4k", loadedAppState.AudibleQualityKey);
+        Assert.Equal("master", loadedAppState.MutedQualityKey);
         Assert.Equal(1280, loadedAppState.Window.Width);
         Assert.False(File.Exists(service.WorkspacesFilePath));
     }
@@ -199,7 +205,10 @@ public sealed class PresetStorageServiceTests : IDisposable
                 "name": " ",
                 "layoutId": null,
                 "slots": null
-              }
+              },
+              "isQualityLockEnabled": false,
+              "audibleQualityKey": "  bad_key  ",
+              "mutedQualityKey": " HD "
             }
             """);
 
@@ -215,6 +224,9 @@ public sealed class PresetStorageServiceTests : IDisposable
         Assert.Equal("Imported Workspace", appState.LastSession.Name);
         Assert.Equal("", appState.LastSession.LayoutId);
         Assert.Empty(appState.LastSession.Slots);
+        Assert.False(appState.IsQualityLockEnabled);
+        Assert.Equal("original", appState.AudibleQualityKey);
+        Assert.Equal("hd", appState.MutedQualityKey);
     }
 
     [Fact]
