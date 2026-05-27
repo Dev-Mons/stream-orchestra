@@ -15,9 +15,9 @@ public partial class MainWindow : Window
     private readonly WebViewProfileService _profileService = new();
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
     private readonly PlaybackTestPlanService _playbackTestPlanService = new();
-    private readonly LayoutPresetService _layoutPresetService = new();
     private readonly SlotSwapService _slotSwapService = new();
     private readonly PresetStorageService _presetStorageService = new();
+    private readonly LayoutPresetService _layoutPresetService;
     private readonly FavoriteStorageService _favoriteStorageService = new();
     private readonly FeasibilityResultStorageService _feasibilityResultStorageService = new();
     private readonly FeasibilityDecisionService _feasibilityDecisionService = new();
@@ -33,6 +33,8 @@ public partial class MainWindow : Window
     private readonly WorkspacePresetNormalizationService _workspacePresetNormalizationService;
     private readonly WorkspaceRestoreService _workspaceRestoreService;
     private readonly List<StreamSlotView> _slots = [];
+    private IReadOnlyList<LayoutPreset> _builtInLayouts = [];
+    private List<LayoutPreset> _customLayouts = [];
     private IReadOnlyList<LayoutPreset> _layouts = [];
     private List<WorkspacePreset> _workspaces = [];
     private List<StreamEntry> _favorites = [];
@@ -50,6 +52,7 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        _layoutPresetService = new LayoutPresetService(_presetStorageService.DataFolder);
         _workspacePresetNormalizationService = new WorkspacePresetNormalizationService(_streamNavigationService);
         _workspaceRestoreService = new WorkspaceRestoreService(
             _workspacePresetNormalizationService,
@@ -106,11 +109,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private void LoadLayouts()
+    private void LoadLayouts(string? selectedLayoutId = null)
     {
-        _layouts = _layoutPresetService.LoadFromDefaultLocation();
+        var currentLayoutId = selectedLayoutId ?? (LayoutComboBox.SelectedItem as LayoutPreset)?.Id;
+        _builtInLayouts = _layoutPresetService.LoadBuiltInLayouts();
+        _customLayouts = _layoutPresetService.LoadCustomLayouts().ToList();
+        _layouts = LayoutPresetService.CombineLayouts(_builtInLayouts, _customLayouts);
+
+        LayoutComboBox.ItemsSource = null;
         LayoutComboBox.ItemsSource = _layouts;
-        LayoutComboBox.SelectedItem = LayoutPresetService.SelectDefaultLayout(_layouts);
+        LayoutComboBox.SelectedItem = string.IsNullOrWhiteSpace(currentLayoutId)
+            ? LayoutPresetService.SelectDefaultLayout(_layouts)
+            : _layouts.FirstOrDefault(layout => layout.Id.Equals(currentLayoutId, StringComparison.OrdinalIgnoreCase))
+              ?? LayoutPresetService.SelectDefaultLayout(_layouts);
     }
 
     private void LoadWorkspacePresets()
@@ -161,6 +172,36 @@ public partial class MainWindow : Window
             ApplyLayout(layout);
             EnsureSelectedSlotVisible(layout);
             await ClearHiddenNonBlankSlotsAsync(layout);
+        }
+    }
+
+    private void EditLayoutsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var currentLayout = LayoutComboBox.SelectedItem as LayoutPreset;
+        var dialog = new LayoutEditorDialog(
+            _layoutPresetService,
+            _builtInLayouts,
+            _customLayouts,
+            _layouts,
+            currentLayout)
+        {
+            Owner = this
+        };
+
+        var shouldApplyLayout = dialog.ShowDialog() == true && dialog.SelectedLayout is not null;
+        if (!shouldApplyLayout && !dialog.HasCustomLayoutChanges)
+        {
+            return;
+        }
+
+        var selectedLayoutId = shouldApplyLayout
+            ? dialog.SelectedLayout?.Id
+            : currentLayout?.Id;
+        LoadLayouts(selectedLayoutId);
+
+        if (!shouldApplyLayout)
+        {
+            StatusTextBlock.Text = "사용자 지정 레이아웃 목록을 갱신했습니다.";
         }
     }
 

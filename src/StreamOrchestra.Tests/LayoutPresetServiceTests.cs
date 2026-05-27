@@ -103,6 +103,57 @@ public sealed class LayoutPresetServiceTests
     }
 
     [Fact]
+    public void LoadFromDefaultLocation_UsesOnlyBuiltInLayoutsWhenCustomFolderIsNotConfigured()
+    {
+        var service = new LayoutPresetService();
+
+        var layouts = service.LoadFromDefaultLocation();
+
+        Assert.Equal([LayoutPresetIds.Default, LayoutPresetIds.Tournament], layouts.Select(layout => layout.Id).ToArray());
+    }
+
+    [Fact]
+    public void SaveCustomLayouts_PersistsLayoutsInConfiguredDataFolder()
+    {
+        var dataFolder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var service = new LayoutPresetService(dataFolder);
+            var customLayout = CreateNonOverlappingLayout("custom_layout_two_up", "Two Up", 2, 1, [1, 2]);
+
+            service.SaveCustomLayouts([customLayout]);
+            var loadedLayouts = service.LoadCustomLayouts();
+
+            Assert.Equal(Path.Combine(dataFolder, "custom-layouts.json"), service.CustomLayoutFilePath);
+            Assert.Single(loadedLayouts);
+            Assert.Equal("custom_layout_two_up", loadedLayouts[0].Id);
+            Assert.Equal("Two Up", loadedLayouts[0].Name);
+            Assert.Equal(2, loadedLayouts[0].Slots.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(dataFolder))
+            {
+                Directory.Delete(dataFolder, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void CreateCustomLayoutId_UsesUniqueCustomPrefix()
+    {
+        var existingLayouts = new[]
+        {
+            CreateLayout("custom_layout_focus", 1),
+            CreateLayout("custom_layout_focus_2", 1)
+        };
+
+        var layoutId = LayoutPresetService.CreateCustomLayoutId("Focus", existingLayouts);
+
+        Assert.Equal("custom_layout_focus_3", layoutId);
+    }
+
+    [Fact]
     public void SelectPlaybackTestLayout_KeepsCurrentLayoutWhenItShowsEnoughSlots()
     {
         var defaultLayout = CreateLayout(LayoutPresetIds.Default, 9);
@@ -360,6 +411,32 @@ public sealed class LayoutPresetServiceTests
             GridRows = 4,
             Slots = slotIds
                 .Select(slotId => new LayoutSlot { SlotId = slotId, X = 0, Y = 0, W = 1, H = 1 })
+                .ToArray()
+        };
+    }
+
+    private static LayoutPreset CreateNonOverlappingLayout(
+        string id,
+        string name,
+        int columns,
+        int rows,
+        int[] slotIds)
+    {
+        return new LayoutPreset
+        {
+            Id = id,
+            Name = name,
+            GridColumns = columns,
+            GridRows = rows,
+            Slots = slotIds
+                .Select((slotId, index) => new LayoutSlot
+                {
+                    SlotId = slotId,
+                    X = index % columns,
+                    Y = index / columns,
+                    W = 1,
+                    H = 1
+                })
                 .ToArray()
         };
     }

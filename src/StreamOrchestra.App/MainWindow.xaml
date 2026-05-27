@@ -52,6 +52,12 @@
                                   Margin="8,0,0,0"
                                   DisplayMemberPath="Name"
                                   SelectionChanged="LayoutComboBox_SelectionChanged" />
+                        <Button Content="레이아웃 편집"
+                                Height="30"
+                                MinWidth="96"
+                                Margin="8,0,0,0"
+                                Padding="10,0"
+                                Click="EditLayoutsButton_Click" />
                         <ComboBox x:Name="LoadScopeComboBox"
                                   Width="140"
                                   Height="30"

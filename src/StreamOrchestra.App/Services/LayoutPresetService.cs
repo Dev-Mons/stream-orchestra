@@ -8,10 +8,27 @@ public sealed class LayoutPresetService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
+        AllowTrailingCommas = true,
+        WriteIndented = true
     };
+
+    private readonly string? _customLayoutFilePath;
+
+    public LayoutPresetService(string? dataFolder = null)
+    {
+        if (string.IsNullOrWhiteSpace(dataFolder))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(dataFolder);
+        _customLayoutFilePath = Path.Combine(dataFolder, "custom-layouts.json");
+    }
+
+    public string? CustomLayoutFilePath => _customLayoutFilePath;
 
     public IReadOnlyList<LayoutPreset> LoadFromFile(string path)
     {
@@ -26,7 +43,87 @@ public sealed class LayoutPresetService
 
     public IReadOnlyList<LayoutPreset> LoadFromDefaultLocation()
     {
+        return CombineLayouts(LoadBuiltInLayouts(), LoadCustomLayouts());
+    }
+
+    public IReadOnlyList<LayoutPreset> LoadBuiltInLayouts()
+    {
         return LoadFromFile(GetDefaultLayoutFilePath());
+    }
+
+    public IReadOnlyList<LayoutPreset> LoadCustomLayouts()
+    {
+        if (_customLayoutFilePath is null || !File.Exists(_customLayoutFilePath))
+        {
+            return [];
+        }
+
+        var layouts = JsonFileStorage.LoadList<LayoutPreset>(_customLayoutFilePath, SerializerOptions);
+        ValidateLayouts(layouts, requireAtLeastOne: false);
+
+        return layouts;
+    }
+
+    public void SaveCustomLayouts(IReadOnlyList<LayoutPreset> layouts)
+    {
+        if (_customLayoutFilePath is null)
+        {
+            throw new InvalidOperationException("A custom layout data folder is required before saving layouts.");
+        }
+
+        ValidateLayouts(layouts, requireAtLeastOne: false);
+        JsonFileStorage.Save(_customLayoutFilePath, layouts, SerializerOptions);
+    }
+
+    public static IReadOnlyList<LayoutPreset> CombineLayouts(
+        IReadOnlyList<LayoutPreset> builtInLayouts,
+        IReadOnlyList<LayoutPreset> customLayouts)
+    {
+        var layouts = builtInLayouts
+            .Concat(customLayouts)
+            .ToArray();
+
+        Validate(layouts);
+
+        return layouts;
+    }
+
+    public static string CreateCustomLayoutId(string name, IReadOnlyCollection<LayoutPreset> existingLayouts)
+    {
+        var normalizedCharacters = name.Trim()
+            .ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : '_')
+            .ToArray();
+        var baseId = string.Join(
+            "_",
+            new string(normalizedCharacters).Split('_', StringSplitOptions.RemoveEmptyEntries));
+
+        if (string.IsNullOrWhiteSpace(baseId))
+        {
+            baseId = "custom_layout";
+        }
+        else if (!baseId.StartsWith("custom_layout_", StringComparison.OrdinalIgnoreCase))
+        {
+            baseId = $"custom_layout_{baseId}";
+        }
+
+        var existingIds = existingLayouts
+            .Select(layout => layout.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!existingIds.Contains(baseId))
+        {
+            return baseId;
+        }
+
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{baseId}_{suffix}";
+            if (!existingIds.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
     }
 
     public static LayoutPreset SelectDefaultLayout(IReadOnlyList<LayoutPreset> layouts)
@@ -111,9 +208,19 @@ public sealed class LayoutPresetService
 
     public static void Validate(IReadOnlyList<LayoutPreset> layouts)
     {
+        ValidateLayouts(layouts, requireAtLeastOne: true);
+    }
+
+    private static void ValidateLayouts(IReadOnlyList<LayoutPreset> layouts, bool requireAtLeastOne)
+    {
         if (layouts.Count == 0)
         {
-            throw new InvalidOperationException("At least one layout preset is required.");
+            if (requireAtLeastOne)
+            {
+                throw new InvalidOperationException("At least one layout preset is required.");
+            }
+
+            return;
         }
 
         var layoutIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

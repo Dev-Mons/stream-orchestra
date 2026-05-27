@@ -25,6 +25,7 @@ public sealed class MainWindowLayoutTests
         Assert.Equal("LoadIsolatedScopeButton_Click", GetAttribute(FindButton(document, "그룹 단독"), "Click"));
         Assert.Equal("LoadAllButton_Click", GetAttribute(FindButton(document, "전체 로드"), "Click"));
         Assert.Equal("BlankAllButton_Click", GetAttribute(FindButton(document, "빈 화면"), "Click"));
+        Assert.Equal("EditLayoutsButton_Click", GetAttribute(FindButton(document, "레이아웃 편집"), "Click"));
     }
 
     [Fact]
