@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
@@ -9,6 +10,9 @@ namespace StreamOrchestra.App.Views;
 
 public partial class LayoutEditorDialog : Window
 {
+    private const double WeightStep = 0.2;
+    private const double MinWeight = 0.2;
+
     private static readonly string[] SlotColorValues =
     [
         "#2F80ED",
@@ -33,8 +37,10 @@ public partial class LayoutEditorDialog : Window
     private readonly List<LayoutPreset> _templateLayouts;
     private readonly List<LayoutPreset> _customLayouts;
     private readonly List<LayoutPreset> _allLayouts;
-    private SplitNode _editorRoot = SplitNode.CreateLeaf(1);
-    private SplitNode? _selectedLeaf;
+    private int[,] _zoneCells = new int[1, 1] { { 1 } };
+    private double[] _columnWeights = [1];
+    private double[] _rowWeights = [1];
+    private readonly HashSet<int> _selectedZoneIds = new();
     private bool _isRefreshingEditor;
     private LayoutPreset? _selectedTemplate;
 
@@ -53,7 +59,7 @@ public partial class LayoutEditorDialog : Window
         InitializeComponent();
         RefreshTemplateList();
         RefreshCustomLayoutList();
-        ResetSplitEditor("Custom Layout");
+        ResetZoneEditor("Custom Layout");
 
         var selectedLayout = currentLayout is null
             ? _templateLayouts.FirstOrDefault()
@@ -73,7 +79,7 @@ public partial class LayoutEditorDialog : Window
 
         EditorTabControl.SelectedIndex = 1;
         RefreshCustomLayoutList(selectedLayout);
-        LoadCustomLayoutIntoSplitEditor(selectedLayout);
+        LoadCustomLayoutIntoZoneEditor(selectedLayout);
     }
 
     public bool HasCustomLayoutChanges { get; private set; }
@@ -165,7 +171,7 @@ public partial class LayoutEditorDialog : Window
 
         if (CustomLayoutListBox.SelectedItem is LayoutPreset layout)
         {
-            LoadCustomLayoutIntoSplitEditor(layout);
+            LoadCustomLayoutIntoZoneEditor(layout);
         }
     }
 
@@ -182,15 +188,8 @@ public partial class LayoutEditorDialog : Window
         _isRefreshingEditor = false;
 
         EditorTabControl.SelectedIndex = 1;
-        if (TryCreateSplitTreeFromLayout(_selectedTemplate, out var root))
-        {
-            LoadSplitTree($"{_selectedTemplate.Name} Custom", root);
-            DialogStatusTextBlock.Text = "템플릿을 사용자 지정 분할 편집기로 복사했습니다.";
-            return;
-        }
-
-        ResetSplitEditor($"{_selectedTemplate.Name} Custom");
-        DialogStatusTextBlock.Text = "이 템플릿은 균등 분할 구조가 아니어서 새 레이아웃으로 시작합니다.";
+        LoadZoneEditorFromLayout($"{_selectedTemplate.Name} Custom", _selectedTemplate);
+        DialogStatusTextBlock.Text = "템플릿을 사용자 지정 편집기로 복사했습니다.";
     }
 
     private void NewCustomLayoutButton_Click(object sender, RoutedEventArgs e)
@@ -198,112 +197,408 @@ public partial class LayoutEditorDialog : Window
         _isRefreshingEditor = true;
         CustomLayoutListBox.SelectedItem = null;
         _isRefreshingEditor = false;
-        ResetSplitEditor("Custom Layout");
+        ResetZoneEditor("Custom Layout");
         DialogStatusTextBlock.Text = "새 사용자 지정 레이아웃을 시작했습니다.";
     }
 
     private void VerticalSplitButton_Click(object sender, RoutedEventArgs e)
     {
-        SplitSelectedLeaf(SplitAxis.Vertical);
+        SplitSelectedZone(SplitAxis.Vertical);
     }
 
     private void HorizontalSplitButton_Click(object sender, RoutedEventArgs e)
     {
-        SplitSelectedLeaf(SplitAxis.Horizontal);
+        SplitSelectedZone(SplitAxis.Horizontal);
     }
 
     private void RemoveSelectedSlotButton_Click(object sender, RoutedEventArgs e)
     {
-        RemoveSelectedLeaf();
+        RemoveSelectedZone();
     }
 
-    private void SplitSelectedLeaf(SplitAxis axis)
+    private void MergeSelectedZonesButton_Click(object sender, RoutedEventArgs e)
     {
-        _selectedLeaf ??= GetLeaves(_editorRoot).FirstOrDefault();
-        if (_selectedLeaf is null)
+        MergeSelectedZones();
+    }
+
+    private void DecreaseWidthButton_Click(object sender, RoutedEventArgs e)
+    {
+        AdjustSelectedZoneWidth(-WeightStep);
+    }
+
+    private void IncreaseWidthButton_Click(object sender, RoutedEventArgs e)
+    {
+        AdjustSelectedZoneWidth(WeightStep);
+    }
+
+    private void DecreaseHeightButton_Click(object sender, RoutedEventArgs e)
+    {
+        AdjustSelectedZoneHeight(-WeightStep);
+    }
+
+    private void IncreaseHeightButton_Click(object sender, RoutedEventArgs e)
+    {
+        AdjustSelectedZoneHeight(WeightStep);
+    }
+
+    private void ResetZoneSizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        _columnWeights = CreateDefaultWeights(_zoneCells.GetLength(1));
+        _rowWeights = CreateDefaultWeights(_zoneCells.GetLength(0));
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = "열/행 비율을 균등하게 초기화했습니다.";
+    }
+
+    private void SplitSelectedZone(SplitAxis axis)
+    {
+        if (!TryGetSingleSelectedZone("분할할 슬롯을 선택하세요.", out var selectedZoneId, out var selectedRect))
         {
-            DialogStatusTextBlock.Text = "분할할 슬롯을 선택하세요.";
             return;
         }
 
-        if (GetLeaves(_editorRoot).Count >= PlaybackTestPlanService.MaxSlotCount)
+        if (GetZoneRects().Count >= PlaybackTestPlanService.MaxSlotCount)
         {
             DialogStatusTextBlock.Text = $"최대 {PlaybackTestPlanService.MaxSlotCount}개 슬롯까지 만들 수 있습니다.";
             return;
         }
 
-        var originalSlotId = _selectedLeaf.SlotId;
-        _selectedLeaf.Axis = axis;
-        _selectedLeaf.First = SplitNode.CreateLeaf(originalSlotId);
-        _selectedLeaf.Second = SplitNode.CreateLeaf(0);
-        _selectedLeaf.SlotId = 0;
-        _selectedLeaf = _selectedLeaf.Second;
+        var newZoneId = GetNextZoneId();
+        if (axis == SplitAxis.Vertical)
+        {
+            SplitZoneVertically(selectedZoneId, selectedRect, newZoneId);
+            DialogStatusTextBlock.Text = "선택 슬롯을 좌/우로 세로분할했습니다.";
+        }
+        else
+        {
+            SplitZoneHorizontally(selectedZoneId, selectedRect, newZoneId);
+            DialogStatusTextBlock.Text = "선택 슬롯을 상/하로 가로분할했습니다.";
+        }
 
-        NormalizeSlotIdsFromVisualOrder();
-        RefreshSplitEditorSurface();
-        DialogStatusTextBlock.Text = axis == SplitAxis.Vertical
-            ? "선택 슬롯을 좌/우로 세로분할했습니다."
-            : "선택 슬롯을 상/하로 가로분할했습니다.";
+        _selectedZoneIds.Clear();
+        _selectedZoneIds.Add(newZoneId);
+        RefreshZoneEditorSurface();
     }
 
-    private void RemoveSelectedLeaf()
+    private void SplitZoneVertically(int selectedZoneId, ZoneRect selectedRect, int newZoneId)
     {
-        _selectedLeaf ??= GetLeaves(_editorRoot).FirstOrDefault();
-        if (_selectedLeaf is null)
+        if (selectedRect.W == 1)
         {
-            DialogStatusTextBlock.Text = "제거할 슬롯을 선택하세요.";
+            InsertColumn(selectedRect.X + selectedRect.W, selectedZoneId, newZoneId, selectedRect.Y, selectedRect.H);
             return;
         }
 
-        if (ReferenceEquals(_editorRoot, _selectedLeaf))
+        var leftWidth = selectedRect.W / 2;
+        var splitX = selectedRect.X + leftWidth;
+        for (var y = selectedRect.Y; y < selectedRect.Y + selectedRect.H; y++)
+        {
+            for (var x = splitX; x < selectedRect.X + selectedRect.W; x++)
+            {
+                if (_zoneCells[y, x] == selectedZoneId)
+                {
+                    _zoneCells[y, x] = newZoneId;
+                }
+            }
+        }
+    }
+
+    private void SplitZoneHorizontally(int selectedZoneId, ZoneRect selectedRect, int newZoneId)
+    {
+        if (selectedRect.H == 1)
+        {
+            InsertRow(selectedRect.Y + selectedRect.H, selectedZoneId, newZoneId, selectedRect.X, selectedRect.W);
+            return;
+        }
+
+        var topHeight = selectedRect.H / 2;
+        var splitY = selectedRect.Y + topHeight;
+        for (var y = splitY; y < selectedRect.Y + selectedRect.H; y++)
+        {
+            for (var x = selectedRect.X; x < selectedRect.X + selectedRect.W; x++)
+            {
+                if (_zoneCells[y, x] == selectedZoneId)
+                {
+                    _zoneCells[y, x] = newZoneId;
+                }
+            }
+        }
+    }
+
+    private void InsertColumn(int insertX, int selectedZoneId, int newZoneId, int selectedY, int selectedHeight)
+    {
+        var rows = _zoneCells.GetLength(0);
+        var columns = _zoneCells.GetLength(1);
+        var nextCells = new int[rows, columns + 1];
+
+        for (var y = 0; y < rows; y++)
+        {
+            for (var x = 0; x < columns + 1; x++)
+            {
+                if (x < insertX)
+                {
+                    nextCells[y, x] = _zoneCells[y, x];
+                }
+                else if (x == insertX)
+                {
+                    nextCells[y, x] = _zoneCells[y, Math.Max(0, insertX - 1)];
+                }
+                else
+                {
+                    nextCells[y, x] = _zoneCells[y, x - 1];
+                }
+            }
+        }
+
+        for (var y = selectedY; y < selectedY + selectedHeight; y++)
+        {
+            if (nextCells[y, insertX] == selectedZoneId)
+            {
+                nextCells[y, insertX] = newZoneId;
+            }
+        }
+
+        _zoneCells = nextCells;
+        _columnWeights = InsertSplitWeight(_columnWeights, insertX);
+    }
+
+    private void InsertRow(int insertY, int selectedZoneId, int newZoneId, int selectedX, int selectedWidth)
+    {
+        var rows = _zoneCells.GetLength(0);
+        var columns = _zoneCells.GetLength(1);
+        var nextCells = new int[rows + 1, columns];
+
+        for (var y = 0; y < rows + 1; y++)
+        {
+            for (var x = 0; x < columns; x++)
+            {
+                if (y < insertY)
+                {
+                    nextCells[y, x] = _zoneCells[y, x];
+                }
+                else if (y == insertY)
+                {
+                    nextCells[y, x] = _zoneCells[Math.Max(0, insertY - 1), x];
+                }
+                else
+                {
+                    nextCells[y, x] = _zoneCells[y - 1, x];
+                }
+            }
+        }
+
+        for (var x = selectedX; x < selectedX + selectedWidth; x++)
+        {
+            if (nextCells[insertY, x] == selectedZoneId)
+            {
+                nextCells[insertY, x] = newZoneId;
+            }
+        }
+
+        _zoneCells = nextCells;
+        _rowWeights = InsertSplitWeight(_rowWeights, insertY);
+    }
+
+    private void RemoveSelectedZone()
+    {
+        if (!TryGetSingleSelectedZone("제거할 슬롯을 선택하세요.", out var selectedZoneId, out var selectedRect))
+        {
+            return;
+        }
+
+        if (GetZoneRects().Count <= 1)
         {
             DialogStatusTextBlock.Text = "마지막 슬롯은 제거할 수 없습니다.";
             return;
         }
 
-        if (!TryCollapseParentToSibling(_editorRoot, _selectedLeaf, out var collapsedNode))
+        var candidates = GetAdjacentZoneCandidates(selectedRect, selectedZoneId);
+        foreach (var candidateZoneId in candidates)
         {
-            DialogStatusTextBlock.Text = "선택 슬롯을 제거할 수 없습니다.";
-            return;
+            var candidateCells = CloneCells(_zoneCells);
+            ReplaceZone(candidateCells, selectedZoneId, candidateZoneId);
+            if (TryGetZoneRects(candidateCells, out _))
+            {
+                _zoneCells = candidateCells;
+                _selectedZoneIds.Clear();
+                _selectedZoneIds.Add(candidateZoneId);
+                RefreshZoneEditorSurface();
+                DialogStatusTextBlock.Text = "선택 슬롯을 제거하고 인접 슬롯을 확장했습니다.";
+                return;
+            }
         }
 
-        _selectedLeaf = GetLeaves(collapsedNode).FirstOrDefault() ?? GetLeaves(_editorRoot).FirstOrDefault();
-        NormalizeSlotIdsFromVisualOrder();
-        RefreshSplitEditorSurface();
-        DialogStatusTextBlock.Text = "선택 슬롯을 제거하고 형제 영역을 확장했습니다.";
+        DialogStatusTextBlock.Text = "이 슬롯은 제거 후 직사각형 zone을 유지할 인접 슬롯이 없습니다.";
     }
 
-    private void LoadCustomLayoutIntoSplitEditor(LayoutPreset layout)
+    private void MergeSelectedZones()
     {
-        if (!TryCreateSplitTreeFromLayout(layout, out var root))
+        if (_selectedZoneIds.Count < 2)
         {
-            ResetSplitEditor(layout.Name);
-            DialogStatusTextBlock.Text = "이 레이아웃은 분할 편집 구조로 변환할 수 없어 새 구조로 시작합니다.";
+            DialogStatusTextBlock.Text = "Ctrl+클릭으로 병합할 슬롯을 둘 이상 선택하세요.";
             return;
         }
 
-        LoadSplitTree(layout.Name, root);
+        var selectedCells = new List<CellPoint>();
+        var targetZoneId = _selectedZoneIds.Min();
+        for (var y = 0; y < _zoneCells.GetLength(0); y++)
+        {
+            for (var x = 0; x < _zoneCells.GetLength(1); x++)
+            {
+                if (_selectedZoneIds.Contains(_zoneCells[y, x]))
+                {
+                    selectedCells.Add(new CellPoint(x, y));
+                }
+            }
+        }
+
+        var minX = selectedCells.Min(cell => cell.X);
+        var maxX = selectedCells.Max(cell => cell.X);
+        var minY = selectedCells.Min(cell => cell.Y);
+        var maxY = selectedCells.Max(cell => cell.Y);
+
+        for (var y = minY; y <= maxY; y++)
+        {
+            for (var x = minX; x <= maxX; x++)
+            {
+                if (!_selectedZoneIds.Contains(_zoneCells[y, x]))
+                {
+                    DialogStatusTextBlock.Text = "선택한 슬롯들이 하나의 직사각형을 완전히 채울 때만 병합할 수 있습니다.";
+                    return;
+                }
+            }
+        }
+
+        for (var y = minY; y <= maxY; y++)
+        {
+            for (var x = minX; x <= maxX; x++)
+            {
+                _zoneCells[y, x] = targetZoneId;
+            }
+        }
+
+        _selectedZoneIds.Clear();
+        _selectedZoneIds.Add(targetZoneId);
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = "선택한 슬롯을 병합했습니다.";
+    }
+
+    private void AdjustSelectedZoneWidth(double delta)
+    {
+        if (!TryGetSingleSelectedZone("크기를 조절할 슬롯을 선택하세요.", out _, out var selectedRect))
+        {
+            return;
+        }
+
+        if (selectedRect.W >= _columnWeights.Length)
+        {
+            DialogStatusTextBlock.Text = "선택 슬롯이 전체 폭을 차지하고 있어 폭 비율을 조절할 기준 열이 없습니다.";
+            return;
+        }
+
+        _columnWeights = AdjustWeights(_columnWeights, selectedRect.X, selectedRect.W, delta);
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = delta > 0
+            ? "선택 슬롯의 폭 비율을 키웠습니다."
+            : "선택 슬롯의 폭 비율을 줄였습니다.";
+    }
+
+    private void AdjustSelectedZoneHeight(double delta)
+    {
+        if (!TryGetSingleSelectedZone("크기를 조절할 슬롯을 선택하세요.", out _, out var selectedRect))
+        {
+            return;
+        }
+
+        if (selectedRect.H >= _rowWeights.Length)
+        {
+            DialogStatusTextBlock.Text = "선택 슬롯이 전체 높이를 차지하고 있어 높이 비율을 조절할 기준 행이 없습니다.";
+            return;
+        }
+
+        _rowWeights = AdjustWeights(_rowWeights, selectedRect.Y, selectedRect.H, delta);
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = delta > 0
+            ? "선택 슬롯의 높이 비율을 키웠습니다."
+            : "선택 슬롯의 높이 비율을 줄였습니다.";
+    }
+
+    private static double[] AdjustWeights(double[] sourceWeights, int start, int count, double delta)
+    {
+        var weights = sourceWeights.ToArray();
+        for (var index = start; index < start + count && index < weights.Length; index++)
+        {
+            weights[index] = Math.Max(MinWeight, weights[index] + delta);
+        }
+
+        return NormalizeWeightAverage(weights);
+    }
+
+    private bool TryGetSingleSelectedZone(string emptySelectionMessage, out int selectedZoneId, out ZoneRect selectedRect)
+    {
+        selectedZoneId = 0;
+        selectedRect = default;
+
+        if (_selectedZoneIds.Count == 0)
+        {
+            DialogStatusTextBlock.Text = emptySelectionMessage;
+            return false;
+        }
+
+        if (_selectedZoneIds.Count > 1)
+        {
+            DialogStatusTextBlock.Text = "이 작업은 슬롯을 하나만 선택해야 합니다.";
+            return false;
+        }
+
+        selectedZoneId = _selectedZoneIds.Single();
+        var zoneId = selectedZoneId;
+        var rects = GetZoneRects();
+        selectedRect = rects.Single(rect => rect.ZoneId == zoneId);
+        return true;
+    }
+
+    private void LoadCustomLayoutIntoZoneEditor(LayoutPreset layout)
+    {
+        LoadZoneEditorFromLayout(layout.Name, layout);
         SelectedLayout = layout;
         DialogStatusTextBlock.Text = $"사용자 지정 선택: {layout.Name}";
     }
 
-    private void ResetSplitEditor(string layoutName)
+    private void ResetZoneEditor(string layoutName)
     {
-        LoadSplitTree(layoutName, SplitNode.CreateLeaf(1));
-    }
-
-    private void LoadSplitTree(string layoutName, SplitNode root)
-    {
-        _editorRoot = root;
-        NormalizeSlotIdsFromVisualOrder();
-        _selectedLeaf = GetLeaves(_editorRoot).FirstOrDefault();
+        _zoneCells = new int[1, 1] { { 1 } };
+        _columnWeights = [1];
+        _rowWeights = [1];
+        _selectedZoneIds.Clear();
+        _selectedZoneIds.Add(1);
         LayoutNameTextBox.Text = layoutName;
-        RefreshSplitEditorSurface();
+        RefreshZoneEditorSurface();
     }
 
-    private void RefreshSplitEditorSurface()
+    private void LoadZoneEditorFromLayout(string layoutName, LayoutPreset layout)
     {
-        NormalizeSlotIdsFromVisualOrder();
+        _zoneCells = new int[layout.GridRows, layout.GridColumns];
+        _columnWeights = NormalizeWeights(layout.ColumnWeights, layout.GridColumns);
+        _rowWeights = NormalizeWeights(layout.RowWeights, layout.GridRows);
+        foreach (var slot in layout.Slots)
+        {
+            for (var y = slot.Y; y < slot.Y + slot.H; y++)
+            {
+                for (var x = slot.X; x < slot.X + slot.W; x++)
+                {
+                    _zoneCells[y, x] = slot.SlotId;
+                }
+            }
+        }
+
+        _selectedZoneIds.Clear();
+        _selectedZoneIds.Add(layout.Slots.OrderBy(slot => slot.SlotId).FirstOrDefault()?.SlotId ?? 1);
+        LayoutNameTextBox.Text = layoutName;
+        RefreshZoneEditorSurface();
+    }
+
+    private void RefreshZoneEditorSurface()
+    {
+        NormalizeZoneIdsFromVisualOrder();
 
         if (!TryCreateLayoutFromEditor("preview", out var layout, out var error))
         {
@@ -320,14 +615,12 @@ public partial class LayoutEditorDialog : Window
             return;
         }
 
-        SplitEditorHost.Content = BuildSplitEditorGrid(layout);
+        SplitEditorHost.Content = BuildZoneEditorGrid(layout);
         EditorPreviewHost.Content = BuildLayoutPreview(layout, 260, 420, showSlotNumbers: true);
     }
 
-    private FrameworkElement BuildSplitEditorGrid(LayoutPreset layout)
+    private FrameworkElement BuildZoneEditorGrid(LayoutPreset layout)
     {
-        var nodeBySlotId = CreateRects(_editorRoot)
-            .ToDictionary(rect => rect.Node.SlotId, rect => rect.Node);
         var grid = new Grid
         {
             Width = Math.Max(320, layout.GridColumns * 128),
@@ -337,21 +630,26 @@ public partial class LayoutEditorDialog : Window
 
         for (var rowIndex = 0; rowIndex < layout.GridRows; rowIndex++)
         {
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition
+            {
+                Height = new GridLength(GetWeight(layout.RowWeights, rowIndex), GridUnitType.Star)
+            });
         }
 
         for (var columnIndex = 0; columnIndex < layout.GridColumns; columnIndex++)
         {
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(GetWeight(layout.ColumnWeights, columnIndex), GridUnitType.Star)
+            });
         }
 
         foreach (var slot in layout.Slots.OrderBy(slot => slot.SlotId))
         {
-            var node = nodeBySlotId[slot.SlotId];
-            var isSelected = ReferenceEquals(node, _selectedLeaf);
+            var isSelected = _selectedZoneIds.Contains(slot.SlotId);
             var button = new Button
             {
-                Tag = node,
+                Tag = slot.SlotId,
                 Content = slot.SlotId.ToString(),
                 Margin = new Thickness(3),
                 FontSize = 24,
@@ -363,7 +661,7 @@ public partial class LayoutEditorDialog : Window
                     : new SolidColorBrush(Color.FromRgb(45, 54, 66)),
                 BorderThickness = isSelected ? new Thickness(4) : new Thickness(1)
             };
-            button.Click += SplitEditorSlotButton_Click;
+            button.Click += ZoneButton_Click;
 
             Grid.SetColumn(button, slot.X);
             Grid.SetRow(button, slot.Y);
@@ -379,16 +677,30 @@ public partial class LayoutEditorDialog : Window
         };
     }
 
-    private void SplitEditorSlotButton_Click(object sender, RoutedEventArgs e)
+    private void ZoneButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: SplitNode node })
+        if (sender is not Button { Tag: int zoneId })
         {
             return;
         }
 
-        _selectedLeaf = node;
-        RefreshSplitEditorSurface();
-        DialogStatusTextBlock.Text = $"선택 슬롯: {node.SlotId}";
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            if (!_selectedZoneIds.Add(zoneId))
+            {
+                _selectedZoneIds.Remove(zoneId);
+            }
+        }
+        else
+        {
+            _selectedZoneIds.Clear();
+            _selectedZoneIds.Add(zoneId);
+        }
+
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = _selectedZoneIds.Count == 1
+            ? $"선택 슬롯: {_selectedZoneIds.Single()}"
+            : $"선택 슬롯: {string.Join(", ", _selectedZoneIds.OrderBy(zoneId => zoneId))}";
     }
 
     private void SaveCustomLayoutButton_Click(object sender, RoutedEventArgs e)
@@ -472,7 +784,7 @@ public partial class LayoutEditorDialog : Window
         HasCustomLayoutChanges = true;
         SelectedLayout = _templateLayouts.FirstOrDefault();
         RefreshCustomLayoutList();
-        ResetSplitEditor("Custom Layout");
+        ResetZoneEditor("Custom Layout");
 
         if (SelectedLayout is not null)
         {
@@ -493,14 +805,9 @@ public partial class LayoutEditorDialog : Window
             return false;
         }
 
-        var size = Measure(_editorRoot);
-        var rects = CreateRects(_editorRoot)
-            .OrderBy(rect => rect.Node.SlotId)
-            .ToArray();
-
-        if (rects.Length == 0)
+        if (!TryGetZoneRects(_zoneCells, out var rects))
         {
-            error = "최소 한 개 이상의 슬롯이 필요합니다.";
+            error = "모든 zone은 하나의 직사각형이어야 합니다.";
             return false;
         }
 
@@ -508,12 +815,15 @@ public partial class LayoutEditorDialog : Window
         {
             Id = layoutId,
             Name = name,
-            GridColumns = size.Columns,
-            GridRows = size.Rows,
+            GridColumns = _zoneCells.GetLength(1),
+            GridRows = _zoneCells.GetLength(0),
+            ColumnWeights = NormalizeWeights(_columnWeights, _zoneCells.GetLength(1)),
+            RowWeights = NormalizeWeights(_rowWeights, _zoneCells.GetLength(0)),
             Slots = rects
+                .OrderBy(rect => rect.ZoneId)
                 .Select(rect => new LayoutSlot
                 {
-                    SlotId = rect.Node.SlotId,
+                    SlotId = rect.ZoneId,
                     X = rect.X,
                     Y = rect.Y,
                     W = rect.W,
@@ -564,293 +874,258 @@ public partial class LayoutEditorDialog : Window
         DialogResult = false;
     }
 
-    private void NormalizeSlotIdsFromVisualOrder()
+    private void NormalizeZoneIdsFromVisualOrder()
     {
-        var orderedRects = CreateRects(_editorRoot)
+        if (!TryGetZoneRects(_zoneCells, out var rects))
+        {
+            return;
+        }
+
+        var selectedZoneIds = _selectedZoneIds.ToHashSet();
+        var mappedSelection = new HashSet<int>();
+        var zoneIdMap = rects
             .OrderBy(rect => rect.Y)
             .ThenBy(rect => rect.X)
-            .ThenBy(rect => rect.H)
-            .ThenBy(rect => rect.W)
-            .ToArray();
+            .Select((rect, index) => new { rect.ZoneId, NewZoneId = index + 1 })
+            .ToDictionary(item => item.ZoneId, item => item.NewZoneId);
 
-        for (var index = 0; index < orderedRects.Length; index++)
+        for (var y = 0; y < _zoneCells.GetLength(0); y++)
         {
-            orderedRects[index].Node.SlotId = index + 1;
-        }
-    }
-
-    private static IReadOnlyList<SplitLayoutRect> CreateRects(SplitNode root)
-    {
-        var size = Measure(root);
-        var rects = new List<SplitLayoutRect>();
-        AddRects(root, 0, 0, size.Columns, size.Rows, rects);
-        return rects;
-    }
-
-    private static void AddRects(
-        SplitNode node,
-        int x,
-        int y,
-        int width,
-        int height,
-        List<SplitLayoutRect> rects)
-    {
-        if (node.IsLeaf)
-        {
-            rects.Add(new SplitLayoutRect(node, x, y, width, height));
-            return;
-        }
-
-        if (node.First is null || node.Second is null || node.Axis is null)
-        {
-            return;
-        }
-
-        if (node.Axis == SplitAxis.Vertical)
-        {
-            var childWidth = width / 2;
-            AddRects(node.First, x, y, childWidth, height, rects);
-            AddRects(node.Second, x + childWidth, y, childWidth, height, rects);
-            return;
-        }
-
-        var childHeight = height / 2;
-        AddRects(node.First, x, y, width, childHeight, rects);
-        AddRects(node.Second, x, y + childHeight, width, childHeight, rects);
-    }
-
-    private static GridSize Measure(SplitNode node)
-    {
-        if (node.IsLeaf)
-        {
-            return new GridSize(1, 1);
-        }
-
-        if (node.First is null || node.Second is null || node.Axis is null)
-        {
-            return new GridSize(1, 1);
-        }
-
-        var first = Measure(node.First);
-        var second = Measure(node.Second);
-
-        if (node.Axis == SplitAxis.Vertical)
-        {
-            var childColumns = Lcm(first.Columns, second.Columns);
-            return new GridSize(childColumns * 2, Lcm(first.Rows, second.Rows));
-        }
-
-        var childRows = Lcm(first.Rows, second.Rows);
-        return new GridSize(Lcm(first.Columns, second.Columns), childRows * 2);
-    }
-
-    private static int Lcm(int first, int second)
-    {
-        return first / Gcd(first, second) * second;
-    }
-
-    private static int Gcd(int first, int second)
-    {
-        while (second != 0)
-        {
-            var next = first % second;
-            first = second;
-            second = next;
-        }
-
-        return Math.Abs(first);
-    }
-
-    private static IReadOnlyList<SplitNode> GetLeaves(SplitNode root)
-    {
-        var leaves = new List<SplitNode>();
-        AddLeaves(root, leaves);
-        return leaves;
-    }
-
-    private static void AddLeaves(SplitNode node, List<SplitNode> leaves)
-    {
-        if (node.IsLeaf)
-        {
-            leaves.Add(node);
-            return;
-        }
-
-        if (node.First is not null)
-        {
-            AddLeaves(node.First, leaves);
-        }
-
-        if (node.Second is not null)
-        {
-            AddLeaves(node.Second, leaves);
-        }
-    }
-
-    private static bool TryCollapseParentToSibling(
-        SplitNode current,
-        SplitNode target,
-        out SplitNode collapsedNode)
-    {
-        collapsedNode = null!;
-
-        if (current.IsLeaf || current.First is null || current.Second is null)
-        {
-            return false;
-        }
-
-        if (ReferenceEquals(current.First, target))
-        {
-            CopyNode(current, current.Second);
-            collapsedNode = current;
-            return true;
-        }
-
-        if (ReferenceEquals(current.Second, target))
-        {
-            CopyNode(current, current.First);
-            collapsedNode = current;
-            return true;
-        }
-
-        return TryCollapseParentToSibling(current.First, target, out collapsedNode) ||
-               TryCollapseParentToSibling(current.Second, target, out collapsedNode);
-    }
-
-    private static void CopyNode(SplitNode target, SplitNode source)
-    {
-        target.SlotId = source.SlotId;
-        target.Axis = source.Axis;
-        target.First = source.First;
-        target.Second = source.Second;
-    }
-
-    private static bool TryCreateSplitTreeFromLayout(LayoutPreset layout, out SplitNode root)
-    {
-        var slots = layout.Slots
-            .Select(slot => new LayoutRect(slot.SlotId, slot.X, slot.Y, slot.W, slot.H))
-            .ToArray();
-        var region = new LayoutRect(0, 0, 0, layout.GridColumns, layout.GridRows);
-
-        return TryCreateSplitTree(region, slots, out root);
-    }
-
-    private static bool TryCreateSplitTree(
-        LayoutRect region,
-        IReadOnlyList<LayoutRect> slots,
-        out SplitNode root)
-    {
-        root = null!;
-
-        if (slots.Count == 1 &&
-            slots[0].X == region.X &&
-            slots[0].Y == region.Y &&
-            slots[0].W == region.W &&
-            slots[0].H == region.H)
-        {
-            root = SplitNode.CreateLeaf(slots[0].SlotId);
-            return true;
-        }
-
-        if (region.W % 2 == 0 &&
-            TryPartitionVertically(region, slots, out var leftSlots, out var rightSlots) &&
-            TryCreateSplitTree(new LayoutRect(0, region.X, region.Y, region.W / 2, region.H), leftSlots, out var leftNode) &&
-            TryCreateSplitTree(new LayoutRect(0, region.X + region.W / 2, region.Y, region.W / 2, region.H), rightSlots, out var rightNode))
-        {
-            root = SplitNode.CreateSplit(SplitAxis.Vertical, leftNode, rightNode);
-            return true;
-        }
-
-        if (region.H % 2 == 0 &&
-            TryPartitionHorizontally(region, slots, out var topSlots, out var bottomSlots) &&
-            TryCreateSplitTree(new LayoutRect(0, region.X, region.Y, region.W, region.H / 2), topSlots, out var topNode) &&
-            TryCreateSplitTree(new LayoutRect(0, region.X, region.Y + region.H / 2, region.W, region.H / 2), bottomSlots, out var bottomNode))
-        {
-            root = SplitNode.CreateSplit(SplitAxis.Horizontal, topNode, bottomNode);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool TryPartitionVertically(
-        LayoutRect region,
-        IReadOnlyList<LayoutRect> slots,
-        out IReadOnlyList<LayoutRect> leftSlots,
-        out IReadOnlyList<LayoutRect> rightSlots)
-    {
-        var splitX = region.X + region.W / 2;
-        var left = new List<LayoutRect>();
-        var right = new List<LayoutRect>();
-
-        foreach (var slot in slots)
-        {
-            if (slot.X < splitX && slot.X + slot.W > splitX)
+            for (var x = 0; x < _zoneCells.GetLength(1); x++)
             {
-                leftSlots = [];
-                rightSlots = [];
-                return false;
+                var oldZoneId = _zoneCells[y, x];
+                var newZoneId = zoneIdMap[oldZoneId];
+                _zoneCells[y, x] = newZoneId;
+
+                if (selectedZoneIds.Contains(oldZoneId))
+                {
+                    mappedSelection.Add(newZoneId);
+                }
+            }
+        }
+
+        _selectedZoneIds.Clear();
+        foreach (var zoneId in mappedSelection)
+        {
+            _selectedZoneIds.Add(zoneId);
+        }
+
+        if (_selectedZoneIds.Count == 0 && zoneIdMap.Count > 0)
+        {
+            _selectedZoneIds.Add(1);
+        }
+    }
+
+    private IReadOnlyList<ZoneRect> GetZoneRects()
+    {
+        return TryGetZoneRects(_zoneCells, out var rects) ? rects : [];
+    }
+
+    private static bool TryGetZoneRects(int[,] cells, out IReadOnlyList<ZoneRect> rects)
+    {
+        var rows = cells.GetLength(0);
+        var columns = cells.GetLength(1);
+        var zoneIds = new SortedSet<int>();
+
+        for (var y = 0; y < rows; y++)
+        {
+            for (var x = 0; x < columns; x++)
+            {
+                if (cells[y, x] <= 0)
+                {
+                    rects = [];
+                    return false;
+                }
+
+                zoneIds.Add(cells[y, x]);
+            }
+        }
+
+        var zoneRects = new List<ZoneRect>();
+        foreach (var zoneId in zoneIds)
+        {
+            var zoneCells = new List<CellPoint>();
+            for (var y = 0; y < rows; y++)
+            {
+                for (var x = 0; x < columns; x++)
+                {
+                    if (cells[y, x] == zoneId)
+                    {
+                        zoneCells.Add(new CellPoint(x, y));
+                    }
+                }
             }
 
-            if (slot.X + slot.W <= splitX)
+            var minX = zoneCells.Min(cell => cell.X);
+            var maxX = zoneCells.Max(cell => cell.X);
+            var minY = zoneCells.Min(cell => cell.Y);
+            var maxY = zoneCells.Max(cell => cell.Y);
+
+            for (var y = minY; y <= maxY; y++)
             {
-                left.Add(slot);
+                for (var x = minX; x <= maxX; x++)
+                {
+                    if (cells[y, x] != zoneId)
+                    {
+                        rects = [];
+                        return false;
+                    }
+                }
             }
-            else if (slot.X >= splitX)
+
+            zoneRects.Add(new ZoneRect(zoneId, minX, minY, maxX - minX + 1, maxY - minY + 1));
+        }
+
+        rects = zoneRects;
+        return true;
+    }
+
+    private IEnumerable<int> GetAdjacentZoneCandidates(ZoneRect selectedRect, int selectedZoneId)
+    {
+        var rows = _zoneCells.GetLength(0);
+        var columns = _zoneCells.GetLength(1);
+        var scores = new Dictionary<int, int>();
+
+        void AddCandidate(int x, int y)
+        {
+            if (x < 0 || y < 0 || x >= columns || y >= rows)
             {
-                right.Add(slot);
+                return;
+            }
+
+            var zoneId = _zoneCells[y, x];
+            if (zoneId == selectedZoneId)
+            {
+                return;
+            }
+
+            scores[zoneId] = scores.GetValueOrDefault(zoneId) + 1;
+        }
+
+        for (var y = selectedRect.Y; y < selectedRect.Y + selectedRect.H; y++)
+        {
+            AddCandidate(selectedRect.X - 1, y);
+            AddCandidate(selectedRect.X + selectedRect.W, y);
+        }
+
+        for (var x = selectedRect.X; x < selectedRect.X + selectedRect.W; x++)
+        {
+            AddCandidate(x, selectedRect.Y - 1);
+            AddCandidate(x, selectedRect.Y + selectedRect.H);
+        }
+
+        return scores
+            .OrderByDescending(item => item.Value)
+            .ThenBy(item => item.Key)
+            .Select(item => item.Key)
+            .ToArray();
+    }
+
+    private static int[,] CloneCells(int[,] cells)
+    {
+        var rows = cells.GetLength(0);
+        var columns = cells.GetLength(1);
+        var clonedCells = new int[rows, columns];
+
+        for (var y = 0; y < rows; y++)
+        {
+            for (var x = 0; x < columns; x++)
+            {
+                clonedCells[y, x] = cells[y, x];
+            }
+        }
+
+        return clonedCells;
+    }
+
+    private static void ReplaceZone(int[,] cells, int sourceZoneId, int targetZoneId)
+    {
+        for (var y = 0; y < cells.GetLength(0); y++)
+        {
+            for (var x = 0; x < cells.GetLength(1); x++)
+            {
+                if (cells[y, x] == sourceZoneId)
+                {
+                    cells[y, x] = targetZoneId;
+                }
+            }
+        }
+    }
+
+    private static double[] InsertSplitWeight(double[] sourceWeights, int insertIndex)
+    {
+        var sourceIndex = Math.Clamp(insertIndex - 1, 0, sourceWeights.Length - 1);
+        var splitWeight = Math.Max(MinWeight, sourceWeights[sourceIndex] / 2);
+        var nextWeights = new double[sourceWeights.Length + 1];
+
+        for (var index = 0; index < nextWeights.Length; index++)
+        {
+            if (index < insertIndex)
+            {
+                nextWeights[index] = sourceWeights[index];
+            }
+            else if (index == insertIndex)
+            {
+                nextWeights[index] = splitWeight;
             }
             else
             {
-                leftSlots = [];
-                rightSlots = [];
-                return false;
+                nextWeights[index] = sourceWeights[index - 1];
             }
         }
 
-        leftSlots = left;
-        rightSlots = right;
-        return left.Count > 0 && right.Count > 0;
+        nextWeights[sourceIndex] = splitWeight;
+        return NormalizeWeightAverage(nextWeights);
     }
 
-    private static bool TryPartitionHorizontally(
-        LayoutRect region,
-        IReadOnlyList<LayoutRect> slots,
-        out IReadOnlyList<LayoutRect> topSlots,
-        out IReadOnlyList<LayoutRect> bottomSlots)
+    private static double[] NormalizeWeights(IReadOnlyList<double>? weights, int count)
     {
-        var splitY = region.Y + region.H / 2;
-        var top = new List<LayoutRect>();
-        var bottom = new List<LayoutRect>();
-
-        foreach (var slot in slots)
+        if (weights is null || weights.Count != count)
         {
-            if (slot.Y < splitY && slot.Y + slot.H > splitY)
-            {
-                topSlots = [];
-                bottomSlots = [];
-                return false;
-            }
-
-            if (slot.Y + slot.H <= splitY)
-            {
-                top.Add(slot);
-            }
-            else if (slot.Y >= splitY)
-            {
-                bottom.Add(slot);
-            }
-            else
-            {
-                topSlots = [];
-                bottomSlots = [];
-                return false;
-            }
+            return CreateDefaultWeights(count);
         }
 
-        topSlots = top;
-        bottomSlots = bottom;
-        return top.Count > 0 && bottom.Count > 0;
+        var normalizedWeights = weights
+            .Select(weight => double.IsNaN(weight) || double.IsInfinity(weight) || weight <= 0 ? 1 : weight)
+            .ToArray();
+
+        return NormalizeWeightAverage(normalizedWeights);
+    }
+
+    private static double[] CreateDefaultWeights(int count)
+    {
+        return Enumerable.Repeat(1d, Math.Max(1, count)).ToArray();
+    }
+
+    private static double[] NormalizeWeightAverage(double[] weights)
+    {
+        if (weights.Length == 0)
+        {
+            return [1];
+        }
+
+        var sum = weights.Sum();
+        if (sum <= 0)
+        {
+            return CreateDefaultWeights(weights.Length);
+        }
+
+        var scale = weights.Length / sum;
+        return weights
+            .Select(weight => Math.Max(MinWeight, weight * scale))
+            .ToArray();
+    }
+
+    private static double GetWeight(IReadOnlyList<double>? weights, int index)
+    {
+        return weights is not null && index >= 0 && index < weights.Count && weights[index] > 0
+            ? weights[index]
+            : 1;
+    }
+
+    private int GetNextZoneId()
+    {
+        return GetZoneRects().Max(rect => rect.ZoneId) + 1;
     }
 
     private static FrameworkElement BuildLayoutPreview(
@@ -868,12 +1143,18 @@ public partial class LayoutEditorDialog : Window
 
         for (var rowIndex = 0; rowIndex < layout.GridRows; rowIndex++)
         {
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition
+            {
+                Height = new GridLength(GetWeight(layout.RowWeights, rowIndex), GridUnitType.Star)
+            });
         }
 
         for (var columnIndex = 0; columnIndex < layout.GridColumns; columnIndex++)
         {
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(GetWeight(layout.ColumnWeights, columnIndex), GridUnitType.Star)
+            });
         }
 
         foreach (var slot in layout.Slots.OrderBy(slot => slot.SlotId))
@@ -927,42 +1208,7 @@ public partial class LayoutEditorDialog : Window
         Horizontal
     }
 
-    private sealed class SplitNode
-    {
-        private SplitNode(int slotId)
-        {
-            SlotId = slotId;
-        }
+    private readonly record struct CellPoint(int X, int Y);
 
-        public int SlotId { get; set; }
-
-        public SplitAxis? Axis { get; set; }
-
-        public SplitNode? First { get; set; }
-
-        public SplitNode? Second { get; set; }
-
-        public bool IsLeaf => Axis is null;
-
-        public static SplitNode CreateLeaf(int slotId)
-        {
-            return new SplitNode(slotId);
-        }
-
-        public static SplitNode CreateSplit(SplitAxis axis, SplitNode first, SplitNode second)
-        {
-            return new SplitNode(0)
-            {
-                Axis = axis,
-                First = first,
-                Second = second
-            };
-        }
-    }
-
-    private readonly record struct GridSize(int Columns, int Rows);
-
-    private readonly record struct SplitLayoutRect(SplitNode Node, int X, int Y, int W, int H);
-
-    private readonly record struct LayoutRect(int SlotId, int X, int Y, int W, int H);
+    private readonly record struct ZoneRect(int ZoneId, int X, int Y, int W, int H);
 }

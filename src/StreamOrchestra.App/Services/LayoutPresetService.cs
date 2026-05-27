@@ -258,6 +258,9 @@ public sealed class LayoutPresetService
             throw new InvalidOperationException($"Layout {layout.Id} has an invalid grid size.");
         }
 
+        ValidateWeights(layout.Id, "column", layout.ColumnWeights, layout.GridColumns);
+        ValidateWeights(layout.Id, "row", layout.RowWeights, layout.GridRows);
+
         if (layout.Slots is null || layout.Slots.Count == 0)
         {
             throw new InvalidOperationException($"Layout {layout.Id} must contain at least one slot.");
@@ -274,6 +277,29 @@ public sealed class LayoutPresetService
             }
 
             ValidateSlot(layout, slot, slotIds, occupiedCells);
+        }
+    }
+
+    private static void ValidateWeights(
+        string layoutId,
+        string axisName,
+        IReadOnlyList<double>? weights,
+        int expectedCount)
+    {
+        if (weights is null || weights.Count == 0)
+        {
+            return;
+        }
+
+        if (weights.Count != expectedCount)
+        {
+            throw new InvalidOperationException(
+                $"Layout {layoutId} has {weights.Count} {axisName} weight(s), expected {expectedCount}.");
+        }
+
+        if (weights.Any(weight => double.IsNaN(weight) || double.IsInfinity(weight) || weight <= 0))
+        {
+            throw new InvalidOperationException($"Layout {layoutId} has invalid {axisName} weights.");
         }
     }
 

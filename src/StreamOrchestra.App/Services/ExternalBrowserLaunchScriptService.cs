@@ -203,15 +203,43 @@ public sealed class ExternalBrowserLaunchScriptService
         builder.AppendLine("        [int]$CellX,");
         builder.AppendLine("        [int]$CellY,");
         builder.AppendLine("        [int]$CellWidth,");
-        builder.AppendLine("        [int]$CellHeight");
+        builder.AppendLine("        [int]$CellHeight,");
+        builder.AppendLine("        [double[]]$ColumnWeights = @(),");
+        builder.AppendLine("        [double[]]$RowWeights = @()");
         builder.AppendLine("    )");
         builder.AppendLine("    $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea");
+        builder.AppendLine("    $columnWeights = Get-StreamOrchestraGridWeights -Count $GridColumns -Weights $ColumnWeights");
+        builder.AppendLine("    $rowWeights = Get-StreamOrchestraGridWeights -Count $GridRows -Weights $RowWeights");
+        builder.AppendLine("    $columnTotal = Get-StreamOrchestraWeightSum -Weights $columnWeights -Start 0 -Length $GridColumns");
+        builder.AppendLine("    $rowTotal = Get-StreamOrchestraWeightSum -Weights $rowWeights -Start 0 -Length $GridRows");
+        builder.AppendLine("    $leftWeight = Get-StreamOrchestraWeightSum -Weights $columnWeights -Start 0 -Length $CellX");
+        builder.AppendLine("    $topWeight = Get-StreamOrchestraWeightSum -Weights $rowWeights -Start 0 -Length $CellY");
+        builder.AppendLine("    $widthWeight = Get-StreamOrchestraWeightSum -Weights $columnWeights -Start $CellX -Length $CellWidth");
+        builder.AppendLine("    $heightWeight = Get-StreamOrchestraWeightSum -Weights $rowWeights -Start $CellY -Length $CellHeight");
         builder.AppendLine("    [pscustomobject]@{");
-        builder.AppendLine("        Left = [int]($workArea.Left + ($workArea.Width * $CellX / $GridColumns))");
-        builder.AppendLine("        Top = [int]($workArea.Top + ($workArea.Height * $CellY / $GridRows))");
-        builder.AppendLine("        Width = [int]($workArea.Width * $CellWidth / $GridColumns)");
-        builder.AppendLine("        Height = [int]($workArea.Height * $CellHeight / $GridRows)");
+        builder.AppendLine("        Left = [int]($workArea.Left + ($workArea.Width * $leftWeight / $columnTotal))");
+        builder.AppendLine("        Top = [int]($workArea.Top + ($workArea.Height * $topWeight / $rowTotal))");
+        builder.AppendLine("        Width = [int]($workArea.Width * $widthWeight / $columnTotal)");
+        builder.AppendLine("        Height = [int]($workArea.Height * $heightWeight / $rowTotal)");
         builder.AppendLine("    }");
+        builder.AppendLine("}");
+        builder.AppendLine("function Get-StreamOrchestraGridWeights {");
+        builder.AppendLine("    param([int]$Count, [double[]]$Weights)");
+        builder.AppendLine("    $values = @()");
+        builder.AppendLine("    for ($index = 0; $index -lt $Count; $index++) {");
+        builder.AppendLine("        $value = 1.0");
+        builder.AppendLine("        if ($Weights -and $Weights.Length -eq $Count -and $Weights[$index] -gt 0) { $value = [double]$Weights[$index] }");
+        builder.AppendLine("        $values += $value");
+        builder.AppendLine("    }");
+        builder.AppendLine("    return ,$values");
+        builder.AppendLine("}");
+        builder.AppendLine("function Get-StreamOrchestraWeightSum {");
+        builder.AppendLine("    param([double[]]$Weights, [int]$Start, [int]$Length)");
+        builder.AppendLine("    $sum = 0.0");
+        builder.AppendLine("    for ($index = $Start; $index -lt ($Start + $Length) -and $index -lt $Weights.Length; $index++) {");
+        builder.AppendLine("        if ($index -ge 0) { $sum += [double]$Weights[$index] }");
+        builder.AppendLine("    }");
+        builder.AppendLine("    return $sum");
         builder.AppendLine("}");
         builder.AppendLine("function Move-StreamOrchestraBrowserWindow {");
         builder.AppendLine("    param(");
@@ -231,7 +259,17 @@ public sealed class ExternalBrowserLaunchScriptService
     private static void AppendWindowBoundsCommand(StringBuilder builder, ExternalBrowserWindowLayout layout)
     {
         builder.AppendLine(
-            $"$slotWindow = Get-StreamOrchestraSlotWindowBounds -GridColumns {layout.GridColumns} -GridRows {layout.GridRows} -CellX {layout.X} -CellY {layout.Y} -CellWidth {layout.W} -CellHeight {layout.H}");
+            $"$slotWindow = Get-StreamOrchestraSlotWindowBounds -GridColumns {layout.GridColumns} -GridRows {layout.GridRows} -CellX {layout.X} -CellY {layout.Y} -CellWidth {layout.W} -CellHeight {layout.H} -ColumnWeights {ToPowerShellDoubleArray(layout.ColumnWeights, layout.GridColumns)} -RowWeights {ToPowerShellDoubleArray(layout.RowWeights, layout.GridRows)}");
+    }
+
+    private static string ToPowerShellDoubleArray(IReadOnlyList<double>? weights, int expectedCount)
+    {
+        if (weights is null || weights.Count != expectedCount || weights.Any(weight => weight <= 0 || double.IsNaN(weight) || double.IsInfinity(weight)))
+        {
+            return "@()";
+        }
+
+        return $"@({string.Join(", ", weights.Select(weight => weight.ToString("G17", System.Globalization.CultureInfo.InvariantCulture)))})";
     }
 
     private static string ToBrowserCommandLineArgument(string argument)

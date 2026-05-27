@@ -67,11 +67,44 @@ public sealed class ExternalBrowserLaunchScriptServiceTests : IDisposable
 
         Assert.Contains("Move-StreamOrchestraBrowserWindow", script);
         Assert.Contains("Get-StreamOrchestraSlotWindowBounds", script);
+        Assert.Contains("Get-StreamOrchestraGridWeights", script);
         Assert.Contains("SetWindowPos", script);
         Assert.Contains("$slotWindow = Get-StreamOrchestraSlotWindowBounds -GridColumns 4 -GridRows 3 -CellX 2 -CellY 1 -CellWidth 2 -CellHeight 2", script);
         Assert.Contains("\"--window-position=$($slotWindow.Left),$($slotWindow.Top)\"", script);
         Assert.Contains("\"--window-size=$($slotWindow.Width),$($slotWindow.Height)\"", script);
         Assert.Contains("Move-StreamOrchestraBrowserWindow -Process $process -Bounds $slotWindow", script);
+    }
+
+    [Fact]
+    public void CreateScript_PassesLayoutWeightsToWindowBoundsHelper()
+    {
+        var service = new ExternalBrowserLaunchScriptService();
+        var plan = new ExternalBrowserFallbackPlan(
+            true,
+            "Prepared 1 browser launch plan(s).",
+            1,
+            1,
+            [
+                new ExternalBrowserSlotLaunchPlan(
+                    2,
+                    "Weighted",
+                    "https://example.com/weighted",
+                    "edge",
+                    "Edge",
+                    "C:\\Program Files\\Browser\\browser.exe",
+                    "C:\\Data Root\\Profiles\\Slot2",
+                    [
+                        "--user-data-dir=C:\\Data Root\\Profiles\\Slot2",
+                        "--new-window",
+                        "https://example.com/weighted"
+                    ],
+                    new ExternalBrowserWindowLayout(3, 2, 1, 0, 2, 1, [1, 2, 3], [2, 1]))
+            ]);
+
+        var script = service.CreateScript(plan);
+
+        Assert.Contains("-ColumnWeights @(1, 2, 3) -RowWeights @(2, 1)", script);
+        Assert.Contains("$widthWeight = Get-StreamOrchestraWeightSum", script);
     }
 
     [Fact]

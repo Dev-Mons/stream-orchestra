@@ -119,7 +119,14 @@ public sealed class LayoutPresetServiceTests
         try
         {
             var service = new LayoutPresetService(dataFolder);
-            var customLayout = CreateNonOverlappingLayout("custom_layout_two_up", "Two Up", 2, 1, [1, 2]);
+            var customLayout = CreateNonOverlappingLayout(
+                "custom_layout_two_up",
+                "Two Up",
+                2,
+                1,
+                [1, 2],
+                columnWeights: [1, 2],
+                rowWeights: [1]);
 
             service.SaveCustomLayouts([customLayout]);
             var loadedLayouts = service.LoadCustomLayouts();
@@ -128,6 +135,8 @@ public sealed class LayoutPresetServiceTests
             Assert.Single(loadedLayouts);
             Assert.Equal("custom_layout_two_up", loadedLayouts[0].Id);
             Assert.Equal("Two Up", loadedLayouts[0].Name);
+            Assert.Equal([1, 2], loadedLayouts[0].ColumnWeights);
+            Assert.Equal([1], loadedLayouts[0].RowWeights);
             Assert.Equal(2, loadedLayouts[0].Slots.Count);
         }
         finally
@@ -396,6 +405,38 @@ public sealed class LayoutPresetServiceTests
         }
     }
 
+    [Fact]
+    public void Validate_RejectsMismatchedColumnWeightCount()
+    {
+        var layout = CreateNonOverlappingLayout(
+            "invalid_weights",
+            "Invalid Weights",
+            2,
+            1,
+            [1, 2],
+            columnWeights: [1]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => LayoutPresetService.Validate([layout]));
+
+        Assert.Contains("has 1 column weight(s), expected 2", exception.Message);
+    }
+
+    [Fact]
+    public void Validate_RejectsNonPositiveRowWeights()
+    {
+        var layout = CreateNonOverlappingLayout(
+            "invalid_row_weights",
+            "Invalid Row Weights",
+            2,
+            1,
+            [1, 2],
+            rowWeights: [0]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => LayoutPresetService.Validate([layout]));
+
+        Assert.Contains("has invalid row weights", exception.Message);
+    }
+
     private static LayoutPreset CreateLayout(string id, int visibleSlotCount)
     {
         return CreateLayout(id, Enumerable.Range(1, visibleSlotCount).ToArray());
@@ -420,7 +461,9 @@ public sealed class LayoutPresetServiceTests
         string name,
         int columns,
         int rows,
-        int[] slotIds)
+        int[] slotIds,
+        IReadOnlyList<double>? columnWeights = null,
+        IReadOnlyList<double>? rowWeights = null)
     {
         return new LayoutPreset
         {
@@ -428,6 +471,8 @@ public sealed class LayoutPresetServiceTests
             Name = name,
             GridColumns = columns,
             GridRows = rows,
+            ColumnWeights = columnWeights ?? [],
+            RowWeights = rowWeights ?? [],
             Slots = slotIds
                 .Select((slotId, index) => new LayoutSlot
                 {

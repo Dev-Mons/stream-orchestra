@@ -10,5 +10,9 @@ public sealed class LayoutPreset
 
     public int GridRows { get; init; }
 
+    public IReadOnlyList<double> ColumnWeights { get; init; } = [];
+
+    public IReadOnlyList<double> RowWeights { get; init; } = [];
+
     public IReadOnlyList<LayoutSlot> Slots { get; init; } = [];
 }

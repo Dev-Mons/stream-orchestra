@@ -173,7 +173,9 @@ public sealed class ExternalBrowserLaunchPlanService
                         slot.X,
                         slot.Y,
                         slot.W,
-                        slot.H);
+                        slot.H,
+                        layout.ColumnWeights,
+                        layout.RowWeights);
                 });
     }
 

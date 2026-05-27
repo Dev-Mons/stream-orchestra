@@ -339,6 +339,8 @@ public sealed class ExternalBrowserLaunchPlanServiceTests
                 Name = "8 Small + 1 Main",
                 GridColumns = 4,
                 GridRows = 3,
+                ColumnWeights = [1, 1, 2, 2],
+                RowWeights = [1, 2, 2],
                 Slots =
                 [
                     new LayoutSlot { SlotId = 9, X = 2, Y = 1, W = 2, H = 2 }
@@ -356,6 +358,8 @@ public sealed class ExternalBrowserLaunchPlanServiceTests
         Assert.Equal(1, slot.WindowLayout.Y);
         Assert.Equal(2, slot.WindowLayout.W);
         Assert.Equal(2, slot.WindowLayout.H);
+        Assert.Equal([1, 1, 2, 2], slot.WindowLayout.ColumnWeights);
+        Assert.Equal([1, 2, 2], slot.WindowLayout.RowWeights);
     }
 
     [Fact]

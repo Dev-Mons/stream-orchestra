@@ -140,12 +140,18 @@ public partial class MainWindow : Window
 
         for (var rowIndex = 0; rowIndex < layout.GridRows; rowIndex++)
         {
-            SlotsGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            SlotsGrid.RowDefinitions.Add(new RowDefinition
+            {
+                Height = new GridLength(GetGridWeight(layout.RowWeights, rowIndex), GridUnitType.Star)
+            });
         }
 
         for (var columnIndex = 0; columnIndex < layout.GridColumns; columnIndex++)
         {
-            SlotsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            SlotsGrid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(GetGridWeight(layout.ColumnWeights, columnIndex), GridUnitType.Star)
+            });
         }
 
         var slotsById = _slots.ToDictionary(slot => slot.SlotId);
@@ -163,6 +169,13 @@ public partial class MainWindow : Window
         }
 
         StatusTextBlock.Text = $"Layout applied: {layout.Name} ({layout.GridColumns}x{layout.GridRows}, {layout.Slots.Count} visible slots)";
+    }
+
+    private static double GetGridWeight(IReadOnlyList<double>? weights, int index)
+    {
+        return weights is not null && index >= 0 && index < weights.Count && weights[index] > 0
+            ? weights[index]
+            : 1;
     }
 
     private async void LayoutComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)

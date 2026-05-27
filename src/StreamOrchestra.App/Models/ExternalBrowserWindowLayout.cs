@@ -6,4 +6,6 @@ public sealed record ExternalBrowserWindowLayout(
     int X,
     int Y,
     int W,
-    int H);
+    int H,
+    IReadOnlyList<double>? ColumnWeights = null,
+    IReadOnlyList<double>? RowWeights = null);

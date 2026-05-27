@@ -72,6 +72,9 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("TryGetDropTargetSlot", codeBehind);
         Assert.Contains("LoadDroppedStreamIntoSlotAsync", codeBehind);
         Assert.Contains("StreamDropDataReader.TryGetDroppedStream", codeBehind);
+        Assert.Contains("layout.ColumnWeights", codeBehind);
+        Assert.Contains("layout.RowWeights", codeBehind);
+        Assert.Contains("GetGridWeight", codeBehind);
     }
 
     [Fact]
