@@ -16,4 +16,9 @@
     <Content Include="..\..\data\layouts.json" Link="data\layouts.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="Assets\explorer-toggle.png" />
+    <Resource Include="Assets\explorer-toggle-single.png" />
+  </ItemGroup>
+
 </Project>

@@ -14,13 +14,22 @@ public sealed class LayoutEditorDialogLayoutTests
             .Select(element => GetAttribute(element, "Header"))
             .ToArray();
 
-        Assert.Equal(["템플릿", "사용자 지정"], tabHeaders);
+        Assert.Equal(["레이아웃", "사용자 지정"], tabHeaders);
         Assert.NotNull(FindElementByName(document, "TemplateListPanel"));
-        Assert.NotNull(FindElementByName(document, "TemplatePreviewHost"));
+        Assert.Null(FindElementByNameOrDefault(document, "TemplatePreviewTitleTextBlock"));
+        Assert.Null(FindElementByNameOrDefault(document, "TemplatePreviewHost"));
         Assert.Null(FindElementByNameOrDefault(document, "CustomLayoutListBox"));
         Assert.NotNull(FindElementByName(document, "CustomLayoutListPanel"));
         Assert.NotNull(FindElementByName(document, "SplitEditorHost"));
-        Assert.Null(FindElementByNameOrDefault(document, "LayoutNameTextBox"));
+        Assert.Null(FindElementByNameOrDefault(document, "EditorPreviewHost"));
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock" &&
+            GetAttribute(element, "Text") == "저장 결과");
+        var layoutNameTextBox = FindElementByName(document, "LayoutNameTextBox");
+        Assert.Equal("96", GetAttribute(layoutNameTextBox, "Width"));
+        Assert.Equal("0,0,8,0", GetAttribute(layoutNameTextBox, "Margin"));
+        Assert.Equal("Center", GetAttribute(layoutNameTextBox, "VerticalContentAlignment"));
+        Assert.Equal("LayoutNameTextBox_TextChanged", GetAttribute(layoutNameTextBox, "TextChanged"));
         Assert.Equal("VerticalSplitButton_Click", GetAttribute(FindElementByName(document, "VerticalSplitButton"), "Click"));
         Assert.Equal("HorizontalSplitButton_Click", GetAttribute(FindElementByName(document, "HorizontalSplitButton"), "Click"));
         Assert.Equal("RemoveSelectedSlotButton_Click", GetAttribute(FindElementByName(document, "RemoveSelectedSlotButton"), "Click"));
@@ -34,7 +43,13 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.Null(FindButtonOrDefault(document, "폭 +"));
         Assert.Null(FindButtonOrDefault(document, "높이 -"));
         Assert.Null(FindButtonOrDefault(document, "높이 +"));
-        Assert.Equal("CopyTemplateToCustomButton_Click", GetAttribute(FindButton(document, "사용자 지정으로 복사"), "Click"));
+        Assert.Null(FindButtonOrDefault(document, "사용자 지정으로 복사"));
+        Assert.Null(FindButtonOrDefault(document, "닫기"));
+        Assert.Null(FindButtonOrDefault(document, "적용하고 닫기"));
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "Button" &&
+            GetAttribute(element, "Content") == "적용" &&
+            GetAttribute(element, "Click") == "ApplySelectedLayoutButton_Click");
         Assert.Equal("NewCustomLayoutButton_Click", GetAttribute(FindButton(document, "새 레이아웃"), "Click"));
         Assert.Equal("SaveCustomLayoutButton_Click", GetAttribute(FindButton(document, "저장"), "Click"));
         Assert.Equal("DeleteCustomLayoutButton_Click", GetAttribute(FindButton(document, "삭제"), "Click"));
@@ -62,8 +77,14 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.Contains("SplitAxis.Horizontal", text);
         Assert.Contains("NormalizeZoneIdsFromVisualOrder", text);
         Assert.Contains("LoadZoneEditorFromLayout", text);
+        Assert.Contains("_templateLayouts.Concat(_customLayouts.OrderBy", text);
+        Assert.Contains("ApplyLayoutAndClose", text);
+        Assert.Contains("LayoutNameTextBox_TextChanged", text);
+        Assert.Contains("DialogResult = true", text);
+        Assert.DoesNotContain("CopyTemplateToCustomButton_Click", text);
+        Assert.DoesNotContain("TemplatePreviewHost", text);
+        Assert.DoesNotContain("EditorPreviewHost", text);
         Assert.DoesNotContain("CustomLayoutListBox", text);
-        Assert.DoesNotContain("LayoutNameTextBox", text);
         Assert.Contains("RemoveSelectedZone", text);
         Assert.Contains("MergeSelectedZones", text);
         Assert.Contains("InsertColumn", text);

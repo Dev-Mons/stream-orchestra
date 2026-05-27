@@ -129,8 +129,8 @@ public sealed class PresetStorageService
     {
         return qualityKey?.Trim().ToLowerInvariant() switch
         {
+            "q1440" => "q1440",
             "original" => "original",
-            "master" => "master",
             "hd4k" => "hd4k",
             "hd" => "hd",
             "sd" => "sd",

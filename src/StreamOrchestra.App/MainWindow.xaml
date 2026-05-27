@@ -21,101 +21,90 @@
                 Background="#121820"
                 BorderBrush="#2D3642"
                 BorderThickness="0,0,0,1"
-                Padding="10">
-            <StackPanel>
-                <DockPanel LastChildFill="False">
-                    <StackPanel DockPanel.Dock="Right"
-                                Orientation="Horizontal"
-                                Margin="10,0,0,0">
-                        <ScrollViewer Width="520"
-                                      Height="86"
-                                      Margin="8,0,0,0"
-                                      HorizontalScrollBarVisibility="Auto"
-                                      VerticalScrollBarVisibility="Disabled">
-                            <StackPanel x:Name="LayoutSelectorPanel"
-                                        Orientation="Horizontal" />
-                        </ScrollViewer>
-                        <Button Content="레이아웃 편집"
-                                Height="30"
-                                MinWidth="96"
-                                Margin="8,0,0,0"
-                                Padding="10,0"
-                                Click="EditLayoutsButton_Click" />
-                    </StackPanel>
-                </DockPanel>
+                Padding="6,4">
+            <DockPanel LastChildFill="True">
+                <TextBlock x:Name="DiagnosticsTextBlock"
+                           DockPanel.Dock="Right"
+                           Foreground="#B9C2CC"
+                           VerticalAlignment="Center"
+                           TextAlignment="Right" />
 
-                <DockPanel Margin="0,8,0,0"
-                           LastChildFill="False">
-                    <TextBlock x:Name="DiagnosticsTextBlock"
-                               DockPanel.Dock="Right"
-                               Foreground="#B9C2CC"
-                               VerticalAlignment="Center"
-                               TextAlignment="Right" />
-                    <WrapPanel>
-                        <TextBlock Text="화질"
-                                   Foreground="#F3F6FA"
-                                   VerticalAlignment="Center"
-                                   FontWeight="SemiBold"
-                                   Margin="0,0,8,0" />
-                        <ComboBox x:Name="AudibleQualityComboBox"
-                                  Width="92"
-                                  Height="28"
-                                  SelectedIndex="0"
-                                  Margin="0,0,8,0"
-                                  SelectionChanged="AudibleQualityComboBox_SelectionChanged">
-                            <ComboBoxItem Content="최대화질"
-                                          Tag="original" />
-                            <ComboBoxItem Content="1080p"
-                                          Tag="original" />
-                            <ComboBoxItem Content="자동"
-                                          Tag="master" />
-                            <ComboBoxItem Content="720p"
-                                          Tag="hd4k" />
-                            <ComboBoxItem Content="540p"
-                                          Tag="hd" />
-                            <ComboBoxItem Content="360p"
-                                          Tag="sd" />
-                        </ComboBox>
-                        <Button Content="화질 적용"
-                                Height="28"
-                                MinWidth="82"
-                                Margin="0,0,12,0"
-                                Click="ApplyQualityPolicyButton_Click" />
-                    </WrapPanel>
-                </DockPanel>
+                <Menu Background="Transparent"
+                      Foreground="#F3F6FA"
+                      VerticalAlignment="Center">
+                    <MenuItem Header="설정">
+                        <MenuItem x:Name="LayoutMenuItem"
+                                  Header="레이아웃"
+                                  Foreground="#111827"
+                                  Click="EditLayoutsButton_Click" />
+                        <MenuItem Header="프리셋"
+                                  Foreground="#111827">
+                            <ComboBox x:Name="WorkspaceComboBox"
+                                      Width="180"
+                                      Height="28"
+                                      DisplayMemberPath="Name"
+                                      Margin="8,4" />
+                            <Separator />
+                            <MenuItem Header="불러오기"
+                                      Foreground="#111827"
+                                      Click="LoadWorkspaceButton_Click" />
+                            <MenuItem Header="현재 상태 저장"
+                                      Foreground="#111827"
+                                      Click="SaveCurrentWorkspaceButton_Click" />
+                            <MenuItem Header="다른 이름으로 저장"
+                                      Foreground="#111827"
+                                      Click="SaveWorkspaceAsButton_Click" />
+                        </MenuItem>
+                        <MenuItem x:Name="QualityMenuItem"
+                                  Header="화질"
+                                  Foreground="#111827">
+                            <MenuItem Header="1440p"
+                                      Tag="q1440"
+                                      Foreground="#111827"
+                                      IsCheckable="True"
+                                      Click="QualityMenuItem_Click" />
+                            <MenuItem Header="1080p"
+                                      Tag="original"
+                                      Foreground="#111827"
+                                      IsCheckable="True"
+                                      Click="QualityMenuItem_Click" />
+                            <MenuItem Header="720p"
+                                      Tag="hd4k"
+                                      Foreground="#111827"
+                                      IsCheckable="True"
+                                      Click="QualityMenuItem_Click" />
+                            <MenuItem Header="540p"
+                                      Tag="hd"
+                                      Foreground="#111827"
+                                      IsCheckable="True"
+                                      Click="QualityMenuItem_Click" />
+                            <MenuItem Header="360p"
+                                      Tag="sd"
+                                      Foreground="#111827"
+                                      IsCheckable="True"
+                                      Click="QualityMenuItem_Click" />
+                        </MenuItem>
+                    </MenuItem>
+                </Menu>
 
-                <DockPanel Margin="0,8,0,0"
-                           LastChildFill="False">
-                    <WrapPanel>
-                        <TextBlock Text="프리셋"
-                                   Foreground="#F3F6FA"
-                                   VerticalAlignment="Center"
-                                   FontWeight="SemiBold"
-                                   Margin="0,0,8,0" />
-                        <ComboBox x:Name="WorkspaceComboBox"
-                                  Width="180"
-                                  Height="28"
-                                  DisplayMemberPath="Name"
-                                  Margin="0,0,6,0" />
-                        <Button Content="불러오기"
-                                Height="28"
-                                MinWidth="74"
-                                Margin="0,0,6,0"
-                                Click="LoadWorkspaceButton_Click" />
-                        <Button Content="현재 상태 저장"
-                                Height="28"
-                                MinWidth="106"
-                                Margin="0,0,6,0"
-                                Click="SaveCurrentWorkspaceButton_Click" />
-                        <Button Content="다른 이름으로 저장"
-                                Height="28"
-                                MinWidth="124"
-                                Margin="0,0,6,0"
-                                Click="SaveWorkspaceAsButton_Click" />
-                    </WrapPanel>
-                </DockPanel>
-
-            </StackPanel>
+                <ComboBox x:Name="AudibleQualityComboBox"
+                          Width="92"
+                          Height="28"
+                          SelectedIndex="0"
+                          Visibility="Collapsed"
+                          SelectionChanged="AudibleQualityComboBox_SelectionChanged">
+                    <ComboBoxItem Content="1440p"
+                                  Tag="q1440" />
+                    <ComboBoxItem Content="1080p"
+                                  Tag="original" />
+                    <ComboBoxItem Content="720p"
+                                  Tag="hd4k" />
+                    <ComboBoxItem Content="540p"
+                                  Tag="hd" />
+                    <ComboBoxItem Content="360p"
+                                  Tag="sd" />
+                </ComboBox>
+            </DockPanel>
         </Border>
 
         <Grid x:Name="MainContentGrid"
@@ -137,13 +126,22 @@
                     <ContentControl x:Name="ExplorerHost" />
                     <Button x:Name="ToggleExplorerButton"
                             Height="26"
-                            MinWidth="78"
+                            Width="34"
+                            MinWidth="26"
                             Margin="0,6,6,0"
-                            Padding="10,0"
+                            Padding="0"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Top"
                             Panel.ZIndex="1"
-                            Click="ToggleExplorerButton_Click" />
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            ToolTip="탐색 숨김"
+                            Click="ToggleExplorerButton_Click">
+                        <Image Source="Assets/explorer-toggle.png"
+                               Width="14"
+                               Height="14"
+                               Stretch="Uniform" />
+                    </Button>
                 </Grid>
             </Border>
 
@@ -172,14 +170,27 @@
                        TextWrapping="Wrap" />
         </Border>
 
+        <Border x:Name="AutoShowExplorerHitTarget"
+                Grid.Row="1"
+                Width="28"
+                HorizontalAlignment="Left"
+                Background="Transparent"
+                Panel.ZIndex="10"
+                Visibility="Collapsed"
+                MouseEnter="AutoShowExplorerHitTarget_MouseEnter"
+                MouseLeave="AutoShowExplorerHitTarget_MouseLeave" />
+
         <Popup x:Name="AutoShowExplorerPopup"
                AllowsTransparency="True"
                Focusable="False"
-               Placement="AbsolutePoint"
+               IsOpen="False"
+               Placement="Relative"
+               PlacementTarget="{Binding ElementName=AutoShowExplorerHitTarget}"
                PopupAnimation="None"
                StaysOpen="True">
             <Button x:Name="AutoShowExplorerButton"
                     Width="24"
+                    Height="{Binding ActualHeight, ElementName=MainContentGrid}"
                     MinHeight="1"
                     Padding="0"
                     Background="#223044"

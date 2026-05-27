@@ -42,6 +42,19 @@ public sealed class ExplorerPanelLayoutTests
     }
 
     [Fact]
+    public void ExplorerPanel_HeaderDoesNotShowDragArrowGlyph()
+    {
+        var document = LoadExplorerPanelDocument();
+
+        var arrowGlyph = document
+            .Descendants()
+            .SingleOrDefault(element => element.Name.LocalName == "TextBlock" &&
+                GetAttribute(element, "Text") == "↗");
+
+        Assert.Null(arrowGlyph);
+    }
+
+    [Fact]
     public void CodeBehind_AddsSoopLinkUrlsToDragData()
     {
         var path = Path.GetFullPath(Path.Combine(

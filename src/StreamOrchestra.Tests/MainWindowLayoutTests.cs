@@ -9,9 +9,12 @@ public sealed class MainWindowLayoutTests
     {
         var document = LoadMainWindowDocument();
 
-        Assert.Equal("EditLayoutsButton_Click", GetAttribute(FindButton(document, "레이아웃 편집"), "Click"));
-        Assert.NotNull(FindElementByName(document, "LayoutSelectorPanel"));
+        Assert.Equal("EditLayoutsButton_Click", GetAttribute(FindMenuItem(document, "레이아웃"), "Click"));
+        Assert.NotNull(FindElementByName(document, "LayoutMenuItem"));
+        Assert.Null(FindMenuItemOrDefault(document, "보기"));
+        Assert.Null(FindMenuItemOrDefault(document, "레이아웃 편집"));
         Assert.Null(FindElementByNameOrDefault(document, "LayoutComboBox"));
+        Assert.Null(FindElementByNameOrDefault(document, "LayoutSelectorPanel"));
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Attributes().Any(attribute =>
                 attribute.Name.LocalName == "Name" &&
@@ -30,6 +33,10 @@ public sealed class MainWindowLayoutTests
         Assert.Equal("ToggleExplorerButton_Click", GetAttribute(button, "Click"));
         Assert.Equal("Right", GetAttribute(button, "HorizontalAlignment"));
         Assert.Equal("Top", GetAttribute(button, "VerticalAlignment"));
+        Assert.NotEqual("Collapsed", GetAttribute(button, "Visibility"));
+        Assert.Contains(button.Descendants(), element =>
+            element.Name.LocalName == "Image" &&
+            GetAttribute(element, "Source") == "Assets/explorer-toggle.png");
         Assert.Contains(button.Ancestors(), ancestor => GetAttribute(ancestor, "Name") == "ExplorerBorder");
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Attributes().Any(attribute =>
@@ -38,10 +45,11 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
-    public void HiddenExplorer_EdgeToggleUsesPopupOverlayAndCursorPolling()
+    public void HiddenExplorer_EdgeToggleUsesLeftHitTarget()
     {
         var document = LoadMainWindowDocument();
         var mainContentGrid = FindElementByName(document, "MainContentGrid");
+        var hitTarget = FindElementByName(document, "AutoShowExplorerHitTarget");
         var popup = FindElementByName(document, "AutoShowExplorerPopup");
         var button = FindElementByName(document, "AutoShowExplorerButton");
         var codeBehindPath = Path.GetFullPath(Path.Combine(
@@ -55,18 +63,24 @@ public sealed class MainWindowLayoutTests
         var codeBehind = File.ReadAllText(codeBehindPath);
 
         Assert.Equal("1", GetAttribute(mainContentGrid, "Grid.Row"));
-        Assert.Equal("AbsolutePoint", GetAttribute(popup, "Placement"));
+        Assert.Equal("1", GetAttribute(hitTarget, "Grid.Row"));
+        Assert.Equal("Left", GetAttribute(hitTarget, "HorizontalAlignment"));
+        Assert.Equal("28", GetAttribute(hitTarget, "Width"));
+        Assert.Equal("Transparent", GetAttribute(hitTarget, "Background"));
+        Assert.Equal("Collapsed", GetAttribute(hitTarget, "Visibility"));
+        Assert.Equal("AutoShowExplorerHitTarget_MouseEnter", GetAttribute(hitTarget, "MouseEnter"));
+        Assert.Equal("AutoShowExplorerHitTarget_MouseLeave", GetAttribute(hitTarget, "MouseLeave"));
         Assert.Equal("True", GetAttribute(popup, "AllowsTransparency"));
-        Assert.Equal("True", GetAttribute(popup, "StaysOpen"));
+        Assert.Contains("AutoShowExplorerHitTarget", GetAttribute(popup, "PlacementTarget"));
+        Assert.Equal("Relative", GetAttribute(popup, "Placement"));
+        Assert.Equal("False", GetAttribute(popup, "IsOpen"));
         Assert.Equal("AutoShowExplorerButton_Click", GetAttribute(button, "Click"));
         Assert.Equal("AutoShowExplorerButton_MouseEnter", GetAttribute(button, "MouseEnter"));
         Assert.Equal("AutoShowExplorerButton_MouseLeave", GetAttribute(button, "MouseLeave"));
-        Assert.Contains("GetCursorPos", codeBehind);
-        Assert.Contains("DispatcherTimer _autoShowExplorerTimer", codeBehind);
-        Assert.Contains("RefreshAutoShowExplorerPopupFromCursorPosition", codeBehind);
-        Assert.Contains("PresentationSource.FromVisual(this)", codeBehind);
-        Assert.Contains("MainContentGrid.PointToScreen(new Point(0, 0))", codeBehind);
+        Assert.Contains("AutoShowExplorerHitTarget.Visibility = _isExplorerPanelVisible ? Visibility.Collapsed : Visibility.Visible", codeBehind);
+        Assert.Contains("AutoShowExplorerPopup.IsOpen = true", codeBehind);
         Assert.Contains("AutoShowExplorerPopup.IsOpen = false", codeBehind);
+        Assert.DoesNotContain("GetCursorPos", codeBehind);
     }
 
     [Fact]
@@ -101,6 +115,7 @@ public sealed class MainWindowLayoutTests
     {
         var document = LoadMainWindowDocument();
         var audibleQualityComboBox = FindElementByName(document, "AudibleQualityComboBox");
+        var qualityMenuItem = FindElementByName(document, "QualityMenuItem");
 
         var playbackButtonTags = document
             .Descendants()
@@ -115,8 +130,11 @@ public sealed class MainWindowLayoutTests
             .ToArray();
 
         Assert.Empty(playbackButtonTags);
-        Assert.Equal(["original:최대화질", "original:1080p", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], audibleQualityOptions);
-        Assert.Equal("ApplyQualityPolicyButton_Click", GetAttribute(FindButton(document, "화질 적용"), "Click"));
+        Assert.Equal(["q1440:1440p", "original:1080p", "hd4k:720p", "hd:540p", "sd:360p"], audibleQualityOptions);
+        Assert.Equal("화질", GetAttribute(qualityMenuItem, "Header"));
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "Button" &&
+            GetAttribute(element, "Content") == "화질 적용");
         Assert.Empty(document.Descendants().Where(element =>
             element.Name.LocalName == "ComboBox" &&
             GetAttribute(element, "Name") == "MutedQualityComboBox"));
@@ -136,16 +154,18 @@ public sealed class MainWindowLayoutTests
         var codeBehind = File.ReadAllText(codeBehindPath);
 
         Assert.Contains("RefreshLayoutSelector", codeBehind);
-        Assert.Contains("LayoutButton_Click", codeBehind);
         Assert.Contains("ApplySelectedLayoutAsync", codeBehind);
+        Assert.DoesNotContain("LayoutMenuItem_Click", codeBehind);
         Assert.DoesNotContain("LayoutComboBox", codeBehind);
         Assert.DoesNotContain("LayoutComboBox_SelectionChanged", codeBehind);
     }
 
     [Fact]
-    public void PresetToolbar_ProvidesPlanRequiredPresetActions()
+    public void TopMenu_ProvidesViewSettingsAndPresetActions()
     {
         var document = LoadMainWindowDocument();
+        var settingsMenu = FindMenuItem(document, "설정");
+        var layoutMenu = FindMenuItem(document, "레이아웃");
         var expectedButtons = new Dictionary<string, string>
         {
             ["불러오기"] = "LoadWorkspaceButton_Click",
@@ -153,12 +173,19 @@ public sealed class MainWindowLayoutTests
             ["다른 이름으로 저장"] = "SaveWorkspaceAsButton_Click"
         };
 
+        Assert.NotNull(settingsMenu);
+        Assert.Equal("EditLayoutsButton_Click", GetAttribute(layoutMenu, "Click"));
+        Assert.Null(FindMenuItemOrDefault(document, "보기"));
+        Assert.Contains(settingsMenu.Descendants(), element =>
+            element.Name.LocalName == "MenuItem" &&
+            GetAttribute(element, "Header") == "프리셋");
+
         foreach (var (content, clickHandler) in expectedButtons)
         {
             var button = document
                 .Descendants()
-                .Single(element => element.Name.LocalName == "Button" &&
-                    GetAttribute(element, "Content") == content);
+                .Single(element => element.Name.LocalName == "MenuItem" &&
+                    GetAttribute(element, "Header") == content);
 
             Assert.Equal(clickHandler, GetAttribute(button, "Click"));
         }
@@ -203,6 +230,24 @@ public sealed class MainWindowLayoutTests
             .Single(element =>
                 element.Name.LocalName == "Button" &&
                 GetAttribute(element, "Content") == content);
+    }
+
+    private static XElement FindMenuItem(XDocument document, string header)
+    {
+        return document
+            .Descendants()
+            .Single(element =>
+                element.Name.LocalName == "MenuItem" &&
+                GetAttribute(element, "Header") == header);
+    }
+
+    private static XElement? FindMenuItemOrDefault(XDocument document, string header)
+    {
+        return document
+            .Descendants()
+            .SingleOrDefault(element =>
+                element.Name.LocalName == "MenuItem" &&
+                GetAttribute(element, "Header") == header);
     }
 
     private static string? GetAttribute(XElement element, string name)

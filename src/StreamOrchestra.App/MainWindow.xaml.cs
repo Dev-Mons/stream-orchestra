@@ -4,7 +4,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.ComponentModel;
-using System.Runtime.InteropServices;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 using StreamOrchestra.App.Views;
@@ -13,9 +12,6 @@ namespace StreamOrchestra.App;
 
 public partial class MainWindow : Window
 {
-    private const double AutoShowExplorerButtonWidth = 24;
-    private const double AutoShowExplorerHitTestWidth = 28;
-
     private readonly WebViewProfileService _profileService = new();
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
     private readonly PresetStorageService _presetStorageService = new();
@@ -33,23 +29,12 @@ public partial class MainWindow : Window
     private List<WorkspacePreset> _workspaces = [];
     private AppState? _loadedAppState;
     private readonly DispatcherTimer _diagnosticsTimer;
-    private readonly DispatcherTimer _autoShowExplorerTimer;
     private WorkspacePreset? _activeWorkspace;
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
     private bool _isExplorerPanelVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
     private LayoutPreset? _selectedLayout;
-
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out NativePoint point);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativePoint
-    {
-        public int X;
-        public int Y;
-    }
 
     public MainWindow()
     {
@@ -67,8 +52,8 @@ public partial class MainWindow : Window
         CreateSlots();
         LoadLayouts();
         LoadWorkspacePresets();
-        _autoShowExplorerTimer = CreateAutoShowExplorerTimer();
         ApplyViewState(_loadedAppState);
+        RefreshQualityMenuChecks();
         _diagnosticsTimer = CreateDiagnosticsTimer();
         StatusTextBlock.Text = $"Profile data persists under: {_profileService.BaseProfileFolder}";
         UpdateDiagnostics();
@@ -117,15 +102,6 @@ public partial class MainWindow : Window
 
     private void RefreshLayoutSelector()
     {
-        LayoutSelectorPanel.Children.Clear();
-
-        foreach (var layout in _layouts)
-        {
-            var isSelected = _selectedLayout?.Id.Equals(layout.Id, StringComparison.OrdinalIgnoreCase) == true;
-            var button = CreateLayoutSelectorButton(layout, isSelected);
-            button.Click += LayoutButton_Click;
-            LayoutSelectorPanel.Children.Add(button);
-        }
     }
 
     private static Button CreateLayoutSelectorButton(LayoutPreset layout, bool isSelected)
@@ -218,14 +194,6 @@ public partial class MainWindow : Window
             : 1;
     }
 
-    private async void LayoutButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: LayoutPreset layout })
-        {
-            await ApplySelectedLayoutAsync(layout, clearHiddenSlots: true);
-        }
-    }
-
     private async Task ApplySelectedLayoutAsync(LayoutPreset layout, bool clearHiddenSlots)
     {
         _selectedLayout = layout;
@@ -292,7 +260,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            RefreshAutoShowExplorerPopupFromCursorPosition();
+            RefreshAutoShowExplorerEdgeVisibility();
         }
     }
 
@@ -312,13 +280,25 @@ public partial class MainWindow : Window
     {
         if (!_isExplorerPanelVisible)
         {
-            OpenAutoShowExplorerPopup();
+            AutoShowExplorerPopup.IsOpen = true;
         }
     }
 
     private void AutoShowExplorerButton_MouseLeave(object sender, MouseEventArgs e)
     {
-        RefreshAutoShowExplorerPopupFromCursorPosition();
+        AutoShowExplorerPopup.IsOpen = false;
+    }
+
+    private void AutoShowExplorerHitTarget_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (!_isExplorerPanelVisible)
+        {
+            AutoShowExplorerPopup.IsOpen = true;
+        }
+    }
+
+    private void AutoShowExplorerHitTarget_MouseLeave(object sender, MouseEventArgs e)
+    {
     }
 
     private async void SlotView_StreamUrlDropRequested(StreamSlotView targetSlot, string url, string? streamName)
@@ -652,7 +632,7 @@ public partial class MainWindow : Window
 
         SetQualityComboBoxSelection(
             AudibleQualityComboBox,
-            NormalizeQualityKey(appState.AudibleQualityKey) ?? "master");
+            NormalizeQualityKey(appState.AudibleQualityKey) ?? "original");
     }
 
     private void SetExplorerPanelVisible(bool isVisible)
@@ -668,150 +648,18 @@ public partial class MainWindow : Window
         ExplorerGridSplitter.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
         ExplorerColumn.Width = isVisible ? _lastExplorerColumnWidth : new GridLength(0);
         ExplorerSplitterColumn.Width = isVisible ? new GridLength(6) : new GridLength(0);
-        ToggleExplorerButton.Content = isVisible ? "탐색 숨김" : "탐색 표시";
-
-        if (isVisible)
-        {
-            _autoShowExplorerTimer.Stop();
-            AutoShowExplorerPopup.IsOpen = false;
-            return;
-        }
-
-        _autoShowExplorerTimer.Start();
-        RefreshAutoShowExplorerPopupFromCursorPosition();
+        ToggleExplorerButton.ToolTip = isVisible ? "탐색 숨김" : "탐색 표시";
+        RefreshAutoShowExplorerEdgeVisibility();
     }
 
-    private DispatcherTimer CreateAutoShowExplorerTimer()
+    private void RefreshAutoShowExplorerEdgeVisibility()
     {
-        var timer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(60)
-        };
-
-        timer.Tick += (_, _) => RefreshAutoShowExplorerPopupFromCursorPosition();
-
-        return timer;
-    }
-
-    private void RefreshAutoShowExplorerPopupFromCursorPosition()
-    {
-        if (_isExplorerPanelVisible)
-        {
-            AutoShowExplorerPopup.IsOpen = false;
-            return;
-        }
-
-        if (!TryGetCursorPositionInMainContentGrid(out var position))
-        {
-            AutoShowExplorerPopup.IsOpen = false;
-            return;
-        }
-
-        var isInHitTestArea =
-            position.X >= 0 &&
-            position.X <= AutoShowExplorerHitTestWidth &&
-            position.Y >= 0 &&
-            position.Y <= MainContentGrid.ActualHeight;
-
-        if (isInHitTestArea)
-        {
-            OpenAutoShowExplorerPopup();
-            return;
-        }
-
+        AutoShowExplorerHitTarget.Visibility = _isExplorerPanelVisible ? Visibility.Collapsed : Visibility.Visible;
         AutoShowExplorerPopup.IsOpen = false;
-    }
-
-    private bool TryGetCursorPositionInMainContentGrid(out Point position)
-    {
-        position = default;
-
-        if (!IsLoaded ||
-            !MainContentGrid.IsLoaded ||
-            MainContentGrid.ActualWidth <= 0 ||
-            MainContentGrid.ActualHeight <= 0)
-        {
-            return false;
-        }
-
-        var presentationSource = PresentationSource.FromVisual(this);
-        if (presentationSource?.CompositionTarget is null)
-        {
-            return false;
-        }
-
-        if (!GetCursorPos(out var cursorPosition))
-        {
-            return false;
-        }
-
-        try
-        {
-            var transformFromDevice = presentationSource.CompositionTarget.TransformFromDevice;
-            var cursorPoint = transformFromDevice.Transform(new Point(cursorPosition.X, cursorPosition.Y));
-            var mainContentTopLeft = transformFromDevice.Transform(MainContentGrid.PointToScreen(new Point(0, 0)));
-
-            position = new Point(
-                cursorPoint.X - mainContentTopLeft.X,
-                cursorPoint.Y - mainContentTopLeft.Y);
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-    }
-
-    private void OpenAutoShowExplorerPopup()
-    {
-        if (!TryGetMainContentGridScreenBounds(out var topLeft, out var height))
-        {
-            AutoShowExplorerPopup.IsOpen = false;
-            return;
-        }
-
-        AutoShowExplorerButton.Width = AutoShowExplorerButtonWidth;
-        AutoShowExplorerButton.Height = height;
-        AutoShowExplorerPopup.HorizontalOffset = topLeft.X;
-        AutoShowExplorerPopup.VerticalOffset = topLeft.Y;
-        AutoShowExplorerPopup.IsOpen = true;
-    }
-
-    private bool TryGetMainContentGridScreenBounds(out Point topLeft, out double height)
-    {
-        topLeft = default;
-        height = 0;
-
-        if (!IsLoaded ||
-            !MainContentGrid.IsLoaded ||
-            MainContentGrid.ActualHeight <= 0)
-        {
-            return false;
-        }
-
-        var presentationSource = PresentationSource.FromVisual(this);
-        if (presentationSource?.CompositionTarget is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            topLeft = presentationSource.CompositionTarget.TransformFromDevice.Transform(
-                MainContentGrid.PointToScreen(new Point(0, 0)));
-            height = MainContentGrid.ActualHeight;
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
-        _autoShowExplorerTimer.Stop();
-        AutoShowExplorerPopup.IsOpen = false;
         _presetStorageService.SaveAppState(CaptureAppState());
     }
 
@@ -834,7 +682,25 @@ public partial class MainWindow : Window
             return;
         }
 
+        RefreshQualityMenuChecks();
         await ApplyQualityPolicyToSlotsAsync(GetVisibleNonBlankSlots());
+    }
+
+    private async void QualityMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string qualityKey } menuItem)
+        {
+            return;
+        }
+
+        var previousItem = AudibleQualityComboBox.SelectedItem;
+        SetQualityComboBoxSelection(AudibleQualityComboBox, qualityKey, menuItem.Header?.ToString());
+        RefreshQualityMenuChecks();
+
+        if (ReferenceEquals(previousItem, AudibleQualityComboBox.SelectedItem))
+        {
+            await ApplyQualityPolicyToSlotsAsync(GetVisibleNonBlankSlots());
+        }
     }
 
     private async void SlotView_MuteChanged(StreamSlotView slot)
@@ -943,7 +809,7 @@ public partial class MainWindow : Window
         return qualityKey?.Trim().ToLowerInvariant() switch
         {
             "original" => "original",
-            "master" => "master",
+            "q1440" => "q1440",
             "hd4k" => "hd4k",
             "hd" => "hd",
             "sd" => "sd",
@@ -951,12 +817,18 @@ public partial class MainWindow : Window
         };
     }
 
-    private static void SetQualityComboBoxSelection(ComboBox comboBox, string qualityKey)
+    private static void SetQualityComboBoxSelection(ComboBox comboBox, string qualityKey, string? qualityLabel = null)
     {
-        var normalizedKey = string.IsNullOrWhiteSpace(qualityKey) ? "master" : qualityKey.Trim().ToLowerInvariant();
-        var selectedItem = comboBox.Items
+        var normalizedKey = string.IsNullOrWhiteSpace(qualityKey) ? "original" : qualityKey.Trim().ToLowerInvariant();
+        var candidates = comboBox.Items
             .OfType<ComboBoxItem>()
-            .FirstOrDefault(item => item.Tag is string tag && tag.Equals(normalizedKey, StringComparison.OrdinalIgnoreCase));
+            .Where(item => item.Tag is string tag && tag.Equals(normalizedKey, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var selectedItem = string.IsNullOrWhiteSpace(qualityLabel)
+            ? candidates.FirstOrDefault()
+            : candidates.FirstOrDefault(item =>
+                item.Content?.ToString()?.Equals(qualityLabel, StringComparison.OrdinalIgnoreCase) == true)
+              ?? candidates.FirstOrDefault();
 
         if (selectedItem is not null)
         {
@@ -964,11 +836,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private void RefreshQualityMenuChecks()
+    {
+        var selectedQualityKey = GetQualityKey(AudibleQualityComboBox);
+        var selectedQualityLabel = GetQualityLabel(AudibleQualityComboBox);
+
+        foreach (var item in QualityMenuItem.Items.OfType<MenuItem>())
+        {
+            item.IsChecked =
+                item.Tag is string qualityKey &&
+                qualityKey.Equals(selectedQualityKey, StringComparison.OrdinalIgnoreCase) &&
+                item.Header?.ToString()?.Equals(selectedQualityLabel, StringComparison.OrdinalIgnoreCase) == true;
+        }
+    }
+
     private static string GetQualityKey(ComboBox comboBox)
     {
         return comboBox.SelectedItem is ComboBoxItem { Tag: string qualityKey }
             ? qualityKey
-            : "master";
+            : "original";
     }
 
     private static string GetQualityLabel(ComboBox comboBox)

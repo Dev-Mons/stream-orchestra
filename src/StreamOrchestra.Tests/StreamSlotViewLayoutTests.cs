@@ -103,6 +103,7 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains(".quality_box", text);
         Assert.Contains("ul button", text);
         Assert.Contains("button.click();", text);
+        Assert.Contains("\"q1440\"", text);
         Assert.Contains("\"original\"", text);
         Assert.Contains("\"hd4k\"", text);
         Assert.Contains("\"sd\"", text);

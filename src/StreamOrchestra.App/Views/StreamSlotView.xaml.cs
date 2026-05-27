@@ -303,6 +303,7 @@ public partial class StreamSlotView : UserControl
         return qualityKey.Trim().ToLowerInvariant() switch
         {
             "auto" or "adaptive" or "master" => "master",
+            "1440" or "1440p" or "q1440" => "q1440",
             "source" or "best" or "max" or "maximum" or "1080" or "1080p" or "original" => "original",
             "720" or "720p" or "hd4k" => "hd4k",
             "540" or "540p" or "hd" => "hd",
@@ -316,7 +317,8 @@ public partial class StreamSlotView : UserControl
         return NormalizeQualityKey(qualityKey) switch
         {
             "master" => "auto",
-            "original" => "maximum",
+            "q1440" => "1440p",
+            "original" => "1080p",
             "hd4k" => "720p",
             "hd" => "540p",
             "sd" => "360p",
@@ -606,6 +608,8 @@ public partial class StreamSlotView : UserControl
   function clickQuality(qualityKey) {
   const fixedTargets = {
     master: ["자동"],
+    q1440: ["1440p"],
+    original: ["1080p"],
     hd4k: ["720p"],
     hd: ["540p"],
     sd: ["360p"]
@@ -636,11 +640,6 @@ public partial class StreamSlotView : UserControl
       .filter(isAvailable);
     if (availableButtons.length === 0) {
       return null;
-    }
-
-    if (qualityKey === "original") {
-      const priority = ["1440p", "1080p", "720p", "540p", "360p", "최대화질", "원본"];
-      return priority.map(text => findButtonByText(availableButtons, text)).find(Boolean) || null;
     }
 
     const targets = fixedTargets[qualityKey] || [];

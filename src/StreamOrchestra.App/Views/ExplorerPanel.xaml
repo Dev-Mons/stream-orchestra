@@ -33,11 +33,6 @@
                            Text="SOOP 탐색"
                            Foreground="#F3F6FA"
                            FontWeight="SemiBold" />
-                <TextBlock Grid.Column="1"
-                           Text="↗"
-                           Foreground="#B9C2CC"
-                           FontWeight="SemiBold"
-                           ToolTip="현재 탐색 URL을 슬롯으로 드래그" />
             </Grid>
         </Border>
 
