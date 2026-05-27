@@ -484,6 +484,9 @@ public partial class MainWindow : Window
             SelectedSlotId = _selectedSlot?.SlotId,
             LastSession = CaptureWorkspace("last_session", "Last Session"),
             IsExplorerPanelVisible = _isExplorerPanelVisible,
+            IsQualityLockEnabled = IsQualityPolicyEnabled(),
+            AudibleQualityKey = GetQualityKey(AudibleQualityComboBox),
+            MutedQualityKey = GetQualityKey(MutedQualityComboBox),
             Window = new AppWindowState
             {
                 X = bounds.X,
@@ -659,6 +662,15 @@ public partial class MainWindow : Window
     private void ApplyViewState(AppState? appState)
     {
         SetExplorerPanelVisible(appState?.IsExplorerPanelVisible ?? true);
+
+        if (appState is null)
+        {
+            return;
+        }
+
+        QualityLockCheckBox.IsChecked = appState.IsQualityLockEnabled;
+        SetQualityComboBoxSelection(AudibleQualityComboBox, appState.AudibleQualityKey);
+        SetQualityComboBoxSelection(MutedQualityComboBox, appState.MutedQualityKey);
     }
 
     private void SetExplorerPanelVisible(bool isVisible)
@@ -828,6 +840,19 @@ public partial class MainWindow : Window
     private bool IsQualityPolicyEnabled()
     {
         return QualityLockCheckBox.IsChecked == true;
+    }
+
+    private static void SetQualityComboBoxSelection(ComboBox comboBox, string qualityKey)
+    {
+        var normalizedKey = string.IsNullOrWhiteSpace(qualityKey) ? "master" : qualityKey.Trim().ToLowerInvariant();
+        var selectedItem = comboBox.Items
+            .OfType<ComboBoxItem>()
+            .FirstOrDefault(item => item.Tag is string tag && tag.Equals(normalizedKey, StringComparison.OrdinalIgnoreCase));
+
+        if (selectedItem is not null)
+        {
+            comboBox.SelectedItem = selectedItem;
+        }
     }
 
     private static string GetQualityKey(ComboBox comboBox)
