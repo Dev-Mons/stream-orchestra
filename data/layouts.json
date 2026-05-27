@@ -39,5 +39,44 @@
       { "slotId": 15, "x": 2, "y": 3, "w": 1, "h": 1 },
       { "slotId": 16, "x": 3, "y": 3, "w": 1, "h": 1 }
     ]
+  },
+  {
+    "id": "layout_3x2",
+    "name": "3x2 Grid",
+    "gridColumns": 3,
+    "gridRows": 2,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 2, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 4, "x": 0, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 5, "x": 1, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 6, "x": 2, "y": 1, "w": 1, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_2x2",
+    "name": "2x2 Grid",
+    "gridColumns": 2,
+    "gridRows": 2,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 0, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 4, "x": 1, "y": 1, "w": 1, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_2x2_bottom_wide",
+    "name": "2x2 + Bottom Wide",
+    "gridColumns": 2,
+    "gridRows": 3,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 0, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 4, "x": 1, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 5, "x": 0, "y": 2, "w": 2, "h": 1 }
+    ]
   }
 ]

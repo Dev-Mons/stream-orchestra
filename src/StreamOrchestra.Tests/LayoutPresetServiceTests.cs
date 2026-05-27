@@ -30,6 +30,30 @@ public sealed class LayoutPresetServiceTests
                 Assert.Equal(4, layout.GridRows);
                 Assert.Equal(16, layout.Slots.Count);
                 Assert.Contains(layout.Slots, slot => slot.SlotId == 16 && slot.X == 3 && slot.Y == 3 && slot.W == 1 && slot.H == 1);
+            },
+            layout =>
+            {
+                Assert.Equal(LayoutPresetIds.ThreeByTwo, layout.Id);
+                Assert.Equal(3, layout.GridColumns);
+                Assert.Equal(2, layout.GridRows);
+                Assert.Equal(6, layout.Slots.Count);
+                Assert.Contains(layout.Slots, slot => slot.SlotId == 6 && slot.X == 2 && slot.Y == 1 && slot.W == 1 && slot.H == 1);
+            },
+            layout =>
+            {
+                Assert.Equal(LayoutPresetIds.TwoByTwo, layout.Id);
+                Assert.Equal(2, layout.GridColumns);
+                Assert.Equal(2, layout.GridRows);
+                Assert.Equal(4, layout.Slots.Count);
+                Assert.Contains(layout.Slots, slot => slot.SlotId == 4 && slot.X == 1 && slot.Y == 1 && slot.W == 1 && slot.H == 1);
+            },
+            layout =>
+            {
+                Assert.Equal(LayoutPresetIds.TwoByTwoBottomWide, layout.Id);
+                Assert.Equal(2, layout.GridColumns);
+                Assert.Equal(3, layout.GridRows);
+                Assert.Equal(5, layout.Slots.Count);
+                Assert.Contains(layout.Slots, slot => slot.SlotId == 5 && slot.X == 0 && slot.Y == 2 && slot.W == 2 && slot.H == 1);
             });
     }
 
@@ -109,7 +133,15 @@ public sealed class LayoutPresetServiceTests
 
         var layouts = service.LoadFromDefaultLocation();
 
-        Assert.Equal([LayoutPresetIds.Default, LayoutPresetIds.Tournament], layouts.Select(layout => layout.Id).ToArray());
+        Assert.Equal(
+            [
+                LayoutPresetIds.Default,
+                LayoutPresetIds.Tournament,
+                LayoutPresetIds.ThreeByTwo,
+                LayoutPresetIds.TwoByTwo,
+                LayoutPresetIds.TwoByTwoBottomWide
+            ],
+            layouts.Select(layout => layout.Id).ToArray());
     }
 
     [Fact]

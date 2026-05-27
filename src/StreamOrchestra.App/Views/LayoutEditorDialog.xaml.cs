@@ -786,7 +786,7 @@ public partial class LayoutEditorDialog : Window
 
     private void ColumnSplitter_DragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (sender is not Thumb { Tag: int boundary })
+        if (sender is not Thumb { Tag: int boundary } thumb)
         {
             return;
         }
@@ -798,21 +798,28 @@ public partial class LayoutEditorDialog : Window
         }
 
         var deltaWeight = e.HorizontalChange / Math.Max(1, _editorSurfaceSize.Width) * total;
-        var left = _columnWeights[boundary - 1] + deltaWeight;
-        var right = _columnWeights[boundary] - deltaWeight;
-        if (left < MinWeight || right < MinWeight)
+        var draggedItem = _editorColumnSplitters
+            .FirstOrDefault(item => ReferenceEquals(item.Thumb, thumb));
+        if (!ReferenceEquals(draggedItem.Thumb, thumb)
+            || !TryGetResizeIndexGroups(
+                boundary,
+                _columnWeights.Length,
+                _editorColumnSplitters
+                    .Where(item => !ReferenceEquals(item.Thumb, thumb) && item.Segment.Boundary != boundary)
+                    .Select(item => item.Segment.Boundary),
+                out var leftColumns,
+                out var rightColumns)
+            || !TryApplyWeightDelta(_columnWeights, leftColumns, rightColumns, deltaWeight))
         {
             return;
         }
 
-        _columnWeights[boundary - 1] = left;
-        _columnWeights[boundary] = right;
         RepositionSurface();
     }
 
     private void RowSplitter_DragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (sender is not Thumb { Tag: int boundary })
+        if (sender is not Thumb { Tag: int boundary } thumb)
         {
             return;
         }
@@ -824,16 +831,113 @@ public partial class LayoutEditorDialog : Window
         }
 
         var deltaWeight = e.VerticalChange / Math.Max(1, _editorSurfaceSize.Height) * total;
-        var top = _rowWeights[boundary - 1] + deltaWeight;
-        var bottom = _rowWeights[boundary] - deltaWeight;
-        if (top < MinWeight || bottom < MinWeight)
+        var draggedItem = _editorRowSplitters
+            .FirstOrDefault(item => ReferenceEquals(item.Thumb, thumb));
+        if (!ReferenceEquals(draggedItem.Thumb, thumb)
+            || !TryGetResizeIndexGroups(
+                boundary,
+                _rowWeights.Length,
+                _editorRowSplitters
+                    .Where(item => !ReferenceEquals(item.Thumb, thumb) && item.Segment.Boundary != boundary)
+                    .Select(item => item.Segment.Boundary),
+                out var topRows,
+                out var bottomRows)
+            || !TryApplyWeightDelta(_rowWeights, topRows, bottomRows, deltaWeight))
         {
             return;
         }
 
-        _rowWeights[boundary - 1] = top;
-        _rowWeights[boundary] = bottom;
         RepositionSurface();
+    }
+
+    private static bool TryGetResizeIndexGroups(
+        int boundary,
+        int count,
+        IEnumerable<int> anchorBoundaries,
+        out int[] leadingIndexes,
+        out int[] trailingIndexes)
+    {
+        leadingIndexes = [];
+        trailingIndexes = [];
+        if (boundary <= 0 || boundary >= count)
+        {
+            return false;
+        }
+
+        var anchors = anchorBoundaries
+            .Where(anchor => anchor > 0 && anchor < count)
+            .Distinct()
+            .OrderBy(anchor => anchor)
+            .ToArray();
+        var previousAnchor = anchors.LastOrDefault(anchor => anchor < boundary);
+        var nextAnchor = anchors.FirstOrDefault(anchor => anchor > boundary);
+        if (nextAnchor == 0)
+        {
+            nextAnchor = count;
+        }
+
+        leadingIndexes = Enumerable.Range(previousAnchor, boundary - previousAnchor).ToArray();
+        trailingIndexes = Enumerable.Range(boundary, nextAnchor - boundary).ToArray();
+        return leadingIndexes.Length > 0 && trailingIndexes.Length > 0;
+    }
+
+    private static bool TryApplyWeightDelta(
+        double[] weights,
+        IReadOnlyList<int> leadingIndexes,
+        IReadOnlyList<int> trailingIndexes,
+        double deltaWeight)
+    {
+        if (Math.Abs(deltaWeight) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        var growIndexes = deltaWeight > 0 ? leadingIndexes : trailingIndexes;
+        var shrinkIndexes = deltaWeight > 0 ? trailingIndexes : leadingIndexes;
+        var amount = Math.Abs(deltaWeight);
+        var available = shrinkIndexes.Sum(index => Math.Max(0, weights[index] - MinWeight));
+        if (available <= 0)
+        {
+            return false;
+        }
+
+        var applied = Math.Min(amount, available);
+        DistributeWeight(weights, growIndexes, applied);
+        DistributeWeight(weights, shrinkIndexes, -applied);
+        return true;
+    }
+
+    private static void DistributeWeight(double[] weights, IReadOnlyList<int> indexes, double amount)
+    {
+        if (indexes.Count == 0 || Math.Abs(amount) <= double.Epsilon)
+        {
+            return;
+        }
+
+        if (amount > 0)
+        {
+            var add = amount / indexes.Count;
+            foreach (var index in indexes)
+            {
+                weights[index] += add;
+            }
+
+            return;
+        }
+
+        var remaining = -amount;
+        foreach (var index in indexes)
+        {
+            if (remaining <= 0)
+            {
+                break;
+            }
+
+            var available = Math.Max(0, weights[index] - MinWeight);
+            var used = Math.Min(available, remaining);
+            weights[index] -= used;
+            remaining -= used;
+        }
     }
 
     private void Splitter_DragCompleted(object sender, DragCompletedEventArgs e)
