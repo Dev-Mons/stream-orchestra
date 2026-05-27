@@ -87,8 +87,8 @@ public sealed class MainWindowLayoutTests
         Assert.Empty(playbackButtonTags);
         Assert.Equal("True", GetAttribute(qualityLockCheckBox, "IsChecked"));
         Assert.Equal("QualityPolicyControl_Changed", GetAttribute(qualityLockCheckBox, "Checked"));
-        Assert.Equal(["original:최대화질", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], audibleQualityOptions);
-        Assert.Equal(["original:최대화질", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], mutedQualityOptions);
+        Assert.Equal(["original:최대화질", "original:1080p", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], audibleQualityOptions);
+        Assert.Equal(["original:최대화질", "original:1080p", "master:자동", "hd4k:720p", "hd:540p", "sd:360p"], mutedQualityOptions);
         Assert.Equal("ApplyQualityPolicyButton_Click", GetAttribute(FindButton(document, "화질 적용"), "Click"));
         Assert.Equal("RefreshDiagnosticsButton_Click", GetAttribute(FindButton(document, "진단 갱신"), "Click"));
     }

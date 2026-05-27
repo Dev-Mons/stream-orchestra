@@ -80,6 +80,8 @@
                                   SelectionChanged="QualityPolicyControl_Changed">
                             <ComboBoxItem Content="최대화질"
                                           Tag="original" />
+                            <ComboBoxItem Content="1080p"
+                                          Tag="original" />
                             <ComboBoxItem Content="자동"
                                           Tag="master" />
                             <ComboBoxItem Content="720p"
@@ -100,6 +102,8 @@
                                   Margin="0,0,8,0"
                                   SelectionChanged="QualityPolicyControl_Changed">
                             <ComboBoxItem Content="최대화질"
+                                          Tag="original" />
+                            <ComboBoxItem Content="1080p"
                                           Tag="original" />
                             <ComboBoxItem Content="자동"
                                           Tag="master" />
