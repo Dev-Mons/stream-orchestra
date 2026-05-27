@@ -359,6 +359,13 @@ public partial class StreamSlotView : UserControl
       max-height: 100vh !important;
       object-fit: contain !important;
     }
+
+    .stream-orchestra-hidden {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
   `;
 
   function installStyle() {
@@ -375,6 +382,7 @@ public partial class StreamSlotView : UserControl
 
   installStyle();
   window.addEventListener("DOMContentLoaded", installStyle, { once: true });
+  applySoopImmersiveMode();
 
   document.addEventListener("dragover", event => {
     if (!hasStreamUrlData(event.dataTransfer)) {
@@ -467,6 +475,41 @@ public partial class StreamSlotView : UserControl
   function firstWebUrl(value) {
     const match = String(value || "").match(/https?:\/\/[^\s"'<>]+/i);
     return match?.[0] || "";
+  }
+
+  function applySoopImmersiveMode() {
+    const host = location.hostname.toLowerCase();
+    if (!host.includes("sooplive.co.kr")) {
+      return;
+    }
+
+    const hideSelectors = [
+      "#header",
+      ".header",
+      ".top_area",
+      ".topbar",
+      ".global_header",
+      ".live_header",
+      ".player_header",
+      ".title_wrap",
+      ".title_area"
+    ];
+
+    const hideElements = () => {
+      for (const selector of hideSelectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          element.classList.add("stream-orchestra-hidden");
+        }
+      }
+    };
+
+    hideElements();
+    const observer = new MutationObserver(hideElements);
+    const target = document.documentElement || document.body;
+    if (target) {
+      observer.observe(target, { childList: true, subtree: true });
+    }
+    window.addEventListener("DOMContentLoaded", hideElements, { once: true });
   }
 })();
 """;
