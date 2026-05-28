@@ -72,7 +72,7 @@ jobs:
         run: |
           $v = "${{ steps.version.outputs.version }}"
           vpk pack `
-            --packId DevMons.StreamOrchestra `
+            --packId StreamOrchestra `
             --packVersion $v `
             --packDir publish `
             --mainExe StreamOrchestra.App.exe `

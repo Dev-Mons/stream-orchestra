@@ -72,7 +72,7 @@ if (-not $SkipUpload) {
 
 Write-Host "[release] Packing with Velopack..."
 vpk pack `
-    --packId DevMons.StreamOrchestra `
+    --packId StreamOrchestra `
     --packVersion $Version `
     --packDir $publishDir `
     --mainExe StreamOrchestra.App.exe `
