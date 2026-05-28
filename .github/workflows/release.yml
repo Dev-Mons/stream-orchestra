@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Extract version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Resolved version: $version"
+
+      - name: Run tests
+        shell: pwsh
+        run: dotnet test StreamOrchestra.slnx -c Release --nologo
+
+      - name: Publish framework-dependent app
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          dotnet publish src/StreamOrchestra.App/StreamOrchestra.App.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -p:Version=$v `
+            -p:AssemblyVersion="$v.0" `
+            -p:FileVersion="$v.0" `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o publish
+
+      - name: Install Velopack CLI
+        shell: pwsh
+        run: dotnet tool install -g vpk
+
+      - name: Prepare Releases directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Path Releases | Out-Null
+
+      - name: Download prior releases
+        shell: pwsh
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          vpk download github `
+            --repoUrl https://github.com/${{ github.repository }} `
+            --outputDir Releases `
+            --token $env:GITHUB_TOKEN
+
+      - name: Pack with Velopack
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          vpk pack `
+            --packId DevMons.StreamOrchestra `
+            --packVersion $v `
+            --packDir publish `
+            --mainExe StreamOrchestra.App.exe `
+            --packTitle StreamOrchestra `
+            --outputDir Releases `
+            --noInst `
+            --framework net8.0-x64-desktop,webview2
+
+      - name: Upload to GitHub Releases
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          vpk upload github `
+            --repoUrl https://github.com/${{ github.repository }} `
+            --outputDir Releases `
+            --publish `
+            --releaseName "StreamOrchestra v$v" `
+            --tag "v$v" `
+            --token $env:GITHUB_TOKEN

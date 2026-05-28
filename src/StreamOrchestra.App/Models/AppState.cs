@@ -17,4 +17,6 @@ public sealed class AppState
     public bool AreSlotControlBarsAlwaysVisible { get; init; } = true;
 
     public string AudibleQualityKey { get; init; } = "original";
+
+    public AutoUpdateState AutoUpdate { get; init; } = new();
 }

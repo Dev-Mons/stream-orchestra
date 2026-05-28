@@ -2,6 +2,31 @@
 
 Windows-only WPF + WebView2 feasibility spike for testing whether SOOP streams can run concurrently across separate WebView2 profile groups.
 
+## Install (Portable)
+
+1. Download `StreamOrchestra-win-Portable.zip` from the latest [GitHub Release](https://github.com/Dev-Mons/stream-orchestra/releases).
+2. Extract it to a **writable** folder (e.g. `D:\Apps\StreamOrchestra`, `%LocalAppData%\StreamOrchestra`). Do **not** extract under `C:\Program Files\` — auto-update needs write access to the install folder.
+3. Run `StreamOrchestra.App.exe`. Windows SmartScreen may warn on first launch because the binary is not code-signed; choose "More info" → "Run anyway".
+
+### Requirements
+
+- [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0/runtime). Without it the app cannot launch and Windows will show its own missing-framework dialog.
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). Pre-installed on recent Windows 11; on older systems install the Evergreen Runtime.
+
+### Auto-update
+
+The app checks GitHub Releases for a newer version a few seconds after startup (at most once every 6 hours). When a new version is available a dialog asks whether to install now, postpone, or skip that version. You can also trigger a check anytime from the **업데이트 확인** button in the toolbar. Updates require write access to the install folder.
+
+## Release
+
+Tag-driven release pipeline. Pushing a tag `vX.Y.Z` to the default branch triggers the `.github/workflows/release.yml` workflow which runs tests, publishes a framework-dependent build, packages with [Velopack](https://github.com/velopack/velopack), and uploads the portable zip + delta packages to the matching GitHub Release.
+
+To run the same steps locally (skip uploads unless `GITHUB_TOKEN` is set):
+
+```powershell
+pwsh scripts/release.ps1 -Version 0.1.0 -SkipUpload
+```
+
 ## Run
 
 ```powershell
@@ -40,7 +65,7 @@ dotnet run --project src\StreamOrchestra.Tools -- validate-handoff --input-folde
 
 Add `--output .\phase0-handoff-validation.txt` to save the validation result. `validate-handoff` exits `0` only when the folder contains only the standard handoff artifacts plus the manifest, the manifest itself is canonical JSON with valid generated-at and fully qualified data/results/profile paths, the results file belongs to the manifest data folder, the manifest lists only those standard artifacts exactly once in standard order, contains exactly the required A-D profile groups under the manifest profile root, every artifact detail is unique and in the same standard order, each listed artifact exists and still matches its recorded size and SHA-256 hash, `phase0-results.json` is the canonical normalized snapshot, the preflight/checklist/audit/history/verification artifacts agree with the results snapshot and manifest, and the diagnostic report agrees with the manifest's data folder, results file, profile root, A-D profile groups, result count, latest result, account-label summary, suggested records, full decision snapshot, audit items, and recomputed plan-gate summary.
 
-Print the Phase 0 manual test order from `docs/plan.md` before recording live SOOP evidence:
+Print the Phase 0 manual test order before recording live SOOP evidence:
 
 ```powershell
 dotnet run --project src\StreamOrchestra.Tools -- checklist
@@ -48,7 +73,7 @@ dotnet run --project src\StreamOrchestra.Tools -- checklist
 
 `checklist` prints the current evidence status, outstanding plan gates, suggested records, and the safe SOOP test flow: preflight, A-D same-account login, restart persistence, Group A isolation, 8/9/12/16 playback, CPU/GPU/memory observations, evidence labels, `record --dry-run`, final success recording, and `verify`. Use `--data-folder <path>` to inspect a non-default result file, and `--output .\phase0-checklist.txt` to save a handoff copy.
 
-Audit the remaining Phase 0 gates from `docs/plan.md`, including suggested `record` shapes for missing evidence:
+Audit the remaining Phase 0 gates, including suggested `record` shapes for missing evidence:
 
 ```powershell
 dotnet run --project src\StreamOrchestra.Tools -- audit
@@ -160,7 +185,7 @@ Use `--data-folder <path>` to inspect a non-default data folder.
 - The CLI `status` and `record` commands print suggested `record` shapes for missing evidence after the current recommendation and plan-gate status, including `--account-label <label>` where same-account evidence is expected; `record --dry-run` validates and previews the same decision/audit without saving, the 9-slot threshold gate suggests a `partial` playback record when success-only evidence is not ready, and 9-slot success suggestions are listed after higher-slot playback/account evidence so the latest 9+ result can remain the final success record.
 - The CLI `audit` command maps recorded results to the remaining plan gates: 4-slot Group A single-profile playback, distinct 8-slot split-profile, 9-slot threshold, 12-slot, and 16-slot playback evidence, A-D account persistence, restart persistence, resource acceptability, structured observations, and the Phase 0 success gate. Add `--output <path>` to save the audit text.
 - The CLI `history` command lists saved feasibility results with their recorded decision snapshots for manual-test audit trails.
-- The CLI `checklist` command prints the ordered manual SOOP verification flow from `docs/plan.md` with the current evidence status, outstanding gates, a `record --dry-run` preview step, and suggested `record` shapes before evidence is recorded. Add `--output <path>` to save the checklist text.
+- The CLI `checklist` command prints the ordered manual SOOP verification flow with the current evidence status, outstanding gates, a `record --dry-run` preview step, and suggested `record` shapes before evidence is recorded. Add `--output <path>` to save the checklist text.
 - The CLI `preflight` command can save the runtime/profile/layout readiness text with `--output <path>` so the manual verification run has a setup artifact before live SOOP playback evidence is recorded.
 - The CLI `handoff` command saves the preflight, checklist, audit, verification, history, diagnostic report JSON, normalized feasibility-results JSON, and manifest artifacts into one folder for manual SOOP test handoff or post-run review; the manifest records preflight profile root, runtime/layout/profile-group status, preflight readiness, verification completion, the current decision, plan-gate pass/pending/fail summary, and artifact hashes, and `validate-handoff` checks the handoff folder has no extra files/directories, the canonical manifest JSON, generated-at/path consistency, the required standard artifact list and order, unexpected or duplicate manifest entries, exact A-D manifest profile groups, normalized results snapshot content, preflight/checklist/audit/history/verification content consistency, diagnostic report data/results/profile context including A-D profile groups, snapshot fields and audit items, those hashes, plus recomputed result/report/manifest consistency later. Add `--output <path>` to save that validation text.
 - The CLI `scenarios` command lists the named playback and isolated-group scenarios with copyable partial/failure shapes, explains when partial evidence counts as visible playback evidence, and prints separate 9+ success shapes that include restart, resource, CPU, GPU, and memory evidence.
@@ -193,5 +218,4 @@ This spike does not bypass DRM, authentication, or platform security controls. I
 6. Test 4, 8, 9, 12, and 16 simultaneous playback counts.
 7. Record the account label, CPU, GPU, memory, and whether SOOP allows at least 9 active streams.
 
-Use `docs/feasibility-test.md` as the detailed result sheet for the Phase 0 decision.
-Use `docs/implementation-status.md` to see how the current code maps to `docs/plan.md` and what evidence is still pending.
+Use `preflight`, `checklist`, `audit`, `verify`, and `handoff` to generate the current verification materials from the saved evidence instead of maintaining separate hand-written docs.

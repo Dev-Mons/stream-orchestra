@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private readonly WorkspaceSlotVisibilityService _workspaceSlotVisibilityService = new();
     private readonly WorkspacePresetNormalizationService _workspacePresetNormalizationService;
     private readonly WorkspaceRestoreService _workspaceRestoreService;
+    private readonly UpdateService? _updateService;
     private readonly List<StreamSlotView> _slots = [];
     private IReadOnlyList<LayoutPreset> _builtInLayouts = [];
     private List<LayoutPreset> _customLayouts = [];
@@ -47,6 +48,8 @@ public partial class MainWindow : Window
 
         _loadedAppState = _presetStorageService.LoadAppState();
         RestoreWindowPlacement(_loadedAppState?.Window);
+
+        _updateService = TryCreateUpdateService(_loadedAppState?.AutoUpdate ?? new AutoUpdateState());
 
         CreateExplorerPanel();
         CreateSlots();
@@ -260,6 +263,123 @@ public partial class MainWindow : Window
         finally
         {
             RefreshAutoShowExplorerEdgeVisibility();
+            _ = StartAutomaticUpdateCheckAsync();
+        }
+    }
+
+    private static UpdateService? TryCreateUpdateService(AutoUpdateState state)
+    {
+        try
+        {
+            var checker = new VelopackUpdateChecker("https://github.com/Dev-Mons/stream-orchestra");
+            return new UpdateService(checker, state);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task StartAutomaticUpdateCheckAsync()
+    {
+        if (_updateService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            var result = await _updateService.RunAutomaticCheckAsync();
+            if (result.Outcome == UpdateCheckOutcome.Available && result.Update is not null)
+            {
+                await PromptForUpdateAsync(result.Update);
+            }
+        }
+        catch
+        {
+            // 자동 업데이트 실패는 사용자 흐름을 방해하지 않음
+        }
+    }
+
+    private async Task PromptForUpdateAsync(AvailableUpdate update)
+    {
+        if (_updateService is null)
+        {
+            return;
+        }
+
+        var message =
+            $"새 버전 {update.Version}이(가) 사용 가능합니다.\n\n" +
+            "지금 업데이트하시겠습니까?\n" +
+            "• 예: 다운로드 후 자동 재시작\n" +
+            "• 아니오: 나중에 알림\n" +
+            "• 취소: 이 버전 건너뛰기";
+
+        var choice = MessageBox.Show(
+            this,
+            message,
+            "StreamOrchestra 업데이트",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Information);
+
+        if (choice == MessageBoxResult.Cancel)
+        {
+            _updateService.SkipVersion(update.Version);
+            StatusTextBlock.Text = $"버전 {update.Version} 건너뜀.";
+            return;
+        }
+
+        if (choice != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusTextBlock.Text = $"업데이트 {update.Version} 다운로드 중...";
+            await _updateService.DownloadAndApplyAsync();
+        }
+        catch
+        {
+            StatusTextBlock.Text = "업데이트 다운로드에 실패했습니다.";
+        }
+    }
+
+    private async void CheckForUpdatesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateService is null)
+        {
+            StatusTextBlock.Text = "업데이트 검사 기능을 사용할 수 없습니다.";
+            return;
+        }
+
+        StatusTextBlock.Text = "업데이트 확인 중...";
+        try
+        {
+            var result = await _updateService.RunManualCheckAsync();
+            switch (result.Outcome)
+            {
+                case UpdateCheckOutcome.Available when result.Update is not null:
+                    await PromptForUpdateAsync(result.Update);
+                    break;
+                case UpdateCheckOutcome.Skipped when result.Update is not null:
+                    await PromptForUpdateAsync(result.Update);
+                    break;
+                case UpdateCheckOutcome.NoUpdate:
+                    StatusTextBlock.Text = "이미 최신 버전입니다.";
+                    break;
+                case UpdateCheckOutcome.Failed:
+                    StatusTextBlock.Text = "업데이트 확인에 실패했습니다.";
+                    break;
+                case UpdateCheckOutcome.Disabled:
+                    StatusTextBlock.Text = "자동 업데이트가 비활성화되어 있습니다.";
+                    break;
+            }
+        }
+        catch
+        {
+            StatusTextBlock.Text = "업데이트 확인 중 오류가 발생했습니다.";
         }
     }
 
@@ -493,7 +613,8 @@ public partial class MainWindow : Window
                 Width = bounds.Width,
                 Height = bounds.Height,
                 IsMaximized = WindowState == WindowState.Maximized
-            }
+            },
+            AutoUpdate = _updateService?.CurrentState ?? _loadedAppState?.AutoUpdate ?? new AutoUpdateState()
         };
     }
 

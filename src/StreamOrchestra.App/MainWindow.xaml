@@ -37,6 +37,9 @@
                                   Header="레이아웃"
                                   Foreground="#111827"
                                   Click="EditLayoutsButton_Click" />
+                        <MenuItem Header="업데이트 확인"
+                                  Foreground="#111827"
+                                  Click="CheckForUpdatesButton_Click" />
                         <MenuItem Header="프리셋"
                                   Foreground="#111827">
                             <ComboBox x:Name="WorkspaceComboBox"

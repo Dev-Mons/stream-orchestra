@@ -121,7 +121,8 @@ public sealed class PresetStorageService
             IsExplorerPanelVisible = appState.IsExplorerPanelVisible,
             AreSlotUrlEditorsVisible = appState.AreSlotUrlEditorsVisible,
             AreSlotControlBarsAlwaysVisible = appState.AreSlotControlBarsAlwaysVisible,
-            AudibleQualityKey = NormalizeQualityKey(appState.AudibleQualityKey, "original")
+            AudibleQualityKey = NormalizeQualityKey(appState.AudibleQualityKey, "original"),
+            AutoUpdate = NormalizeAutoUpdate(appState.AutoUpdate)
         };
     }
 
@@ -151,6 +152,21 @@ public sealed class PresetStorageService
             Name = name,
             LayoutId = workspace.LayoutId?.Trim() ?? "",
             Slots = workspace.Slots ?? []
+        };
+    }
+
+    private static AutoUpdateState NormalizeAutoUpdate(AutoUpdateState? autoUpdate)
+    {
+        if (autoUpdate is null)
+        {
+            return new AutoUpdateState();
+        }
+
+        return new AutoUpdateState
+        {
+            Enabled = autoUpdate.Enabled,
+            SkippedVersion = NormalizeOptionalText(autoUpdate.SkippedVersion),
+            LastCheckUtc = autoUpdate.LastCheckUtc
         };
     }
 
