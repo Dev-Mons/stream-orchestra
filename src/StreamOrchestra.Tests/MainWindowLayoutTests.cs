@@ -137,6 +137,11 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("_lastDockDirection", codeBehind);
         Assert.Contains("ShowDockingInputPreview", codeBehind);
         Assert.Contains("_dockingInputPreview", codeBehind);
+        Assert.Contains("RemoveFromLayoutRequested += SlotView_RemoveFromLayoutRequested", codeBehind);
+        Assert.Contains("RemoveSlotFromDynamicLayoutAsync", codeBehind);
+        Assert.Contains("_layoutTreeMutationService.RemoveLeaf", codeBehind);
+        Assert.Contains("SetRemoveSlotActionAvailable", codeBehind);
+        Assert.Contains("slot.ClearAsync()", codeBehind);
     }
 
     [Fact]

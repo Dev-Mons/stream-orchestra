@@ -101,6 +101,7 @@ public partial class MainWindow : Window
             slotView.DockPreviewRequested += SlotView_DockPreviewRequested;
             slotView.DockPreviewEnded += SlotView_DockPreviewEnded;
             slotView.StreamDockDropRequested += SlotView_StreamDockDropRequested;
+            slotView.RemoveFromLayoutRequested += SlotView_RemoveFromLayoutRequested;
             _slots.Add(slotView);
         }
     }
@@ -184,12 +185,33 @@ public partial class MainWindow : Window
 
         if (layoutTree.Root is null)
         {
+            UpdateRemoveSlotActions(layoutTree);
             return;
         }
 
         var slotsById = _slots.ToDictionary(slot => slot.SlotId);
         var content = LayoutTreeRenderer.Build(layoutTree, slotsById);
         SlotsGrid.Children.Add(content);
+        UpdateRemoveSlotActions(layoutTree);
+    }
+
+    private void UpdateRemoveSlotActions(LayoutTreeDocument? layoutTree)
+    {
+        var visibleSlotIds = layoutTree?.Root is null
+            ? []
+            : LayoutTreePresetConverter.GetVisibleSlotIds(layoutTree).ToHashSet();
+        var canRemoveVisibleSlots = IsDynamicLayoutTree(layoutTree) && visibleSlotIds.Count > 1;
+
+        foreach (var slot in _slots)
+        {
+            slot.SetRemoveSlotActionAvailable(canRemoveVisibleSlots && visibleSlotIds.Contains(slot.SlotId));
+        }
+    }
+
+    private static bool IsDynamicLayoutTree(LayoutTreeDocument? layoutTree)
+    {
+        return layoutTree?.Root is not null &&
+               layoutTree.SourceLayoutId.Equals("dynamic", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ApplySelectedLayoutAsync(LayoutPreset layout, bool clearHiddenSlots)
@@ -503,6 +525,11 @@ public partial class MainWindow : Window
         await LoadDroppedStreamIntoSlotAsync(targetSlot, url, streamName);
     }
 
+    private async void SlotView_RemoveFromLayoutRequested(StreamSlotView slot)
+    {
+        await RemoveSlotFromDynamicLayoutAsync(slot);
+    }
+
     private void SlotsGrid_DragOver(object sender, DragEventArgs e)
     {
         var position = GetDockPointerPosition(sender, e);
@@ -810,6 +837,50 @@ public partial class MainWindow : Window
         var newSlot = _slots.First(slot => slot.SlotId == newSlotId);
         await LoadDroppedStreamIntoSlotAsync(newSlot, url, streamName);
         StatusTextBlock.Text = $"Docked {(string.IsNullOrWhiteSpace(streamName) ? url : streamName)} into Slot {newSlotId}.";
+    }
+
+    private async Task RemoveSlotFromDynamicLayoutAsync(StreamSlotView slot)
+    {
+        if (!IsDynamicLayoutTree(_currentLayoutTree) || _currentLayoutTree?.Root is null)
+        {
+            StatusTextBlock.Text = "Only dynamically docked slots can be removed.";
+            return;
+        }
+
+        var leaves = LayoutTreePresetConverter.GetLeaves(_currentLayoutTree.Root).ToArray();
+        if (leaves.Length <= 1)
+        {
+            StatusTextBlock.Text = "The last visible slot cannot be removed.";
+            return;
+        }
+
+        var targetLeaf = leaves.FirstOrDefault(leaf => leaf.SlotId == slot.SlotId);
+        if (targetLeaf is null)
+        {
+            StatusTextBlock.Text = "Could not find the target layout leaf.";
+            return;
+        }
+
+        var clearTask = slot.ClearAsync();
+        var nextRoot = _layoutTreeMutationService.RemoveLeaf(_currentLayoutTree.Root, targetLeaf.Id);
+        var nextActiveLeaf = LayoutTreePresetConverter.GetLeaves(nextRoot).FirstOrDefault();
+        _currentLayoutTree = new LayoutTreeDocument
+        {
+            SourceLayoutId = "dynamic",
+            Root = nextRoot,
+            ActiveLeafId = nextActiveLeaf?.Id
+        };
+
+        ApplyLayoutTree(_currentLayoutTree);
+
+        if (nextActiveLeaf is not null && _slots.FirstOrDefault(candidate => candidate.SlotId == nextActiveLeaf.SlotId) is { } nextSlot)
+        {
+            SelectSlot(nextSlot);
+        }
+
+        await clearTask;
+        StatusTextBlock.Text = $"Removed Slot {slot.SlotId} from the dynamic layout.";
+        UpdateDiagnostics();
     }
 
     private async Task SwapSlotStreamsAsync(StreamSlotView sourceSlot, StreamSlotView targetSlot)

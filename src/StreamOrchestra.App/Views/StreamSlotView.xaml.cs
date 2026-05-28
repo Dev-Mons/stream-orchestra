@@ -15,6 +15,8 @@ public partial class StreamSlotView : UserControl
     private const int MaxVolumePercent = 100;
     private const int InitialVolumePercent = 100;
     private const int VolumeStepPercent = 10;
+    private const double RemoveSlotButtonSize = 28;
+    private const double RemoveSlotButtonMargin = 8;
 
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
@@ -27,6 +29,7 @@ public partial class StreamSlotView : UserControl
     private string? _playbackViewportScriptId;
     private string? _qualityObserverScriptId;
     private Point? _slotDragStartPoint;
+    private bool _isRemoveSlotActionAvailable;
 
     public StreamSlotView(
         SlotConfiguration configuration,
@@ -66,6 +69,8 @@ public partial class StreamSlotView : UserControl
     public event Action<StreamSlotView>? DockPreviewEnded;
 
     public event Action<StreamSlotView, string, string?, DockDirection>? StreamDockDropRequested;
+
+    public event Action<StreamSlotView>? RemoveFromLayoutRequested;
 
     public SlotConfiguration Configuration { get; }
 
@@ -140,6 +145,15 @@ public partial class StreamSlotView : UserControl
         if (Browser.CoreWebView2 is not null)
         {
             Browser.CoreWebView2.IsMuted = false;
+        }
+    }
+
+    public void SetRemoveSlotActionAvailable(bool isAvailable)
+    {
+        _isRemoveSlotActionAvailable = isAvailable;
+        if (!isAvailable)
+        {
+            RemoveSlotPopup.IsOpen = false;
         }
     }
 
@@ -268,6 +282,18 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
+        if (message.Type.Equals("slot-hover-enter", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowRemoveSlotAction();
+            return;
+        }
+
+        if (message.Type.Equals("slot-hover-leave", StringComparison.OrdinalIgnoreCase))
+        {
+            HideRemoveSlotActionWhenPointerLeaves();
+            return;
+        }
+
         if (message.Type.Equals("stream-dock-preview", StringComparison.OrdinalIgnoreCase))
         {
             DockPreviewRequested?.Invoke(this, ParseDockDirection(message.Direction));
@@ -302,6 +328,53 @@ public partial class StreamSlotView : UserControl
     {
         _slotDragStartPoint = e.GetPosition(this);
         SlotSelected?.Invoke(this);
+    }
+
+    private void SlotBorder_MouseEnter(object sender, MouseEventArgs e)
+    {
+        ShowRemoveSlotAction();
+    }
+
+    private void SlotBorder_MouseLeave(object sender, MouseEventArgs e)
+    {
+        HideRemoveSlotActionWhenPointerLeaves();
+    }
+
+    private void RemoveSlotButton_MouseLeave(object sender, MouseEventArgs e)
+    {
+        HideRemoveSlotActionWhenPointerLeaves();
+    }
+
+    private void RemoveSlotButton_Click(object sender, RoutedEventArgs e)
+    {
+        RemoveSlotPopup.IsOpen = false;
+        RemoveFromLayoutRequested?.Invoke(this);
+        e.Handled = true;
+    }
+
+    private void ShowRemoveSlotAction()
+    {
+        if (!_isRemoveSlotActionAvailable)
+        {
+            return;
+        }
+
+        RemoveSlotPopup.HorizontalOffset = Math.Max(
+            RemoveSlotButtonMargin,
+            SlotBorder.ActualWidth - RemoveSlotButtonSize - RemoveSlotButtonMargin);
+        RemoveSlotPopup.VerticalOffset = RemoveSlotButtonMargin;
+        RemoveSlotPopup.IsOpen = true;
+    }
+
+    private void HideRemoveSlotActionWhenPointerLeaves()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!SlotBorder.IsMouseOver && !RemoveSlotButton.IsMouseOver)
+            {
+                RemoveSlotPopup.IsOpen = false;
+            }
+        }, DispatcherPriority.Background);
     }
 
     private void SlotBorder_MouseMove(object sender, MouseEventArgs e)
@@ -629,6 +702,25 @@ public partial class StreamSlotView : UserControl
   installStyle();
   window.addEventListener("DOMContentLoaded", installStyle, { once: true });
   applySoopImmersiveMode();
+  let isHoveringSlot = false;
+
+  document.addEventListener("pointermove", () => {
+    if (isHoveringSlot) {
+      return;
+    }
+
+    isHoveringSlot = true;
+    window.chrome?.webview?.postMessage({ type: "slot-hover-enter" });
+  }, true);
+
+  document.addEventListener("pointerleave", () => {
+    if (!isHoveringSlot) {
+      return;
+    }
+
+    isHoveringSlot = false;
+    window.chrome?.webview?.postMessage({ type: "slot-hover-leave" });
+  }, true);
 
   document.addEventListener("dragover", event => {
     if (!hasStreamUrlData(event.dataTransfer)) {

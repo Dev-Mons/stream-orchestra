@@ -29,7 +29,28 @@ public sealed class StreamSlotViewLayoutTests
                 attribute.Value is "SlotChrome" or "ControlBar" or "SlotUrlEditor" or "SlotTitleTextBlock" or "GroupTextBlock" or "MuteButton" or "MenuButton"));
         Assert.Empty(document
             .Descendants()
-            .Where(element => element.Name.LocalName is "Button" or "TextBox" or "ContextMenu" or "MenuItem"));
+            .Where(element => element.Name.LocalName is "TextBox" or "ContextMenu" or "MenuItem"));
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "Button" &&
+            GetAttribute(element, "Name") != "RemoveSlotButton");
+    }
+
+    [Fact]
+    public void StreamSlotView_ProvidesHoverRemoveActionAsPopupOutsideBrowserContentRow()
+    {
+        var document = LoadStreamSlotViewDocument();
+        var popup = FindElementByName(document, "RemoveSlotPopup");
+        var button = FindElementByName(document, "RemoveSlotButton");
+        var browser = FindElementByName(document, "Browser");
+        var browserContentGrid = browser.Parent;
+
+        Assert.Equal("Popup", popup.Name.LocalName);
+        Assert.Equal("False", GetAttribute(popup, "IsOpen"));
+        Assert.Equal("Relative", GetAttribute(popup, "Placement"));
+        Assert.Contains("SlotBorder", GetAttribute(popup, "PlacementTarget"));
+        Assert.Equal("Button", button.Name.LocalName);
+        Assert.DoesNotContain(browserContentGrid!.Descendants(), element =>
+            GetAttribute(element, "Name") == "RemoveSlotButton");
     }
 
     [Fact]
@@ -96,10 +117,13 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("StreamUrlDropRequested?.Invoke", slotText);
         Assert.Contains("HostDragStarted?.Invoke", slotText);
         Assert.Contains("HostDragCompleted?.Invoke", slotText);
+        Assert.Contains("RemoveFromLayoutRequested?.Invoke", slotText);
         Assert.Contains("StreamDropDataReader.TryGetDroppedStream", slotText);
         Assert.Contains("CoreWebView2_WebMessageReceived", slotText);
         Assert.Contains("stream-drop", slotText);
         Assert.Contains("slot-wheel", slotText);
+        Assert.Contains("slot-hover-enter", slotText);
+        Assert.Contains("slot-hover-leave", slotText);
         Assert.Contains("StreamDragDataFormats.StreamUrl", dropReaderText);
         Assert.Contains("DataFormats.UnicodeText", dropReaderText);
         Assert.Contains("PlainTextUrlPattern", dropReaderText);

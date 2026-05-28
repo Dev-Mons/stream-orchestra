@@ -50,4 +50,36 @@ public sealed class LayoutTreeMutationServiceTests
         Assert.Equal(SplitOrientation.Vertical, leftNestedSplit.Orientation);
         Assert.Equal([1, 2, 3], LayoutTreePresetConverter.GetVisibleSlotIds(new LayoutTreeDocument { Root = result }).Order().ToArray());
     }
+
+    [Fact]
+    public void RemoveLeaf_RemovesRequestedLeafAndCollapsesSingleChildParent()
+    {
+        var service = new LayoutTreeMutationService();
+        var root = new SplitLayoutNode
+        {
+            Id = "root",
+            Orientation = SplitOrientation.Horizontal,
+            Weights = [1, 1],
+            Children =
+            [
+                new LeafLayoutNode { Id = "leaf-a", SlotId = 1, Items = [] },
+                new LeafLayoutNode { Id = "leaf-b", SlotId = 2, Items = [] }
+            ]
+        };
+
+        var result = service.RemoveLeaf(root, "leaf-b");
+
+        var leaf = Assert.IsType<LeafLayoutNode>(result);
+        Assert.Equal(1, leaf.SlotId);
+    }
+
+    [Fact]
+    public void RemoveLeaf_RejectsRemovingOnlyLeaf()
+    {
+        var service = new LayoutTreeMutationService();
+        var root = new LeafLayoutNode { Id = "leaf-a", SlotId = 1, Items = [] };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => service.RemoveLeaf(root, "leaf-a"));
+        Assert.Contains("only leaf", exception.Message);
+    }
 }

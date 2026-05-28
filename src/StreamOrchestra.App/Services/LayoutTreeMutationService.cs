@@ -27,6 +27,24 @@ public sealed class LayoutTreeMutationService
         return Normalize(replaced);
     }
 
+    public LayoutNode RemoveLeaf(LayoutNode root, string targetLeafId)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+
+        var nextRoot = RemoveTarget(root, targetLeafId, out var wasRemoved);
+        if (!wasRemoved)
+        {
+            throw new InvalidOperationException($"Leaf '{targetLeafId}' was not found.");
+        }
+
+        if (nextRoot is null)
+        {
+            throw new InvalidOperationException("Cannot remove the only leaf.");
+        }
+
+        return Normalize(nextRoot);
+    }
+
     private static LayoutNode ReplaceTarget(
         LayoutNode node,
         string targetLeafId,
@@ -89,6 +107,47 @@ public sealed class LayoutTreeMutationService
             Children = children,
             Weights = [1, 1]
         };
+    }
+
+    private static LayoutNode? RemoveTarget(LayoutNode node, string targetLeafId, out bool wasRemoved)
+    {
+        switch (node)
+        {
+            case LeafLayoutNode leaf when leaf.Id.Equals(targetLeafId, StringComparison.Ordinal):
+                wasRemoved = true;
+                return null;
+
+            case LeafLayoutNode:
+                wasRemoved = false;
+                return node;
+
+            case SplitLayoutNode split:
+            {
+                var children = new List<LayoutNode>(split.Children.Count);
+                wasRemoved = false;
+                foreach (var child in split.Children)
+                {
+                    if (wasRemoved)
+                    {
+                        children.Add(child);
+                        continue;
+                    }
+
+                    var nextChild = RemoveTarget(child, targetLeafId, out var childRemoved);
+                    wasRemoved = childRemoved;
+                    if (nextChild is not null)
+                    {
+                        children.Add(nextChild);
+                    }
+                }
+
+                return split with { Children = children };
+            }
+
+            default:
+                wasRemoved = false;
+                return node;
+        }
     }
 
     private static LayoutNode Normalize(LayoutNode node)
