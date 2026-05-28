@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Text.Json;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -16,9 +15,6 @@ public partial class StreamSlotView : UserControl
     private const int MaxVolumePercent = 100;
     private const int InitialVolumePercent = 100;
     private const int VolumeStepPercent = 10;
-
-    private static readonly Brush DefaultBorderBrush = new SolidColorBrush(Color.FromRgb(45, 54, 66));
-    private static readonly Brush SelectedBorderBrush = new SolidColorBrush(Color.FromRgb(77, 163, 255));
 
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
@@ -124,8 +120,6 @@ public partial class StreamSlotView : UserControl
 
     public void SetSelected(bool isSelected)
     {
-        SlotBorder.BorderBrush = isSelected ? SelectedBorderBrush : DefaultBorderBrush;
-        SlotBorder.BorderThickness = isSelected ? new Thickness(2) : new Thickness(1);
     }
 
     public void SetMuted(bool isMuted, bool suppressQualityUpdate = false)
@@ -168,6 +162,7 @@ public partial class StreamSlotView : UserControl
         Browser.CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
         Browser.CoreWebView2.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
         Browser.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+        Browser.CoreWebView2.NewWindowRequested += CoreWebView2_NewWindowRequested;
         _isMuted = false;
         Browser.CoreWebView2.IsMuted = false;
         _isInitialized = true;
@@ -225,6 +220,15 @@ public partial class StreamSlotView : UserControl
         Browser.CoreWebView2.IsMuted = false;
         _isMuted = false;
         _ = ApplyVolumeToWebPageAsync();
+    }
+
+    private void CoreWebView2_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        if (!string.IsNullOrWhiteSpace(e.Uri))
+        {
+            Browser.CoreWebView2.Navigate(e.Uri);
+        }
     }
 
     private void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)

@@ -13,8 +13,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Building Stream Orchestra...
+dotnet build "src\StreamOrchestra.App\StreamOrchestra.App.csproj" -c Debug -nologo
+set "BUILD_EXIT_CODE=%ERRORLEVEL%"
+if not "%BUILD_EXIT_CODE%"=="0" (
+    echo.
+    echo Build failed with code %BUILD_EXIT_CODE%.
+    pause
+    popd
+    exit /b %BUILD_EXIT_CODE%
+)
+
 echo Starting Stream Orchestra...
-dotnet run --project "src\StreamOrchestra.App\StreamOrchestra.App.csproj"
+dotnet run --project "src\StreamOrchestra.App\StreamOrchestra.App.csproj" --no-build -c Debug
 set "EXIT_CODE=%ERRORLEVEL%"
 
 if not "%EXIT_CODE%"=="0" (

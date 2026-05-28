@@ -69,10 +69,12 @@ public sealed class ExplorerPanelLayoutTests
         var text = File.ReadAllText(path);
 
         Assert.Contains("CreateLinkDragScript", text);
-        Assert.Contains("dragstart", text);
         Assert.Contains("a[href]", text);
-        Assert.Contains("text/plain", text);
-        Assert.Contains("text/uri-list", text);
+        Assert.Contains("begin-host-drag", text);
+        Assert.Contains("DragDrop.DoDragDrop", text);
+        Assert.Contains("StreamDragDataFormats.StreamUrl", text);
+        Assert.Contains("DataFormats.UnicodeText", text);
+        Assert.Contains("NewWindowRequested", text);
     }
 
     private static XDocument LoadExplorerPanelDocument()

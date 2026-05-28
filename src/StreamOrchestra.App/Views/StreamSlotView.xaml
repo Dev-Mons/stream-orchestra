@@ -22,9 +22,6 @@
             <Grid Background="#05070A">
                 <wv2:WebView2 x:Name="Browser"
                               AllowExternalDrop="True"
-                              AllowDrop="True"
-                              DragOver="SlotBorder_DragOver"
-                              Drop="SlotBorder_Drop"
                               PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown"
                               PreviewMouseWheel="SlotBorder_PreviewMouseWheel" />
                 <Border x:Name="InitializationOverlay"

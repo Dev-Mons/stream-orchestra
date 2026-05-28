@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -71,6 +72,8 @@ public partial class ExplorerPanel : UserControl
         Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
         Browser.CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
         Browser.CoreWebView2.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
+        Browser.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+        Browser.CoreWebView2.NewWindowRequested += CoreWebView2_NewWindowRequested;
         _isInitialized = true;
     }
 
@@ -95,43 +98,114 @@ public partial class ExplorerPanel : UserControl
 
   window.__streamOrchestraLinkDragInstalled = true;
 
+  // Warm the host IPC channel so the first user drag does not race with cold-start latency.
+  window.chrome?.webview?.postMessage({ type: "drag-warmup" });
+
+  function resolveAnchorUrl(anchor) {
+    try {
+      const url = new URL(anchor.getAttribute("href"), document.baseURI).href;
+      return /^https?:\/\//i.test(url) ? url : "";
+    } catch {
+      return "";
+    }
+  }
+
+  // Use the browser's own drag-threshold detection (dragstart) as the trigger.
+  // preventDefault cancels the WebView2-initiated OLE drag (which has stuck-state bugs),
+  // and we ask the WPF host to start its own DragDrop instead. dragstart fires exactly
+  // once at threshold crossing, eliminating mousemove tracking races.
   document.addEventListener("dragstart", event => {
     const anchor = event.target?.closest?.("a[href]");
-    if (!anchor || !event.dataTransfer) {
+    if (!anchor) {
       return;
     }
 
-    let url = "";
-    try {
-      url = new URL(anchor.getAttribute("href"), document.baseURI).href;
-    } catch {
+    const url = resolveAnchorUrl(anchor);
+    if (!url) {
       return;
     }
 
-    if (!/^https?:\/\//i.test(url)) {
-      return;
-    }
+    event.preventDefault();
 
     const title = anchor.textContent?.trim() || anchor.getAttribute("title") || url;
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData("text/plain", url);
-    event.dataTransfer.setData("text/uri-list", url);
-    event.dataTransfer.setData("text/html", `<a href="${escapeAttribute(url)}">${escapeHtml(title)}</a>`);
+    window.chrome?.webview?.postMessage({
+      type: "begin-host-drag",
+      url,
+      streamName: title
+    });
   }, true);
-
-  function escapeHtml(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
-  }
-
-  function escapeAttribute(value) {
-    return escapeHtml(value).replaceAll("'", "&#39;");
-  }
 })();
 """;
+    }
+
+    private void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        LinkDragMessage? message;
+        try
+        {
+            message = JsonSerializer.Deserialize<LinkDragMessage>(e.WebMessageAsJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (message is null ||
+            !message.Type.Equals("begin-host-drag", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(message.Url))
+        {
+            return;
+        }
+
+        BeginHostDrag(message.Url, message.StreamName);
+    }
+
+    private void BeginHostDrag(string url, string? streamName)
+    {
+        var normalizedUrl = _navigationService.NormalizeUrl(url);
+        if (normalizedUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var data = new DataObject();
+        data.SetData(StreamDragDataFormats.StreamUrl, normalizedUrl);
+        data.SetData(DataFormats.UnicodeText, normalizedUrl);
+        data.SetData(DataFormats.Text, normalizedUrl);
+        if (!string.IsNullOrWhiteSpace(streamName))
+        {
+            data.SetData(StreamDragDataFormats.StreamName, streamName.Trim());
+        }
+
+        try
+        {
+            DragDrop.DoDragDrop(this, data, DragDropEffects.Copy);
+        }
+        catch
+        {
+            // Drag may fail if the mouse button was released before the host took over.
+        }
+    }
+
+    private void CoreWebView2_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        if (!string.IsNullOrWhiteSpace(e.Uri))
+        {
+            Browser.CoreWebView2.Navigate(e.Uri);
+        }
+    }
+
+    private sealed class LinkDragMessage
+    {
+        public string Type { get; init; } = "";
+
+        public string Url { get; init; } = "";
+
+        public string? StreamName { get; init; }
     }
 
     private void CoreWebView2_SourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)

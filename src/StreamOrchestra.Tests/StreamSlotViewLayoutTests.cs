@@ -43,11 +43,13 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Equal("True", GetAttribute(slotBorder, "AllowDrop"));
         Assert.Equal("SlotBorder_DragOver", GetAttribute(slotBorder, "DragOver"));
         Assert.Equal("SlotBorder_Drop", GetAttribute(slotBorder, "Drop"));
-        Assert.Equal("True", GetAttribute(FindElementByName(document, "Browser"), "AllowExternalDrop"));
-        Assert.Equal("SlotBorder_DragOver", GetAttribute(FindElementByName(document, "Browser"), "DragOver"));
-        Assert.Equal("SlotBorder_Drop", GetAttribute(FindElementByName(document, "Browser"), "Drop"));
-        Assert.Equal("SlotBorder_PreviewMouseLeftButtonDown", GetAttribute(FindElementByName(document, "Browser"), "PreviewMouseLeftButtonDown"));
-        Assert.Equal("SlotBorder_PreviewMouseWheel", GetAttribute(FindElementByName(document, "Browser"), "PreviewMouseWheel"));
+        var browser = FindElementByName(document, "Browser");
+        Assert.Equal("True", GetAttribute(browser, "AllowExternalDrop"));
+        Assert.Null(GetAttribute(browser, "AllowDrop"));
+        Assert.Null(GetAttribute(browser, "DragOver"));
+        Assert.Null(GetAttribute(browser, "Drop"));
+        Assert.Equal("SlotBorder_PreviewMouseLeftButtonDown", GetAttribute(browser, "PreviewMouseLeftButtonDown"));
+        Assert.Equal("SlotBorder_PreviewMouseWheel", GetAttribute(browser, "PreviewMouseWheel"));
     }
 
     [Fact]
