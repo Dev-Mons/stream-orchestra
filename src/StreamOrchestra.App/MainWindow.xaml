@@ -160,6 +160,7 @@
                   Background="#05070A"
                   AllowDrop="True"
                   DragOver="SlotsGrid_DragOver"
+                  DragLeave="SlotsGrid_DragLeave"
                   Drop="SlotsGrid_Drop" />
         </Grid>
 
