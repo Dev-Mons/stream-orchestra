@@ -33,6 +33,10 @@ public partial class ExplorerPanel : UserControl
 
     public string CurrentTitle { get; private set; } = "";
 
+    public event Action? HostDragStarted;
+
+    public event Action? HostDragCompleted;
+
     private async void ExplorerPanel_Loaded(object sender, RoutedEventArgs e)
     {
         try
@@ -182,11 +186,16 @@ public partial class ExplorerPanel : UserControl
 
         try
         {
+            HostDragStarted?.Invoke();
             DragDrop.DoDragDrop(this, data, DragDropEffects.Copy);
         }
         catch
         {
             // Drag may fail if the mouse button was released before the host took over.
+        }
+        finally
+        {
+            HostDragCompleted?.Invoke();
         }
     }
 
@@ -321,8 +330,16 @@ public partial class ExplorerPanel : UserControl
             data.SetData(StreamDragDataFormats.StreamName, CurrentTitle.Trim());
         }
 
-        DragDrop.DoDragDrop(ExplorerDragSource, data, DragDropEffects.Copy);
-        _dragStartPoint = null;
+        try
+        {
+            HostDragStarted?.Invoke();
+            DragDrop.DoDragDrop(ExplorerDragSource, data, DragDropEffects.Copy);
+        }
+        finally
+        {
+            _dragStartPoint = null;
+            HostDragCompleted?.Invoke();
+        }
     }
 
     private void ShowInitializationError(Exception ex)

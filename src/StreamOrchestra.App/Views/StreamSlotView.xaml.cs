@@ -26,6 +26,7 @@ public partial class StreamSlotView : UserControl
     private string _preferredQualityKey = "master";
     private string? _playbackViewportScriptId;
     private string? _qualityObserverScriptId;
+    private Point? _slotDragStartPoint;
 
     public StreamSlotView(
         SlotConfiguration configuration,
@@ -55,6 +56,16 @@ public partial class StreamSlotView : UserControl
     public event Action<StreamSlotView>? SlotSelected;
 
     public event Action<StreamSlotView, string, string?>? StreamUrlDropRequested;
+
+    public event Action? HostDragStarted;
+
+    public event Action? HostDragCompleted;
+
+    public event Action<StreamSlotView, DockDirection>? DockPreviewRequested;
+
+    public event Action<StreamSlotView>? DockPreviewEnded;
+
+    public event Action<StreamSlotView, string, string?, DockDirection>? StreamDockDropRequested;
 
     public SlotConfiguration Configuration { get; }
 
@@ -257,6 +268,26 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
+        if (message.Type.Equals("stream-dock-preview", StringComparison.OrdinalIgnoreCase))
+        {
+            DockPreviewRequested?.Invoke(this, ParseDockDirection(message.Direction));
+            return;
+        }
+
+        if (message.Type.Equals("stream-dock-leave", StringComparison.OrdinalIgnoreCase))
+        {
+            DockPreviewEnded?.Invoke(this);
+            return;
+        }
+
+        if (message.Type.Equals("stream-dock-drop", StringComparison.OrdinalIgnoreCase) &&
+            StreamDropDataReader.TryNormalizeDroppedText(message.Url, _navigationService, out var dockUrl))
+        {
+            SlotSelected?.Invoke(this);
+            StreamDockDropRequested?.Invoke(this, dockUrl, message.StreamName, ParseDockDirection(message.Direction));
+            return;
+        }
+
         if (!message.Type.Equals("stream-drop", StringComparison.OrdinalIgnoreCase) ||
             !StreamDropDataReader.TryNormalizeDroppedText(message.Url, _navigationService, out var url))
         {
@@ -269,7 +300,46 @@ public partial class StreamSlotView : UserControl
 
     private void SlotBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        _slotDragStartPoint = e.GetPosition(this);
         SlotSelected?.Invoke(this);
+    }
+
+    private void SlotBorder_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_slotDragStartPoint is null || e.LeftButton != MouseButtonState.Pressed)
+        {
+            return;
+        }
+
+        var currentPoint = e.GetPosition(this);
+        var movedEnough =
+            Math.Abs(currentPoint.X - _slotDragStartPoint.Value.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+            Math.Abs(currentPoint.Y - _slotDragStartPoint.Value.Y) >= SystemParameters.MinimumVerticalDragDistance;
+        if (!movedEnough)
+        {
+            return;
+        }
+
+        _slotDragStartPoint = null;
+        var data = new DataObject();
+        data.SetData(StreamDragDataFormats.SlotId, SlotId.ToString());
+        data.SetData(StreamDragDataFormats.StreamUrl, CurrentUrl);
+        data.SetData(DataFormats.UnicodeText, CurrentUrl);
+        data.SetData(DataFormats.Text, CurrentUrl);
+        if (!string.IsNullOrWhiteSpace(CurrentStreamName))
+        {
+            data.SetData(StreamDragDataFormats.StreamName, CurrentStreamName);
+        }
+
+        try
+        {
+            HostDragStarted?.Invoke();
+            DragDrop.DoDragDrop(this, data, DragDropEffects.Copy);
+        }
+        finally
+        {
+            HostDragCompleted?.Invoke();
+        }
     }
 
     private void SlotBorder_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -343,10 +413,12 @@ public partial class StreamSlotView : UserControl
         if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out _, out _))
         {
             e.Effects = DragDropEffects.Copy;
+            DockPreviewRequested?.Invoke(this, CalculateDockDirection(sender, e));
         }
         else
         {
             e.Effects = DragDropEffects.None;
+            DockPreviewEnded?.Invoke(this);
         }
 
         e.Handled = true;
@@ -356,10 +428,71 @@ public partial class StreamSlotView : UserControl
     {
         if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out var url, out var streamName))
         {
+            var direction = CalculateDockDirection(sender, e);
             SlotSelected?.Invoke(this);
-            StreamUrlDropRequested?.Invoke(this, url, streamName);
+            if (direction is DockDirection.Left or DockDirection.Right or DockDirection.Top or DockDirection.Bottom)
+            {
+                StreamDockDropRequested?.Invoke(this, url, streamName, direction);
+            }
+            else
+            {
+                StreamUrlDropRequested?.Invoke(this, url, streamName);
+            }
+
             e.Handled = true;
         }
+    }
+
+    private static DockDirection CalculateDockDirection(object sender, DragEventArgs e)
+    {
+        if (sender is not FrameworkElement element || element.ActualWidth <= 0 || element.ActualHeight <= 0)
+        {
+            return DockDirection.Center;
+        }
+
+        var position = e.GetPosition(element);
+        return CalculateDockDirection(position.X, position.Y, element.ActualWidth, element.ActualHeight);
+    }
+
+    private static DockDirection CalculateDockDirection(double x, double y, double width, double height)
+    {
+        var edgeWidth = width * 0.25;
+        var edgeHeight = height * 0.25;
+
+        if (x <= edgeWidth)
+        {
+            return DockDirection.Left;
+        }
+
+        if (x >= width - edgeWidth)
+        {
+            return DockDirection.Right;
+        }
+
+        if (y <= edgeHeight)
+        {
+            return DockDirection.Top;
+        }
+
+        if (y >= height - edgeHeight)
+        {
+            return DockDirection.Bottom;
+        }
+
+        return DockDirection.Center;
+    }
+
+    private static DockDirection ParseDockDirection(string? direction)
+    {
+        return direction?.Trim().ToLowerInvariant() switch
+        {
+            "left" => DockDirection.Left,
+            "right" => DockDirection.Right,
+            "top" => DockDirection.Top,
+            "bottom" => DockDirection.Bottom,
+            "center" => DockDirection.Center,
+            _ => DockDirection.Center
+        };
     }
 
     private static string NormalizeQualityKey(string qualityKey)
@@ -432,6 +565,53 @@ public partial class StreamSlotView : UserControl
       opacity: 0 !important;
       pointer-events: none !important;
     }
+
+    .embeded_mode #webplayer.chat_open #chatting_area {
+      display: none !important;
+    }
+
+    .embeded_mode #webplayer #player div.quality_box {
+      display: block !important;
+    }
+
+    .popout_chat #chatting_area {
+      min-width: auto !important;
+    }
+
+    body.screen_mode #webplayer #webplayer_contents,
+    body.fullScreen_mode #webplayer #webplayer_contents {
+      position: fixed !important;
+      inset: 0 !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+      display: flex !important;
+      flex-direction: row !important;
+      background: #000 !important;
+    }
+
+    body.screen_mode #webplayer #webplayer_contents #player_area,
+    body.fullScreen_mode #webplayer #webplayer_contents #player_area {
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+      width: auto !important;
+      height: 100vh !important;
+      background: #000 !important;
+    }
+
+    body.screen_mode #webplayer #webplayer_contents .wrapping.side,
+    body.fullScreen_mode #webplayer #webplayer_contents .wrapping.side {
+      display: none !important;
+      width: 0 !important;
+      min-width: 0 !important;
+      max-width: 0 !important;
+      overflow: hidden !important;
+      padding: 0 !important;
+      flex-shrink: 0 !important;
+    }
+
   `;
 
   function installStyle() {
@@ -458,6 +638,18 @@ public partial class StreamSlotView : UserControl
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "copy";
+    window.chrome?.webview?.postMessage({
+      type: "stream-dock-preview",
+      direction: calculateDockDirection(event.clientX, event.clientY)
+    });
+  }, true);
+
+  document.addEventListener("dragleave", event => {
+    if (event.relatedTarget) {
+      return;
+    }
+
+    window.chrome?.webview?.postMessage({ type: "stream-dock-leave" });
   }, true);
 
   document.addEventListener("drop", event => {
@@ -469,9 +661,10 @@ public partial class StreamSlotView : UserControl
     event.preventDefault();
     event.stopPropagation();
     window.chrome?.webview?.postMessage({
-      type: "stream-drop",
+      type: "stream-dock-drop",
       url: payload.url,
-      streamName: payload.streamName || ""
+      streamName: payload.streamName || "",
+      direction: calculateDockDirection(event.clientX, event.clientY)
     });
   }, true);
 
@@ -511,6 +704,31 @@ public partial class StreamSlotView : UserControl
     return url
       ? { url, streamName: htmlPayload.streamName || "" }
       : null;
+  }
+
+  function calculateDockDirection(clientX, clientY) {
+    const width = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    const height = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    const edgeWidth = width * 0.25;
+    const edgeHeight = height * 0.25;
+
+    if (clientX <= edgeWidth) {
+      return "left";
+    }
+
+    if (clientX >= width - edgeWidth) {
+      return "right";
+    }
+
+    if (clientY <= edgeHeight) {
+      return "top";
+    }
+
+    if (clientY >= height - edgeHeight) {
+      return "bottom";
+    }
+
+    return "center";
   }
 
   function readHtmlPayload(html) {
@@ -617,7 +835,7 @@ public partial class StreamSlotView : UserControl
 
   function applySoopImmersiveMode() {
     const host = location.hostname.toLowerCase();
-    if (!host.includes("sooplive.co.kr")) {
+    if (!isSoopHost(host)) {
       return;
     }
 
@@ -633,6 +851,19 @@ public partial class StreamSlotView : UserControl
       ".title_area"
     ];
 
+    const fullscreenButtonSelectors = [
+      ".btn_fullScreen_mode"
+    ];
+
+    const screenModeButtonSelectors = [
+      ".btn_screen_mode"
+    ];
+
+    let soopFullscreenRetryCount = 0;
+    let soopFullscreenRetryTimer = 0;
+    let lastScreenModeClickAt = 0;
+    let lastFullscreenClickAt = 0;
+
     const hideElements = () => {
       for (const selector of hideSelectors) {
         for (const element of document.querySelectorAll(selector)) {
@@ -641,13 +872,134 @@ public partial class StreamSlotView : UserControl
       }
     };
 
+    const isUsableElement = element =>
+      element &&
+      element !== document.documentElement &&
+      element !== document.body;
+
+    const findFirstButton = selectors => {
+      for (const selector of selectors) {
+        const button = document.querySelector(selector);
+        if (isUsableElement(button)) {
+          return button;
+        }
+      }
+
+      return null;
+    };
+
+    const isSoopPlaybackModeActive = () =>
+      Boolean(document.body?.classList.contains("screen_mode") ||
+        document.body?.classList.contains("fullScreen_mode") ||
+        document.fullscreenElement);
+
+    const clickScreenModeButton = () => {
+      if (document.body?.classList.contains("screen_mode")) {
+        return true;
+      }
+
+      const button = findFirstButton(screenModeButtonSelectors);
+      if (!button) {
+        return false;
+      }
+
+      const now = Date.now();
+      if (now - lastScreenModeClickAt < 1000) {
+        return false;
+      }
+
+      lastScreenModeClickAt = now;
+      button.click();
+      return true;
+    };
+
+    const clickFullscreenButton = () => {
+      if (document.body?.classList.contains("fullScreen_mode") || document.fullscreenElement) {
+        return true;
+      }
+
+      const button = findFirstButton(fullscreenButtonSelectors);
+      if (!button) {
+        return false;
+      }
+
+      const now = Date.now();
+      if (now - lastFullscreenClickAt < 1000) {
+        return false;
+      }
+
+      lastFullscreenClickAt = now;
+      button.click();
+      return true;
+    };
+
+    const requestSoopFullscreenViewport = () => {
+      if (!document.querySelector("video")) {
+        return;
+      }
+
+      clickScreenModeButton();
+      clickFullscreenButton();
+    };
+
+    const scheduleSoopFullscreenRetry = () => {
+      if (isSoopPlaybackModeActive() || soopFullscreenRetryCount >= 120 || soopFullscreenRetryTimer !== 0) {
+        return;
+      }
+
+      soopFullscreenRetryTimer = window.setTimeout(() => {
+        soopFullscreenRetryTimer = 0;
+        soopFullscreenRetryCount += 1;
+        requestSoopFullscreenViewport();
+        scheduleSoopFullscreenRetry();
+      }, 250);
+    };
+
+    const wireMediaPlayback = () => {
+      for (const video of document.querySelectorAll("video")) {
+        if (video.__streamOrchestraSoopPlaybackWired) {
+          continue;
+        }
+
+        video.__streamOrchestraSoopPlaybackWired = true;
+        video.addEventListener("play", () => {
+          requestSoopFullscreenViewport();
+          scheduleSoopFullscreenRetry();
+        }, { passive: true });
+        if (!video.paused) {
+          requestSoopFullscreenViewport();
+          scheduleSoopFullscreenRetry();
+        }
+      }
+    };
+
     hideElements();
-    const observer = new MutationObserver(hideElements);
+    wireMediaPlayback();
+    const observer = new MutationObserver(() => {
+      hideElements();
+      wireMediaPlayback();
+      if (document.querySelector("video")) {
+        scheduleSoopFullscreenRetry();
+      }
+    });
     const target = document.documentElement || document.body;
     if (target) {
       observer.observe(target, { childList: true, subtree: true });
     }
-    window.addEventListener("DOMContentLoaded", hideElements, { once: true });
+    window.addEventListener("DOMContentLoaded", () => {
+      hideElements();
+      wireMediaPlayback();
+      requestSoopFullscreenViewport();
+      scheduleSoopFullscreenRetry();
+    }, { once: true });
+    document.addEventListener("fullscreenchange", requestSoopFullscreenViewport);
+  }
+
+  function isSoopHost(host) {
+    return host === "sooplive.co.kr" ||
+      host.endsWith(".sooplive.co.kr") ||
+      host === "sooplive.com" ||
+      host.endsWith(".sooplive.com");
   }
 })();
 """;
@@ -846,6 +1198,8 @@ public partial class StreamSlotView : UserControl
         public string Url { get; init; } = "";
 
         public string? StreamName { get; init; }
+
+        public string? Direction { get; init; }
 
         public double DeltaY { get; init; }
     }

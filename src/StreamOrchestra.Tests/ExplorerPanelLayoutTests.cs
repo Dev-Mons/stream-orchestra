@@ -72,6 +72,8 @@ public sealed class ExplorerPanelLayoutTests
         Assert.Contains("a[href]", text);
         Assert.Contains("begin-host-drag", text);
         Assert.Contains("DragDrop.DoDragDrop", text);
+        Assert.Contains("HostDragStarted?.Invoke", text);
+        Assert.Contains("HostDragCompleted?.Invoke", text);
         Assert.Contains("StreamDragDataFormats.StreamUrl", text);
         Assert.Contains("DataFormats.UnicodeText", text);
         Assert.Contains("NewWindowRequested", text);

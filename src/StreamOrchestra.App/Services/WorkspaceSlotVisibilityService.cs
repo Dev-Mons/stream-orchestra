@@ -26,6 +26,28 @@ public sealed class WorkspaceSlotVisibilityService
         };
     }
 
+    public WorkspacePreset BlankHiddenSlots(WorkspacePreset workspace, LayoutTreeDocument layoutTree)
+    {
+        var visibleSlotIds = layoutTree.Root is null
+            ? new HashSet<int>()
+            : LayoutTreePresetConverter.GetVisibleSlotIds(layoutTree)
+                .Where(slotId => slotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount)
+                .ToHashSet();
+        IEnumerable<WorkspaceSlot?> sourceSlots = workspace.Slots ?? [];
+
+        return new WorkspacePreset
+        {
+            Id = workspace.Id,
+            Name = workspace.Name,
+            LayoutId = "dynamic",
+            LayoutTree = layoutTree,
+            Slots = sourceSlots
+                .OfType<WorkspaceSlot>()
+                .Select(slot => visibleSlotIds.Contains(slot.SlotId) ? slot : BlankSlot(slot))
+                .ToArray()
+        };
+    }
+
     private static WorkspaceSlot BlankSlot(WorkspaceSlot slot)
     {
         return new WorkspaceSlot

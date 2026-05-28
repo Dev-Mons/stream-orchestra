@@ -17,12 +17,14 @@
             DragOver="SlotBorder_DragOver"
             Drop="SlotBorder_Drop"
             PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown"
+            MouseMove="SlotBorder_MouseMove"
             PreviewMouseWheel="SlotBorder_PreviewMouseWheel">
         <Grid>
             <Grid Background="#05070A">
                 <wv2:WebView2 x:Name="Browser"
                               AllowExternalDrop="True"
                               PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown"
+                              MouseMove="SlotBorder_MouseMove"
                               PreviewMouseWheel="SlotBorder_PreviewMouseWheel" />
                 <Border x:Name="InitializationOverlay"
                         Background="#05070A">

@@ -105,9 +105,38 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("TryGetDropTargetSlot", codeBehind);
         Assert.Contains("LoadDroppedStreamIntoSlotAsync", codeBehind);
         Assert.Contains("StreamDropDataReader.TryGetDroppedStream", codeBehind);
-        Assert.Contains("layout.ColumnWeights", codeBehind);
-        Assert.Contains("layout.RowWeights", codeBehind);
-        Assert.Contains("GetGridWeight", codeBehind);
+        Assert.Contains("LayoutTreePresetConverter.Convert", codeBehind);
+        Assert.Contains("LayoutTreeRenderer.Build", codeBehind);
+    }
+
+    [Fact]
+    public void PlaybackGrid_WiresDynamicDockingPreviewAndDropFlow()
+    {
+        var document = LoadMainWindowDocument();
+        var slotsGrid = FindElementByName(document, "SlotsGrid");
+        var codeBehindPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "MainWindow.xaml.cs"));
+        var codeBehind = File.ReadAllText(codeBehindPath);
+
+        Assert.Equal("SlotsGrid_DragLeave", GetAttribute(slotsGrid, "DragLeave"));
+        Assert.Contains("DockingOverlayPresenter", codeBehind);
+        Assert.Contains("LayoutTreeMutationService", codeBehind);
+        Assert.Contains("ApplyLayoutTree", codeBehind);
+        Assert.Contains("CreateDockedSlotFromDropAsync", codeBehind);
+        Assert.Contains("DockingInputOverlay", codeBehind);
+        Assert.Contains("ShowDockingInputOverlay", codeBehind);
+        Assert.Contains("HideDockingInputOverlay", codeBehind);
+        Assert.Contains("GetDockPointerPosition", codeBehind);
+        Assert.Contains("_lastDockTargetSlot", codeBehind);
+        Assert.Contains("_lastDockDirection", codeBehind);
+        Assert.Contains("ShowDockingInputPreview", codeBehind);
+        Assert.Contains("_dockingInputPreview", codeBehind);
     }
 
     [Fact]
