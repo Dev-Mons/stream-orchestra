@@ -13,7 +13,10 @@ public enum LayoutCardMode
     Add,
 
     /// <summary>슬롯 제거 버튼으로 화면을 줄일(N → N-1) 때.</summary>
-    Remove
+    Remove,
+
+    /// <summary>왼쪽 Alt 키로 현재 화면 수(N)를 유지한 채 레이아웃만 전환할 때.</summary>
+    Switch
 }
 
 /// <summary>
@@ -106,14 +109,17 @@ public sealed class LayoutCardPresenter
     {
         _cardPanel.Children.Clear();
 
-        _title.Text = mode == LayoutCardMode.Remove
-            ? "전환할 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)"
-            : "채널을 카드 위에 드롭하면 레이아웃이 전환됩니다.";
+        _title.Text = mode switch
+        {
+            LayoutCardMode.Remove => "전환할 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)",
+            LayoutCardMode.Switch => "현재 화면 수에 맞는 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)",
+            _ => "채널을 카드 위에 드롭하면 레이아웃이 전환됩니다."
+        };
 
         // 첫 번째 카드는 항상 "아무것도 안 함"(취소) 카드.
         _cardPanel.Children.Add(CreateCancelCard());
 
-        _emptyMessage.Visibility = candidates.Count == 0 && mode == LayoutCardMode.Add
+        _emptyMessage.Visibility = candidates.Count == 0 && mode != LayoutCardMode.Remove
             ? Visibility.Visible
             : Visibility.Collapsed;
 
@@ -128,7 +134,10 @@ public sealed class LayoutCardPresenter
         _popup.VerticalOffset = 0;
         _popup.IsOpen = true;
 
-        if (_cardPanel.Children.Count > 0 && _cardPanel.Children[0] is Button firstCard)
+        // 전환(Switch)은 왼쪽 Alt 홀드로 동작하므로 팝업에 포커스를 주면
+        // 메인 윈도우가 Alt 키 해제 이벤트를 받지 못한다. 이 모드에서는 포커스를 옮기지 않는다.
+        if (mode != LayoutCardMode.Switch &&
+            _cardPanel.Children.Count > 0 && _cardPanel.Children[0] is Button firstCard)
         {
             firstCard.Focus();
         }

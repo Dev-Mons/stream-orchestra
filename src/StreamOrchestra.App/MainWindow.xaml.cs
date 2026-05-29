@@ -73,7 +73,11 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         PreviewKeyUp += MainWindow_PreviewKeyUp;
-        Deactivated += (_, _) => SetRemoveModeActive(false);
+        Deactivated += (_, _) =>
+        {
+            SetRemoveModeActive(false);
+            SetSwapModeActive(false);
+        };
     }
 
     private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -81,6 +85,27 @@ public partial class MainWindow : Window
         if (e.Key is Key.LeftCtrl or Key.RightCtrl)
         {
             SetRemoveModeActive(true);
+            return;
+        }
+
+        // 왼쪽 Shift를 누르고 있는 동안 슬롯 간 영상 교체 오버레이를 표시한다(홀드 방식).
+        if (e.Key == Key.LeftShift)
+        {
+            SetSwapModeActive(true);
+            return;
+        }
+
+        // 왼쪽 Alt를 누르고 있는 동안 현재 화면 수(N) 레이아웃 카드를 표시한다(홀드 방식).
+        // Alt 키는 SystemKey로 들어오며, 자동 반복이어도 메뉴 활성화를 막기 위해 항상 소비한다.
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.LeftAlt)
+        {
+            if (!e.IsRepeat)
+            {
+                ShowSwitchLayoutCards();
+            }
+
+            e.Handled = true;
         }
     }
 
@@ -89,6 +114,26 @@ public partial class MainWindow : Window
         if (e.Key is Key.LeftCtrl or Key.RightCtrl)
         {
             SetRemoveModeActive(false);
+            return;
+        }
+
+        // 왼쪽 Shift를 떼면 교체 오버레이를 닫는다.
+        if (e.Key == Key.LeftShift)
+        {
+            SetSwapModeActive(false);
+            return;
+        }
+
+        // 왼쪽 Alt를 떼면 전환 카드를 닫는다(메뉴 진입 방지를 위해 이벤트를 소비).
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.LeftAlt)
+        {
+            if (_layoutCardMode == LayoutCardMode.Switch)
+            {
+                HideSwitchLayoutCards();
+            }
+
+            e.Handled = true;
         }
     }
 
@@ -113,6 +158,7 @@ public partial class MainWindow : Window
             slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
             slotView.RemoveSlotRequested += SlotView_RemoveSlotRequested;
             slotView.CtrlStateChanged += SetRemoveModeActive;
+            slotView.ShiftStateChanged += SetSwapModeActive;
             _slots.Add(slotView);
         }
     }
@@ -565,6 +611,25 @@ public partial class MainWindow : Window
         }
     }
 
+    // 교체 모드(왼쪽 Shift 홀드): 보이는 모든 슬롯 위에 드래그용 오버레이를 표시한다.
+    private void SetSwapModeActive(bool isActive)
+    {
+        // 레이아웃 카드 오버레이가 떠 있는 동안에는 교체 모드를 켜지 않는다.
+        if (isActive && _layoutCardPresenter.IsOpen)
+        {
+            return;
+        }
+
+        var visibleSlotIds = _selectedLayout is { } layout
+            ? layout.Slots.Select(s => s.SlotId).ToHashSet()
+            : [];
+
+        foreach (var slot in _slots)
+        {
+            slot.SetSwapModeActive(isActive && visibleSlotIds.Contains(slot.SlotId));
+        }
+    }
+
     private bool CanRemoveCurrentScreen(out string reason)
     {
         var currentCount = _selectedLayout?.EffectiveSlotCount ?? 0;
@@ -607,6 +672,46 @@ public partial class MainWindow : Window
             .Select(slotId => _slots.First(candidate => candidate.SlotId == slotId))
             .Select(candidate => (candidate.CurrentUrl, candidate.CurrentStreamName))
             .ToArray();
+
+        await RefillTemplateSlotsAsync(template, survivors);
+
+        StatusTextBlock.Text = $"화면을 제거하고 '{template.Name}' 레이아웃으로 전환했습니다.";
+        UpdateDiagnostics();
+    }
+
+    // 왼쪽 Alt 카드 선택: 현재 화면 수(N)를 유지한 채 같은 슬롯 수의 다른 레이아웃으로 전환한다.
+    // 현재 채널을 슬롯 순서대로 새 템플릿 슬롯에 다시 채운다.
+    private async Task ApplySwitchAsync(LayoutPreset template)
+    {
+        if (_selectedLayout is not { } currentLayout)
+        {
+            return;
+        }
+
+        if (currentLayout.Id.Equals(template.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            StatusTextBlock.Text = $"이미 '{template.Name}' 레이아웃입니다.";
+            return;
+        }
+
+        var streams = currentLayout.Slots
+            .Select(visibleSlot => visibleSlot.SlotId)
+            .OrderBy(slotId => slotId)
+            .Select(slotId => _slots.First(candidate => candidate.SlotId == slotId))
+            .Select(candidate => (candidate.CurrentUrl, candidate.CurrentStreamName))
+            .ToArray();
+
+        await RefillTemplateSlotsAsync(template, streams);
+
+        StatusTextBlock.Text = $"'{template.Name}' 레이아웃으로 전환했습니다.";
+        UpdateDiagnostics();
+    }
+
+    // 새 템플릿을 적용하고, 보존된 채널을 템플릿 슬롯에 순서대로 다시 채운다.
+    private async Task RefillTemplateSlotsAsync(
+        LayoutPreset template,
+        IReadOnlyList<(string CurrentUrl, string CurrentStreamName)> survivors)
+    {
         var targetSlotIds = template.Slots
             .Select(templateSlot => templateSlot.SlotId)
             .OrderBy(slotId => slotId)
@@ -617,8 +722,8 @@ public partial class MainWindow : Window
         for (var index = 0; index < targetSlotIds.Length; index++)
         {
             var targetSlot = _slots.First(candidate => candidate.SlotId == targetSlotIds[index]);
-            var desiredUrl = index < survivors.Length ? survivors[index].CurrentUrl : "about:blank";
-            var desiredName = index < survivors.Length ? survivors[index].CurrentStreamName : null;
+            var desiredUrl = index < survivors.Count ? survivors[index].CurrentUrl : "about:blank";
+            var desiredName = index < survivors.Count ? survivors[index].CurrentStreamName : null;
 
             if (targetSlot.CurrentUrl.Equals(desiredUrl, StringComparison.OrdinalIgnoreCase))
             {
@@ -634,9 +739,6 @@ public partial class MainWindow : Window
                 await NavigateSlotAsync(targetSlot, desiredUrl, desiredName);
             }
         }
-
-        StatusTextBlock.Text = $"화면을 제거하고 '{template.Name}' 레이아웃으로 전환했습니다.";
-        UpdateDiagnostics();
     }
 
     private void ShowLayoutCards()
@@ -652,10 +754,44 @@ public partial class MainWindow : Window
             : $"슬롯 {currentVisibleSlotCount + 1}개에 맞는 레이아웃 템플릿이 없습니다.";
     }
 
+    // 왼쪽 Alt를 누르고 있는 동안 현재 화면 수(N)와 같은 슬롯 수의 레이아웃 카드를 표시한다.
+    private void ShowSwitchLayoutCards()
+    {
+        // 이미 카드가 떠 있으면(예: 제거 카드) 덮어쓰지 않는다.
+        if (_layoutCardPresenter.IsOpen)
+        {
+            return;
+        }
+
+        _pendingRemovalSlot = null;
+        SetRemoveModeActive(false);
+
+        var currentCount = _selectedLayout?.EffectiveSlotCount ?? GetVisibleSlotViews().Count();
+        if (currentCount <= 0)
+        {
+            StatusTextBlock.Text = "표시 중인 화면이 없어 레이아웃 카드를 띄울 수 없습니다.";
+            return;
+        }
+
+        var candidates = _layoutTemplateCandidateService.GetTemplatesForSlotCount(_layouts, currentCount);
+        _layoutCardMode = LayoutCardMode.Switch;
+        _layoutCardPresenter.Show(candidates, SlotsGrid, LayoutCardMode.Switch);
+
+        StatusTextBlock.Text = candidates.Count > 0
+            ? $"슬롯 {currentCount}개 레이아웃 카드 {candidates.Count}개 표시 중. 전환할 카드를 선택하세요."
+            : $"슬롯 {currentCount}개에 맞는 레이아웃 템플릿이 없습니다.";
+    }
+
+    private void HideSwitchLayoutCards()
+    {
+        _layoutCardPresenter.Hide();
+        _layoutCardMode = LayoutCardMode.Add;
+    }
+
     private void HideLayoutCards()
     {
-        // 제거 카드는 카드를 눌러야만 닫힌다. 드래그 종료(추가 모드)에서만 자동으로 닫는다.
-        if (_layoutCardMode == LayoutCardMode.Remove)
+        // 제거/전환 카드는 카드를 눌러야만 닫힌다. 드래그 종료(추가 모드)에서만 자동으로 닫는다.
+        if (_layoutCardMode is LayoutCardMode.Remove or LayoutCardMode.Switch)
         {
             return;
         }
@@ -686,6 +822,12 @@ public partial class MainWindow : Window
                 await ApplyRemovalAsync(removalSlot, template);
             }
 
+            return;
+        }
+
+        if (mode == LayoutCardMode.Switch)
+        {
+            await ApplySwitchAsync(template);
             return;
         }
 

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Text.Json;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -16,6 +17,9 @@ public partial class StreamSlotView : UserControl
     private const int InitialVolumePercent = 100;
     private const int VolumeStepPercent = 10;
 
+    private static readonly Brush SwapBorderBrush = new SolidColorBrush(Color.FromArgb(0x80, 0x15, 0xA3, 0xFF));
+    private static readonly Brush SwapHighlightBrush = new SolidColorBrush(Color.FromRgb(0xF3, 0xF6, 0xFA));
+
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
     private readonly DispatcherTimer _volumeOverlayTimer;
@@ -27,6 +31,7 @@ public partial class StreamSlotView : UserControl
     private string? _playbackViewportScriptId;
     private string? _qualityObserverScriptId;
     private Point? _slotDragStartPoint;
+    private Point? _swapDragStartPoint;
 
     public StreamSlotView(
         SlotConfiguration configuration,
@@ -68,6 +73,9 @@ public partial class StreamSlotView : UserControl
 
     /// <summary>WebView2 콘텐츠에서 Ctrl 키 상태가 바뀜(제거 모드 토글용).</summary>
     public event Action<bool>? CtrlStateChanged;
+
+    /// <summary>WebView2 콘텐츠에서 왼쪽 Shift 키 상태가 바뀜(교체 모드 토글용).</summary>
+    public event Action<bool>? ShiftStateChanged;
 
     public SlotConfiguration Configuration { get; }
 
@@ -156,6 +164,84 @@ public partial class StreamSlotView : UserControl
         RemoveSlotPopup.IsOpen = false;
         RemoveSlotRequested?.Invoke(this);
         e.Handled = true;
+    }
+
+    /// <summary>교체 모드(Shift 홀드)일 때 이 슬롯 위에 드래그용 오버레이를 표시/숨김.</summary>
+    public void SetSwapModeActive(bool isActive)
+    {
+        if (!isActive)
+        {
+            ResetSwapOverlayHighlight();
+        }
+
+        SwapModePopup.IsOpen = isActive;
+    }
+
+    // 교체 오버레이에서 드래그 시작 준비(빈 슬롯은 이후 MouseMove에서 드래그를 시작하지 않는다).
+    private void SwapOverlay_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _swapDragStartPoint = e.GetPosition((IInputElement)sender);
+        SlotSelected?.Invoke(this);
+    }
+
+    private void SwapOverlay_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_swapDragStartPoint is null || e.LeftButton != MouseButtonState.Pressed)
+        {
+            return;
+        }
+
+        var currentPoint = e.GetPosition((IInputElement)sender);
+        var movedEnough =
+            Math.Abs(currentPoint.X - _swapDragStartPoint.Value.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+            Math.Abs(currentPoint.Y - _swapDragStartPoint.Value.Y) >= SystemParameters.MinimumVerticalDragDistance;
+        if (!movedEnough)
+        {
+            return;
+        }
+
+        _swapDragStartPoint = null;
+
+        // 빈 슬롯은 교체할 영상이 없으므로 드래그를 시작하지 않는다.
+        if (CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var data = new DataObject();
+        data.SetData(StreamDragDataFormats.SlotId, SlotId.ToString());
+        DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+    }
+
+    private void SwapOverlay_DragOver(object sender, DragEventArgs e)
+    {
+        var canSwap = TryGetDroppedSlotId(e.Data, out var sourceSlotId) && sourceSlotId != SlotId;
+        e.Effects = canSwap ? DragDropEffects.Move : DragDropEffects.None;
+        SwapOverlayBorder.BorderBrush = canSwap ? SwapHighlightBrush : SwapBorderBrush;
+        e.Handled = true;
+    }
+
+    private void SwapOverlay_DragLeave(object sender, DragEventArgs e)
+    {
+        ResetSwapOverlayHighlight();
+    }
+
+    private void SwapOverlay_Drop(object sender, DragEventArgs e)
+    {
+        ResetSwapOverlayHighlight();
+
+        if (TryGetDroppedSlotId(e.Data, out var sourceSlotId) && sourceSlotId != SlotId)
+        {
+            SlotSelected?.Invoke(this);
+            SlotSwapRequested?.Invoke(this, sourceSlotId);
+        }
+
+        e.Handled = true;
+    }
+
+    private void ResetSwapOverlayHighlight()
+    {
+        SwapOverlayBorder.BorderBrush = SwapBorderBrush;
     }
 
     private async void StreamSlotView_Loaded(object sender, RoutedEventArgs e)
@@ -286,6 +372,12 @@ public partial class StreamSlotView : UserControl
         if (message.Type.Equals("ctrl-state", StringComparison.OrdinalIgnoreCase))
         {
             CtrlStateChanged?.Invoke(message.Pressed);
+            return;
+        }
+
+        if (message.Type.Equals("shift-state", StringComparison.OrdinalIgnoreCase))
+        {
+            ShiftStateChanged?.Invoke(message.Pressed);
             return;
         }
 
@@ -652,6 +744,31 @@ public partial class StreamSlotView : UserControl
   }, true);
 
   window.addEventListener("blur", () => reportCtrl(false), true);
+
+  // 왼쪽 Shift 홀드 → 호스트에 교체 모드 토글 신호 전달(WebView2가 키 포커스를 가져도 동작).
+  let shiftReported = false;
+  const reportShift = pressed => {
+    if (shiftReported === pressed) {
+      return;
+    }
+
+    shiftReported = pressed;
+    window.chrome?.webview?.postMessage({ type: "shift-state", pressed });
+  };
+
+  document.addEventListener("keydown", event => {
+    if (event.code === "ShiftLeft") {
+      reportShift(true);
+    }
+  }, true);
+
+  document.addEventListener("keyup", event => {
+    if (event.code === "ShiftLeft") {
+      reportShift(false);
+    }
+  }, true);
+
+  window.addEventListener("blur", () => reportShift(false), true);
 
   function hasStreamUrlData(dataTransfer) {
     if (!dataTransfer) {

@@ -81,6 +81,47 @@
                         ToolTip="이 화면 제거 (Ctrl)"
                         Click="RemoveSlotButton_Click" />
             </primitives:Popup>
+            <primitives:Popup x:Name="SwapModePopup"
+                              PlacementTarget="{Binding ElementName=SlotBorder}"
+                              Placement="Center"
+                              IsOpen="False"
+                              AllowsTransparency="True"
+                              Focusable="False"
+                              StaysOpen="True">
+                <Border x:Name="SwapOverlayBorder"
+                        Width="{Binding ActualWidth, ElementName=SlotBorder}"
+                        Height="{Binding ActualHeight, ElementName=SlotBorder}"
+                        Background="#3315A3FF"
+                        BorderBrush="#8015A3FF"
+                        BorderThickness="2"
+                        Cursor="SizeAll"
+                        AllowDrop="True"
+                        PreviewMouseLeftButtonDown="SwapOverlay_PreviewMouseLeftButtonDown"
+                        MouseMove="SwapOverlay_MouseMove"
+                        DragOver="SwapOverlay_DragOver"
+                        DragLeave="SwapOverlay_DragLeave"
+                        Drop="SwapOverlay_Drop">
+                    <Border HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Background="#B3000000"
+                            CornerRadius="6"
+                            Padding="14,10"
+                            IsHitTestVisible="False">
+                        <StackPanel>
+                            <TextBlock Text="⇄"
+                                       Foreground="#F3F6FA"
+                                       FontSize="30"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="드래그하여 위치 교체 (Shift)"
+                                       Foreground="#F3F6FA"
+                                       FontSize="12"
+                                       Margin="0,4,0,0"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </Border>
+            </primitives:Popup>
         </Grid>
     </Border>
 </UserControl>
