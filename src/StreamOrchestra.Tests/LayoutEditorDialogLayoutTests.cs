@@ -5,7 +5,7 @@ namespace StreamOrchestra.Tests;
 public sealed class LayoutEditorDialogLayoutTests
 {
     [Fact]
-    public void LayoutEditorDialog_ProvidesTemplateAndCustomEditingSurfaces()
+    public void LayoutEditorDialog_ProvidesCustomEditingSurfaceOnly()
     {
         var document = LoadLayoutEditorDialogDocument();
         var tabHeaders = document
@@ -14,8 +14,9 @@ public sealed class LayoutEditorDialogLayoutTests
             .Select(element => GetAttribute(element, "Header"))
             .ToArray();
 
-        Assert.Equal(["레이아웃", "사용자 지정"], tabHeaders);
-        Assert.NotNull(FindElementByName(document, "TemplateListPanel"));
+        // 빌트인 템플릿 제거에 따라 템플릿 탭/목록이 사라지고 사용자 지정 편집 탭만 남는다.
+        Assert.Equal(["사용자 지정"], tabHeaders);
+        Assert.Null(FindElementByNameOrDefault(document, "TemplateListPanel"));
         Assert.Null(FindElementByNameOrDefault(document, "TemplatePreviewTitleTextBlock"));
         Assert.Null(FindElementByNameOrDefault(document, "TemplatePreviewHost"));
         Assert.Null(FindElementByNameOrDefault(document, "CustomLayoutListBox"));
@@ -77,10 +78,12 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.Contains("SplitAxis.Horizontal", text);
         Assert.Contains("NormalizeZoneIdsFromVisualOrder", text);
         Assert.Contains("LoadZoneEditorFromLayout", text);
-        Assert.Contains("_templateLayouts.Concat(_customLayouts.OrderBy", text);
-        Assert.Contains("ApplyLayoutAndClose", text);
         Assert.Contains("LayoutNameTextBox_TextChanged", text);
-        Assert.Contains("DialogResult = true", text);
+        // 템플릿 탭 제거: 템플릿 적용/선택 코드가 더 이상 존재하지 않는다.
+        Assert.DoesNotContain("RefreshTemplateList", text);
+        Assert.DoesNotContain("ApplyLayoutAndClose", text);
+        Assert.DoesNotContain("TemplateButton_Click", text);
+        Assert.DoesNotContain("_templateLayouts", text);
         Assert.DoesNotContain("CopyTemplateToCustomButton_Click", text);
         Assert.DoesNotContain("TemplatePreviewHost", text);
         Assert.DoesNotContain("EditorPreviewHost", text);

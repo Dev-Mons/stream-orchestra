@@ -37,6 +37,8 @@ public partial class MainWindow : Window
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
     private readonly LayoutCardPresenter _layoutCardPresenter = new();
+    private LayoutCardMode _layoutCardMode = LayoutCardMode.Add;
+    private StreamSlotView? _pendingRemovalSlot;
     private bool _isExplorerPanelVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
     private LayoutPreset? _selectedLayout;
@@ -118,17 +120,62 @@ public partial class MainWindow : Window
     private void LoadLayouts(string? selectedLayoutId = null)
     {
         var currentLayoutId = selectedLayoutId ?? _selectedLayout?.Id;
-        _builtInLayouts = _layoutPresetService.LoadBuiltInLayouts();
-        _customLayouts = _layoutPresetService.LoadCustomLayouts().ToList();
-        _layouts = LayoutPresetService.CombineLayouts(_builtInLayouts, _customLayouts);
 
-        _selectedLayout = string.IsNullOrWhiteSpace(currentLayoutId)
-            ? LayoutPresetService.SelectDefaultLayout(_layouts)
-            : _layouts.FirstOrDefault(layout => layout.Id.Equals(currentLayoutId, StringComparison.OrdinalIgnoreCase))
-              ?? LayoutPresetService.SelectDefaultLayout(_layouts);
+        // 빌트인 템플릿은 더 이상 사용하지 않는다. 앱은 사용자 지정 레이아웃만 사용한다.
+        _builtInLayouts = [];
+        _customLayouts = _layoutPresetService.LoadCustomLayouts().ToList();
+        _layouts = _customLayouts;
+
+        _selectedLayout = ResolveInitialLayout(currentLayoutId);
 
         RefreshLayoutSelector();
-        ApplyLayout(_selectedLayout);
+        if (_selectedLayout is not null)
+        {
+            ApplyLayout(_selectedLayout);
+        }
+        else
+        {
+            ShowEmptyLayoutState();
+        }
+    }
+
+    private LayoutPreset? ResolveInitialLayout(string? layoutId)
+    {
+        if (_layouts.Count == 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(layoutId) &&
+            _layouts.FirstOrDefault(layout => layout.Id.Equals(layoutId, StringComparison.OrdinalIgnoreCase)) is { } match)
+        {
+            return match;
+        }
+
+        return _layouts[0];
+    }
+
+    private void ShowEmptyLayoutState()
+    {
+        _selectedLayout = null;
+        SlotsGrid.Children.Clear();
+        SlotsGrid.RowDefinitions.Clear();
+        SlotsGrid.ColumnDefinitions.Clear();
+
+        SlotsGrid.Children.Add(new TextBlock
+        {
+            Text = "표시할 레이아웃이 없습니다.\n설정 → 레이아웃에서 사용자 지정 레이아웃을 만든 뒤,\n채널을 드래그해 카드에서 선택하세요.",
+            Foreground = new SolidColorBrush(Color.FromRgb(120, 132, 146)),
+            FontSize = 14,
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        // 보이는 슬롯이 하나도 없으므로 모든 슬롯의 재생을 중지한다.
+        StopPlaybackForHiddenSlots([]);
+
+        StatusTextBlock.Text = "사용자 지정 레이아웃이 없습니다. 설정 → 레이아웃에서 레이아웃을 생성하세요.";
     }
 
     private void RefreshLayoutSelector()
@@ -173,9 +220,12 @@ public partial class MainWindow : Window
 
     private void LoadWorkspacePresets()
     {
-        _workspaces = _presetStorageService.LoadWorkspaces()
-            .Select(workspace => _workspaceRestoreService.Prepare(workspace, _layouts).Workspace)
-            .ToList();
+        var savedWorkspaces = _presetStorageService.LoadWorkspaces();
+        _workspaces = _layouts.Count == 0
+            ? savedWorkspaces.ToList()
+            : savedWorkspaces
+                .Select(workspace => _workspaceRestoreService.Prepare(workspace, _layouts).Workspace)
+                .ToList();
         RefreshWorkspaceComboBox();
     }
 
@@ -190,7 +240,35 @@ public partial class MainWindow : Window
         var content = LayoutGridRenderer.Build(layout, slotsById);
         SlotsGrid.Children.Add(content);
 
+        // 새 레이아웃에서 사라진 슬롯은 화면에서 빠지므로 재생을 즉시 중지한다.
+        StopPlaybackForHiddenSlots(layout.Slots.Select(slot => slot.SlotId).ToHashSet());
+
         StatusTextBlock.Text = $"Layout applied: {layout.Name} ({layout.GridColumns}x{layout.GridRows}, {layout.EffectiveSlotCount} visible slots)";
+    }
+
+    // 보이지 않게 된 슬롯(레이아웃에 포함되지 않은 슬롯)의 재생을 about:blank로 중지한다.
+    private void StopPlaybackForHiddenSlots(IReadOnlyCollection<int> visibleSlotIds)
+    {
+        foreach (var slot in _slots)
+        {
+            if (!visibleSlotIds.Contains(slot.SlotId) &&
+                !slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+            {
+                _ = ClearSlotSafelyAsync(slot);
+            }
+        }
+    }
+
+    private static async Task ClearSlotSafelyAsync(StreamSlotView slot)
+    {
+        try
+        {
+            await slot.ClearAsync();
+        }
+        catch
+        {
+            // 슬롯 정리 실패는 사용자 흐름을 막지 않는다.
+        }
     }
 
     private async Task ApplySelectedLayoutAsync(LayoutPreset layout, bool clearHiddenSlots)
@@ -211,29 +289,22 @@ public partial class MainWindow : Window
         var currentLayout = _selectedLayout;
         var dialog = new LayoutEditorDialog(
             _layoutPresetService,
-            _builtInLayouts,
             _customLayouts,
-            _layouts,
             currentLayout)
         {
             Owner = this
         };
 
-        var shouldApplyLayout = dialog.ShowDialog() == true && dialog.SelectedLayout is not null;
-        if (!shouldApplyLayout && !dialog.HasCustomLayoutChanges)
+        dialog.ShowDialog();
+
+        // 편집 창은 생성/수정/삭제 전용이다. 레이아웃 적용은 채널 드래그 카드로만 수행한다.
+        if (!dialog.HasCustomLayoutChanges)
         {
             return;
         }
 
-        var selectedLayoutId = shouldApplyLayout
-            ? dialog.SelectedLayout?.Id
-            : currentLayout?.Id;
-        LoadLayouts(selectedLayoutId);
-
-        if (!shouldApplyLayout)
-        {
-            StatusTextBlock.Text = "사용자 지정 레이아웃 목록을 갱신했습니다.";
-        }
+        LoadLayouts(currentLayout?.Id);
+        StatusTextBlock.Text = "사용자 지정 레이아웃 목록을 갱신했습니다.";
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -433,15 +504,51 @@ public partial class MainWindow : Window
         _ = SwapSlotStreamsAsync(sourceSlot, targetSlot);
     }
 
+    // 슬롯 제거 버튼 클릭 → 자동 적용하지 않고 N-1 레이아웃 카드를 띄운다(사용자가 카드를 눌러야 전환).
     private void SlotView_RemoveSlotRequested(StreamSlotView slot)
     {
-        _ = RemoveScreenAsync(slot);
+        BeginRemoveScreen(slot);
+    }
+
+    private void BeginRemoveScreen(StreamSlotView slot)
+    {
+        SetRemoveModeActive(false);
+
+        if (_selectedLayout is not { } layout)
+        {
+            return;
+        }
+
+        var currentCount = layout.EffectiveSlotCount;
+        if (currentCount <= 1)
+        {
+            StatusTextBlock.Text = "마지막 한 화면은 제거할 수 없습니다.";
+            return;
+        }
+
+        var candidates = _layoutTemplateCandidateService.GetTemplatesForSlotCount(_layouts, currentCount - 1);
+        if (candidates.Count == 0)
+        {
+            StatusTextBlock.Text = $"슬롯 {currentCount - 1}개에 맞는 레이아웃 템플릿이 없어 제거할 수 없습니다.";
+            return;
+        }
+
+        _pendingRemovalSlot = slot;
+        _layoutCardMode = LayoutCardMode.Remove;
+        _layoutCardPresenter.Show(candidates, SlotsGrid, LayoutCardMode.Remove);
+        StatusTextBlock.Text = $"Slot {slot.SlotId}을(를) 제거합니다. 전환할 레이아웃 카드를 선택하세요.";
     }
 
     // 제거 모드(Ctrl 홀드): 보이는 모든 슬롯 위에 제거 버튼을 표시한다.
     // N-1개 템플릿이 없거나 마지막 한 화면이면 버튼을 띄우지 않고 안내만 한다.
     private void SetRemoveModeActive(bool isActive)
     {
+        // 제거 카드 오버레이가 이미 떠 있으면 Ctrl로 제거 버튼을 다시 띄우지 않는다.
+        if (isActive && _pendingRemovalSlot is not null)
+        {
+            return;
+        }
+
         var visibleSlotIds = _selectedLayout is { } layout
             ? layout.Slots.Select(s => s.SlotId).ToHashSet()
             : [];
@@ -477,10 +584,9 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private async Task RemoveScreenAsync(StreamSlotView slot)
+    // 선택된 N-1 템플릿으로 전환하면서, 제거 대상을 뺀 생존 채널을 새 템플릿 슬롯에 순서대로 다시 채운다(compaction).
+    private async Task ApplyRemovalAsync(StreamSlotView slot, LayoutPreset template)
     {
-        SetRemoveModeActive(false);
-
         if (_selectedLayout is not { } currentLayout)
         {
             return;
@@ -496,17 +602,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        var template = _layoutTemplateCandidateService
-            .GetTemplatesForSlotCount(_layouts, visibleSlotIds.Length - 1)
-            .FirstOrDefault();
-        if (template is null)
-        {
-            StatusTextBlock.Text = $"슬롯 {visibleSlotIds.Length - 1}개에 맞는 레이아웃 템플릿이 없습니다.";
-            return;
-        }
-
-        // 제거 대상을 뺀 생존 채널을 슬롯 ID 순서대로 스냅샷한 뒤,
-        // 새 템플릿 슬롯에 순서대로 다시 채운다(compaction).
         var survivors = visibleSlotIds
             .Where(slotId => slotId != slot.SlotId)
             .Select(slotId => _slots.First(candidate => candidate.SlotId == slotId))
@@ -546,9 +641,11 @@ public partial class MainWindow : Window
 
     private void ShowLayoutCards()
     {
+        _pendingRemovalSlot = null;
+        _layoutCardMode = LayoutCardMode.Add;
         var currentVisibleSlotCount = _selectedLayout?.EffectiveSlotCount ?? GetVisibleSlotViews().Count();
         var candidates = _layoutTemplateCandidateService.GetCandidates(_layouts, currentVisibleSlotCount);
-        _layoutCardPresenter.Show(candidates, SlotsGrid);
+        _layoutCardPresenter.Show(candidates, SlotsGrid, LayoutCardMode.Add);
 
         StatusTextBlock.Text = candidates.Count > 0
             ? $"레이아웃 카드 {candidates.Count}개 표시 중 (슬롯 {currentVisibleSlotCount + 1}개)."
@@ -557,12 +654,40 @@ public partial class MainWindow : Window
 
     private void HideLayoutCards()
     {
+        // 제거 카드는 카드를 눌러야만 닫힌다. 드래그 종료(추가 모드)에서만 자동으로 닫는다.
+        if (_layoutCardMode == LayoutCardMode.Remove)
+        {
+            return;
+        }
+
         _layoutCardPresenter.Hide();
     }
 
-    private async void LayoutCardPresenter_CardChosen(LayoutPreset template, IDataObject? data)
+    private async void LayoutCardPresenter_CardChosen(LayoutPreset? template, IDataObject? data)
     {
-        HideLayoutCards();
+        var mode = _layoutCardMode;
+        var removalSlot = _pendingRemovalSlot;
+
+        _layoutCardPresenter.Hide();
+        _pendingRemovalSlot = null;
+        _layoutCardMode = LayoutCardMode.Add;
+
+        // "아무것도 안 함"(취소) 카드.
+        if (template is null)
+        {
+            StatusTextBlock.Text = "레이아웃을 변경하지 않았습니다.";
+            return;
+        }
+
+        if (mode == LayoutCardMode.Remove)
+        {
+            if (removalSlot is not null)
+            {
+                await ApplyRemovalAsync(removalSlot, template);
+            }
+
+            return;
+        }
 
         string? url = null;
         string? streamName = null;
@@ -810,9 +935,9 @@ public partial class MainWindow : Window
     private WorkspacePreset CaptureWorkspace(string id, string name)
     {
         var selectedLayout = _selectedLayout;
-        var layoutId = selectedLayout is not null
-            ? selectedLayout.Id
-            : LayoutPresetIds.Default;
+        var layoutId = selectedLayout?.Id
+            ?? _layouts.FirstOrDefault()?.Id
+            ?? string.Empty;
 
         var workspace = new WorkspacePreset
         {
@@ -865,6 +990,19 @@ public partial class MainWindow : Window
 
     private async Task ApplyWorkspaceAsync(WorkspacePreset workspace, bool setActiveWorkspace)
     {
+        // 사용자 지정 레이아웃이 하나도 없으면 표시할 레이아웃이 없으므로 빈 상태로 둔다.
+        if (_layouts.Count == 0)
+        {
+            ShowEmptyLayoutState();
+            if (setActiveWorkspace)
+            {
+                _activeWorkspace = workspace;
+                RefreshWorkspaceComboBox();
+            }
+
+            return;
+        }
+
         var preparedWorkspace = _workspaceRestoreService.Prepare(workspace, _layouts);
         workspace = preparedWorkspace.Workspace;
         var layout = preparedWorkspace.Layout;

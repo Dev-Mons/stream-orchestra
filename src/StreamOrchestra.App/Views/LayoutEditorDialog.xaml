@@ -35,18 +35,6 @@
                     Background="#121820"
                     BorderBrush="#2D3642"
                     Foreground="#F3F6FA">
-            <TabItem Header="레이아웃">
-                <Border Margin="12"
-                        Background="#0F141B"
-                        BorderBrush="#2D3642"
-                        BorderThickness="1"
-                        Padding="10">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <WrapPanel x:Name="TemplateListPanel" />
-                    </ScrollViewer>
-                </Border>
-            </TabItem>
-
             <TabItem Header="사용자 지정">
                 <Grid Margin="12">
                     <Grid.ColumnDefinitions>

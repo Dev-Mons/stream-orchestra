@@ -16,16 +16,13 @@ public partial class LayoutEditorDialog : Window
     private const double SplitterThickness = 8;
 
     private readonly LayoutPresetService _layoutPresetService;
-    private readonly List<LayoutPreset> _templateLayouts;
     private readonly List<LayoutPreset> _customLayouts;
-    private readonly List<LayoutPreset> _allLayouts;
     private int[,] _zoneCells = new int[1, 1] { { 1 } };
     private double[] _columnWeights = [1];
     private double[] _rowWeights = [1];
     private readonly HashSet<int> _selectedZoneIds = new();
     private bool _isRefreshingEditor;
     private bool _isRefreshingLayoutName;
-    private LayoutPreset? _selectedTemplate;
     private LayoutPreset? _selectedCustomLayout;
     private string _editingLayoutName = "Custom Layout";
 
@@ -37,60 +34,31 @@ public partial class LayoutEditorDialog : Window
 
     public LayoutEditorDialog(
         LayoutPresetService layoutPresetService,
-        IReadOnlyList<LayoutPreset> templateLayouts,
         IReadOnlyList<LayoutPreset> customLayouts,
-        IReadOnlyList<LayoutPreset> allLayouts,
         LayoutPreset? currentLayout)
     {
         _layoutPresetService = layoutPresetService;
-        _templateLayouts = templateLayouts.ToList();
         _customLayouts = customLayouts.ToList();
-        _allLayouts = allLayouts.ToList();
 
         InitializeComponent();
         SplitEditorHost.SizeChanged += SplitEditorHost_SizeChanged;
-        RefreshTemplateList();
         RefreshCustomLayoutList();
         ResetZoneEditor("Custom Layout");
 
         var selectedLayout = currentLayout is null
-            ? _templateLayouts.FirstOrDefault()
-            : _allLayouts.FirstOrDefault(layout => layout.Id.Equals(currentLayout.Id, StringComparison.OrdinalIgnoreCase))
-              ?? _templateLayouts.FirstOrDefault();
+            ? null
+            : _customLayouts.FirstOrDefault(layout => layout.Id.Equals(currentLayout.Id, StringComparison.OrdinalIgnoreCase));
 
         if (selectedLayout is null)
         {
             return;
         }
 
-        if (_templateLayouts.Any(layout => layout.Id.Equals(selectedLayout.Id, StringComparison.OrdinalIgnoreCase)))
-        {
-            SelectTemplate(selectedLayout);
-            return;
-        }
-
-        EditorTabControl.SelectedIndex = 1;
         RefreshCustomLayoutList(selectedLayout);
         LoadCustomLayoutIntoZoneEditor(selectedLayout);
     }
 
     public bool HasCustomLayoutChanges { get; private set; }
-
-    public LayoutPreset? SelectedLayout { get; private set; }
-
-    private void RefreshTemplateList()
-    {
-        TemplateListPanel.Children.Clear();
-
-        foreach (var layout in _templateLayouts.Concat(_customLayouts.OrderBy(layout => layout.Name)))
-        {
-            var button = CreateLayoutCardButton(layout, width: 214, height: 92, isSelected: false);
-            button.Click += TemplateButton_Click;
-            button.Width = 240;
-            button.Margin = new Thickness(0, 0, 10, 10);
-            TemplateListPanel.Children.Add(button);
-        }
-    }
 
     private void RefreshCustomLayoutList(LayoutPreset? selectedLayout = null)
     {
@@ -153,28 +121,6 @@ public partial class LayoutEditorDialog : Window
         return button;
     }
 
-    private void TemplateButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: LayoutPreset layout })
-        {
-            ApplyLayoutAndClose(layout);
-        }
-    }
-
-    private void SelectTemplate(LayoutPreset layout)
-    {
-        _selectedTemplate = layout;
-        SelectedLayout = layout;
-        DialogStatusTextBlock.Text = $"선택: {layout.Name}";
-    }
-
-    private void ApplyLayoutAndClose(LayoutPreset layout)
-    {
-        _selectedTemplate = layout;
-        SelectedLayout = layout;
-        DialogResult = true;
-    }
-
     private void CustomLayoutButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isRefreshingEditor)
@@ -211,8 +157,7 @@ public partial class LayoutEditorDialog : Window
     private string CreateCustomLayoutName()
     {
         const string baseName = "Custom Layout";
-        var existingNames = _templateLayouts
-            .Concat(_customLayouts)
+        var existingNames = _customLayouts
             .Select(layout => layout.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -519,7 +464,6 @@ public partial class LayoutEditorDialog : Window
     {
         LoadZoneEditorFromLayout(layout.Name, layout);
         _selectedCustomLayout = layout;
-        SelectedLayout = layout;
         DialogStatusTextBlock.Text = $"사용자 지정 선택: {layout.Name}";
     }
 
@@ -1015,9 +959,7 @@ public partial class LayoutEditorDialog : Window
         var selectedCustomLayout = _selectedCustomLayout;
         var layoutName = LayoutNameTextBox.Text;
         var layoutId = selectedCustomLayout?.Id
-                       ?? LayoutPresetService.CreateCustomLayoutId(
-                           layoutName,
-                           _templateLayouts.Concat(_customLayouts).ToArray());
+                       ?? LayoutPresetService.CreateCustomLayoutId(layoutName, _customLayouts.ToArray());
 
         if (!TryCreateLayoutFromEditor(layoutId, layoutName, out var layout, out var error))
         {
@@ -1033,7 +975,7 @@ public partial class LayoutEditorDialog : Window
 
         try
         {
-            LayoutPresetService.CombineLayouts(_templateLayouts, nextCustomLayouts);
+            LayoutPresetService.Validate(nextCustomLayouts);
             _layoutPresetService.SaveCustomLayouts(nextCustomLayouts);
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException)
@@ -1044,16 +986,12 @@ public partial class LayoutEditorDialog : Window
 
         _customLayouts.Clear();
         _customLayouts.AddRange(nextCustomLayouts);
-        _allLayouts.Clear();
-        _allLayouts.AddRange(LayoutPresetService.CombineLayouts(_templateLayouts, _customLayouts));
         HasCustomLayoutChanges = true;
-        SelectedLayout = layout;
         _selectedCustomLayout = layout;
         _editingLayoutName = layout.Name;
         SetLayoutNameText(layout.Name);
         savedLayout = layout;
         RefreshCustomLayoutList(layout);
-        RefreshTemplateList();
 
         return true;
     }
@@ -1082,19 +1020,11 @@ public partial class LayoutEditorDialog : Window
 
         _customLayouts.Clear();
         _customLayouts.AddRange(nextCustomLayouts);
-        _allLayouts.Clear();
-        _allLayouts.AddRange(LayoutPresetService.CombineLayouts(_templateLayouts, _customLayouts));
         HasCustomLayoutChanges = true;
-        SelectedLayout = _templateLayouts.FirstOrDefault();
         _selectedCustomLayout = null;
         RefreshCustomLayoutList();
-        RefreshTemplateList();
         ResetZoneEditor(CreateCustomLayoutName());
-
-        if (SelectedLayout is not null)
-        {
-            SelectTemplate(SelectedLayout);
-        }
+        DialogStatusTextBlock.Text = $"사용자 지정 레이아웃을 삭제했습니다: {selectedLayout.Name}";
 
         DialogStatusTextBlock.Text = $"사용자 지정 레이아웃 삭제됨: {selectedLayout.Name}";
     }
@@ -1147,35 +1077,6 @@ public partial class LayoutEditorDialog : Window
         }
 
         return true;
-    }
-
-    private void ApplySelectedLayoutButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (EditorTabControl.SelectedIndex == 1)
-        {
-            if (!SaveCustomLayoutFromEditor(out var savedLayout))
-            {
-                return;
-            }
-
-            SelectedLayout = savedLayout;
-            DialogResult = true;
-            return;
-        }
-
-        if (_selectedTemplate is null)
-        {
-            DialogStatusTextBlock.Text = "적용할 템플릿을 선택하세요.";
-            return;
-        }
-
-        SelectedLayout = _selectedTemplate;
-        DialogResult = true;
-    }
-
-    private void CloseButton_Click(object sender, RoutedEventArgs e)
-    {
-        DialogResult = false;
     }
 
     private void NormalizeZoneIdsFromVisualOrder()

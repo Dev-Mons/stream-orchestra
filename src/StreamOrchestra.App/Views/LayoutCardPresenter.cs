@@ -6,15 +6,27 @@ using StreamOrchestra.App.Models;
 
 namespace StreamOrchestra.App.Views;
 
+/// <summary>카드 오버레이의 용도.</summary>
+public enum LayoutCardMode
+{
+    /// <summary>채널 드래그로 화면을 추가(N → N+1)할 때.</summary>
+    Add,
+
+    /// <summary>슬롯 제거 버튼으로 화면을 줄일(N → N-1) 때.</summary>
+    Remove
+}
+
 /// <summary>
-/// 탐색 패널에서 채널 드래그가 시작되면 영상 영역 상단에 레이아웃 템플릿 카드 리스트를 띄운다.
-/// 카드는 "현재 보이는 슬롯 수 + 1"에 해당하는 정적 템플릿만 노출하며, 카드 위에 드롭하면
-/// 해당 템플릿으로 즉시 전환된다(<see cref="CardChosen"/> 이벤트). 동적 레이아웃 도킹 오버레이를 대체한다.
+/// 영상 영역 상단에 레이아웃 카드 리스트를 띄운다.
+/// - 추가(Add): 탐색 패널에서 채널 드래그가 시작되면 N+1 템플릿 카드를 노출하고, 카드 위에 드롭하면 전환한다.
+/// - 제거(Remove): 슬롯 제거 버튼을 누르면 N-1 템플릿 카드를 노출하고, 카드를 클릭하면 전환한다.
+/// 두 경우 모두 첫 번째에는 "아무것도 안 함"(취소) 카드가 항상 들어간다(<see cref="CardChosen"/>의 template이 null).
 /// </summary>
 public sealed class LayoutCardPresenter
 {
     private static readonly Brush OverlayBackground = new SolidColorBrush(Color.FromArgb(235, 18, 24, 32));
     private static readonly Brush CardBackground = new SolidColorBrush(Color.FromRgb(16, 24, 32));
+    private static readonly Brush CancelCardBackground = new SolidColorBrush(Color.FromRgb(36, 28, 28));
     private static readonly Brush CardBorder = new SolidColorBrush(Color.FromRgb(45, 54, 66));
     private static readonly Brush CardBorderHighlight = new SolidColorBrush(Color.FromRgb(243, 246, 250));
     private static readonly Brush PrimaryText = Brushes.White;
@@ -23,6 +35,7 @@ public sealed class LayoutCardPresenter
     private readonly Popup _popup;
     private readonly Border _root;
     private readonly StackPanel _cardPanel;
+    private readonly TextBlock _title;
     private readonly TextBlock _emptyMessage;
 
     public LayoutCardPresenter()
@@ -42,9 +55,8 @@ public sealed class LayoutCardPresenter
             Visibility = Visibility.Collapsed
         };
 
-        var title = new TextBlock
+        _title = new TextBlock
         {
-            Text = "채널을 카드 위에 드롭하면 레이아웃이 전환됩니다.",
             Foreground = SecondaryText,
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
@@ -59,7 +71,7 @@ public sealed class LayoutCardPresenter
         };
 
         var contentPanel = new StackPanel { Margin = new Thickness(10, 8, 10, 10) };
-        contentPanel.Children.Add(title);
+        contentPanel.Children.Add(_title);
         contentPanel.Children.Add(_emptyMessage);
         contentPanel.Children.Add(cardScroller);
 
@@ -82,26 +94,32 @@ public sealed class LayoutCardPresenter
         };
     }
 
-    /// <summary>카드 선택 결과. 드래그 드롭이면 <paramref name="data"/>에 드롭 데이터가 들어오고, 키보드/클릭이면 null이다.</summary>
-    public event Action<LayoutPreset, IDataObject?>? CardChosen;
+    /// <summary>
+    /// 카드 선택 결과. template이 null이면 "아무것도 안 함"(취소)이다.
+    /// 드래그 드롭이면 <paramref name="data"/>에 드롭 데이터가 들어오고, 클릭/키보드면 null이다.
+    /// </summary>
+    public event Action<LayoutPreset?, IDataObject?>? CardChosen;
 
     public bool IsOpen => _popup.IsOpen;
 
-    public void Show(IReadOnlyList<LayoutPreset> candidates, FrameworkElement placementTarget)
+    public void Show(IReadOnlyList<LayoutPreset> candidates, FrameworkElement placementTarget, LayoutCardMode mode)
     {
         _cardPanel.Children.Clear();
 
-        if (candidates.Count == 0)
+        _title.Text = mode == LayoutCardMode.Remove
+            ? "전환할 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)"
+            : "채널을 카드 위에 드롭하면 레이아웃이 전환됩니다.";
+
+        // 첫 번째 카드는 항상 "아무것도 안 함"(취소) 카드.
+        _cardPanel.Children.Add(CreateCancelCard());
+
+        _emptyMessage.Visibility = candidates.Count == 0 && mode == LayoutCardMode.Add
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        foreach (var template in candidates)
         {
-            _emptyMessage.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            _emptyMessage.Visibility = Visibility.Collapsed;
-            foreach (var template in candidates)
-            {
-                _cardPanel.Children.Add(CreateCard(template));
-            }
+            _cardPanel.Children.Add(CreateCard(template));
         }
 
         _root.Width = Math.Max(1, placementTarget.ActualWidth);
@@ -122,11 +140,46 @@ public sealed class LayoutCardPresenter
         _cardPanel.Children.Clear();
     }
 
+    private Button CreateCancelCard()
+    {
+        var content = new StackPanel
+        {
+            Width = 110,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        content.Children.Add(new TextBlock
+        {
+            Text = "✕",
+            Foreground = PrimaryText,
+            FontSize = 28,
+            FontWeight = FontWeights.Bold,
+            HorizontalAlignment = HorizontalAlignment.Center
+        });
+
+        content.Children.Add(new TextBlock
+        {
+            Text = "아무것도 안 함",
+            Foreground = SecondaryText,
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 0)
+        });
+
+        var card = CreateCardShell(tag: null, content: content, background: CancelCardBackground);
+        card.ToolTip = "레이아웃을 변경하지 않습니다.";
+        WireCard(card, template: null);
+        return card;
+    }
+
     private Button CreateCard(LayoutPreset template)
     {
-        var layout = new StackPanel { Width = 150 };
+        var content = new StackPanel { Width = 150 };
 
-        layout.Children.Add(new TextBlock
+        content.Children.Add(new TextBlock
         {
             Text = "미리보기",
             Foreground = SecondaryText,
@@ -134,9 +187,9 @@ public sealed class LayoutCardPresenter
             Margin = new Thickness(0, 0, 0, 3)
         });
 
-        layout.Children.Add(LayoutPreviewBuilder.Build(template, 150, 84, showSlotNumbers: true));
+        content.Children.Add(LayoutPreviewBuilder.Build(template, 150, 84, showSlotNumbers: true));
 
-        layout.Children.Add(new TextBlock
+        content.Children.Add(new TextBlock
         {
             Text = template.Name,
             Foreground = PrimaryText,
@@ -146,7 +199,7 @@ public sealed class LayoutCardPresenter
             Margin = new Thickness(0, 6, 0, 0)
         });
 
-        layout.Children.Add(new TextBlock
+        content.Children.Add(new TextBlock
         {
             Text = $"슬롯 {template.EffectiveSlotCount}개",
             Foreground = SecondaryText,
@@ -154,22 +207,32 @@ public sealed class LayoutCardPresenter
             Margin = new Thickness(0, 2, 0, 0)
         });
 
-        var card = new Button
+        var card = CreateCardShell(tag: template, content: content, background: CardBackground);
+        card.ToolTip = $"{template.Name} · 슬롯 {template.EffectiveSlotCount}개";
+        WireCard(card, template);
+        return card;
+    }
+
+    private static Button CreateCardShell(LayoutPreset? tag, UIElement content, Brush background)
+    {
+        return new Button
         {
-            Tag = template,
-            Content = layout,
+            Tag = tag,
+            Content = content,
             Padding = new Thickness(8),
             Margin = new Thickness(0, 0, 8, 0),
-            Background = CardBackground,
+            Background = background,
             BorderBrush = CardBorder,
             BorderThickness = new Thickness(1),
             Foreground = PrimaryText,
             Focusable = true,
             IsTabStop = true,
-            AllowDrop = true,
-            ToolTip = $"{template.Name} · 슬롯 {template.EffectiveSlotCount}개"
+            AllowDrop = true
         };
+    }
 
+    private void WireCard(Button card, LayoutPreset? template)
+    {
         card.Click += (_, _) => CardChosen?.Invoke(template, null);
         card.DragEnter += (_, e) => OnCardDragOver(card, e);
         card.DragOver += (_, e) => OnCardDragOver(card, e);
@@ -180,8 +243,6 @@ public sealed class LayoutCardPresenter
             CardChosen?.Invoke(template, e.Data);
             e.Handled = true;
         };
-
-        return card;
     }
 
     private static void OnCardDragOver(Button card, DragEventArgs e)

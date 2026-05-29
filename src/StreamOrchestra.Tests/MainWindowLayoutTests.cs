@@ -135,7 +135,10 @@ public sealed class MainWindowLayoutTests
         // Ctrl 홀드 기반 화면 제거 흐름이 배선되어 있다.
         Assert.Contains("RemoveSlotRequested += SlotView_RemoveSlotRequested", codeBehind);
         Assert.Contains("CtrlStateChanged += SetRemoveModeActive", codeBehind);
-        Assert.Contains("RemoveScreenAsync", codeBehind);
+        // 제거 버튼 클릭 → N-1 레이아웃 카드 표시(BeginRemoveScreen) 후 카드 선택 시 적용(ApplyRemovalAsync).
+        Assert.Contains("BeginRemoveScreen", codeBehind);
+        Assert.Contains("ApplyRemovalAsync", codeBehind);
+        Assert.Contains("LayoutCardMode.Remove", codeBehind);
         Assert.Contains("GetTemplatesForSlotCount", codeBehind);
         Assert.Contains("MainWindow_PreviewKeyDown", codeBehind);
 
