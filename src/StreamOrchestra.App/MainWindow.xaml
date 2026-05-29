@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Stream Orchestra Spike"
+        Icon="Assets/app-icon.ico"
         Height="1000"
         Width="1600"
         MinHeight="720"

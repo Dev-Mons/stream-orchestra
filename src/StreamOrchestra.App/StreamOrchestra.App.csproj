@@ -13,6 +13,7 @@
     <FileVersion>0.0.0.0</FileVersion>
     <StartupObject>StreamOrchestra.App.Program</StartupObject>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,6 +30,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\app-icon.ico" />
+    <Resource Include="Assets\app-icon.png" />
     <Resource Include="Assets\explorer-toggle.png" />
     <Resource Include="Assets\explorer-toggle-single.png" />
   </ItemGroup>
