@@ -20,8 +20,7 @@ public partial class MainWindow : Window
     private readonly StreamNavigationService _streamNavigationService = new();
     private readonly SlotSelectionService _slotSelectionService = new();
     private readonly SlotSwapService _slotSwapService = new();
-    private readonly DropZoneService _dropZoneService = new();
-    private readonly LayoutTreeMutationService _layoutTreeMutationService = new();
+    private readonly LayoutTemplateCandidateService _layoutTemplateCandidateService = new();
     private readonly AppWindowPlacementService _appWindowPlacementService = new();
     private readonly WorkspaceSlotVisibilityService _workspaceSlotVisibilityService = new();
     private readonly WorkspacePresetNormalizationService _workspacePresetNormalizationService;
@@ -37,16 +36,10 @@ public partial class MainWindow : Window
     private WorkspacePreset? _activeWorkspace;
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
-    private DockingOverlayPresenter? _dockingOverlayPresenter;
-    private Popup? _dockingInputOverlayPopup;
-    private Canvas? _dockingInputOverlay;
-    private Border? _dockingInputPreview;
-    private StreamSlotView? _lastDockTargetSlot;
-    private DockDirection _lastDockDirection = DockDirection.None;
+    private readonly LayoutCardPresenter _layoutCardPresenter = new();
     private bool _isExplorerPanelVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
     private LayoutPreset? _selectedLayout;
-    private LayoutTreeDocument? _currentLayoutTree;
 
     public MainWindow()
     {
@@ -56,7 +49,7 @@ public partial class MainWindow : Window
             _workspacePresetNormalizationService,
             _workspaceSlotVisibilityService);
         InitializeComponent();
-        _dockingOverlayPresenter = new DockingOverlayPresenter();
+        _layoutCardPresenter.CardChosen += LayoutCardPresenter_CardChosen;
 
         _loadedAppState = _presetStorageService.LoadAppState();
         RestoreWindowPlacement(_loadedAppState?.Window);
@@ -76,14 +69,33 @@ public partial class MainWindow : Window
 
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
+        PreviewKeyDown += MainWindow_PreviewKeyDown;
+        PreviewKeyUp += MainWindow_PreviewKeyUp;
+        Deactivated += (_, _) => SetRemoveModeActive(false);
+    }
+
+    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl)
+        {
+            SetRemoveModeActive(true);
+        }
+    }
+
+    private void MainWindow_PreviewKeyUp(object sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl)
+        {
+            SetRemoveModeActive(false);
+        }
     }
 
     private void CreateExplorerPanel()
     {
         var explorerPanel = new ExplorerPanel(_profileService, _streamNavigationService);
         _explorerPanel = explorerPanel;
-        _explorerPanel.HostDragStarted += ShowDockingInputOverlay;
-        _explorerPanel.HostDragCompleted += HideDockingInputOverlay;
+        _explorerPanel.HostDragStarted += ShowLayoutCards;
+        _explorerPanel.HostDragCompleted += HideLayoutCards;
         ExplorerHost.Content = _explorerPanel;
     }
 
@@ -96,12 +108,9 @@ public partial class MainWindow : Window
             var slotView = new StreamSlotView(configuration, _profileService, _streamNavigationService);
             slotView.SlotSelected += SelectSlot;
             slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
-            slotView.HostDragStarted += ShowDockingInputOverlay;
-            slotView.HostDragCompleted += HideDockingInputOverlay;
-            slotView.DockPreviewRequested += SlotView_DockPreviewRequested;
-            slotView.DockPreviewEnded += SlotView_DockPreviewEnded;
-            slotView.StreamDockDropRequested += SlotView_StreamDockDropRequested;
-            slotView.RemoveFromLayoutRequested += SlotView_RemoveFromLayoutRequested;
+            slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
+            slotView.RemoveSlotRequested += SlotView_RemoveSlotRequested;
+            slotView.CtrlStateChanged += SetRemoveModeActive;
             _slots.Add(slotView);
         }
     }
@@ -172,46 +181,16 @@ public partial class MainWindow : Window
 
     private void ApplyLayout(LayoutPreset layout)
     {
-        _currentLayoutTree = LayoutTreePresetConverter.Convert(layout);
-        ApplyLayoutTree(_currentLayoutTree);
-        StatusTextBlock.Text = $"Layout applied: {layout.Name} ({layout.GridColumns}x{layout.GridRows}, {layout.Slots.Count} visible slots)";
-    }
-
-    private void ApplyLayoutTree(LayoutTreeDocument layoutTree)
-    {
+        _selectedLayout = layout;
         SlotsGrid.Children.Clear();
         SlotsGrid.RowDefinitions.Clear();
         SlotsGrid.ColumnDefinitions.Clear();
 
-        if (layoutTree.Root is null)
-        {
-            UpdateRemoveSlotActions(layoutTree);
-            return;
-        }
-
         var slotsById = _slots.ToDictionary(slot => slot.SlotId);
-        var content = LayoutTreeRenderer.Build(layoutTree, slotsById);
+        var content = LayoutGridRenderer.Build(layout, slotsById);
         SlotsGrid.Children.Add(content);
-        UpdateRemoveSlotActions(layoutTree);
-    }
 
-    private void UpdateRemoveSlotActions(LayoutTreeDocument? layoutTree)
-    {
-        var visibleSlotIds = layoutTree?.Root is null
-            ? []
-            : LayoutTreePresetConverter.GetVisibleSlotIds(layoutTree).ToHashSet();
-        var canRemoveVisibleSlots = IsDynamicLayoutTree(layoutTree) && visibleSlotIds.Count > 1;
-
-        foreach (var slot in _slots)
-        {
-            slot.SetRemoveSlotActionAvailable(canRemoveVisibleSlots && visibleSlotIds.Contains(slot.SlotId));
-        }
-    }
-
-    private static bool IsDynamicLayoutTree(LayoutTreeDocument? layoutTree)
-    {
-        return layoutTree?.Root is not null &&
-               layoutTree.SourceLayoutId.Equals("dynamic", StringComparison.OrdinalIgnoreCase);
+        StatusTextBlock.Text = $"Layout applied: {layout.Name} ({layout.GridColumns}x{layout.GridRows}, {layout.EffectiveSlotCount} visible slots)";
     }
 
     private async Task ApplySelectedLayoutAsync(LayoutPreset layout, bool clearHiddenSlots)
@@ -443,181 +422,222 @@ public partial class MainWindow : Window
         await LoadDroppedStreamIntoSlotAsync(targetSlot, url, streamName);
     }
 
-    private void SlotView_DockPreviewRequested(StreamSlotView targetSlot, DockDirection direction)
+    private void SlotView_SlotSwapRequested(StreamSlotView targetSlot, int sourceSlotId)
     {
-        _dockingOverlayPresenter?.Show(targetSlot, direction);
-    }
-
-    private void SlotView_DockPreviewEnded(StreamSlotView targetSlot)
-    {
-        _dockingOverlayPresenter?.Hide();
-    }
-
-    private void ShowDockingInputOverlay()
-    {
-        if (_dockingInputOverlayPopup is null)
+        if (_slots.FirstOrDefault(slot => slot.SlotId == sourceSlotId) is not { } sourceSlot ||
+            ReferenceEquals(sourceSlot, targetSlot))
         {
-            _dockingInputOverlay = new Canvas
-            {
-                Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)),
-                AllowDrop = true
-            };
-            _dockingInputOverlay.DragOver += SlotsGrid_DragOver;
-            _dockingInputOverlay.DragLeave += SlotsGrid_DragLeave;
-            _dockingInputOverlay.Drop += SlotsGrid_Drop;
-
-            _dockingInputPreview = new Border
-            {
-                Background = new SolidColorBrush(Color.FromArgb(105, 47, 128, 237)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(230, 243, 246, 250)),
-                BorderThickness = new Thickness(2),
-                IsHitTestVisible = false,
-                Visibility = Visibility.Collapsed
-            };
-            _dockingInputOverlay.Children.Add(_dockingInputPreview);
-
-            _dockingInputOverlayPopup = new Popup
-            {
-                AllowsTransparency = true,
-                Focusable = false,
-                Placement = PlacementMode.Relative,
-                PlacementTarget = SlotsGrid,
-                PopupAnimation = PopupAnimation.None,
-                StaysOpen = true,
-                Child = _dockingInputOverlay
-            };
-        }
-
-        if (_dockingInputOverlay is not null)
-        {
-            _dockingInputOverlay.Width = Math.Max(1, SlotsGrid.ActualWidth);
-            _dockingInputOverlay.Height = Math.Max(1, SlotsGrid.ActualHeight);
-        }
-
-        _dockingInputOverlayPopup.IsOpen = true;
-    }
-
-    private void HideDockingInputOverlay()
-    {
-        _dockingOverlayPresenter?.Hide();
-        HideDockingInputPreview();
-        _lastDockTargetSlot = null;
-        _lastDockDirection = DockDirection.None;
-        if (_dockingInputOverlayPopup is not null)
-        {
-            _dockingInputOverlayPopup.IsOpen = false;
-        }
-    }
-
-    private async void SlotView_StreamDockDropRequested(
-        StreamSlotView targetSlot,
-        string url,
-        string? streamName,
-        DockDirection direction)
-    {
-        _dockingOverlayPresenter?.Hide();
-        if (DropZoneService.IsEdge(direction))
-        {
-            await CreateDockedSlotFromDropAsync(targetSlot, direction, url, streamName);
             return;
         }
 
-        await LoadDroppedStreamIntoSlotAsync(targetSlot, url, streamName);
+        _ = SwapSlotStreamsAsync(sourceSlot, targetSlot);
     }
 
-    private async void SlotView_RemoveFromLayoutRequested(StreamSlotView slot)
+    private void SlotView_RemoveSlotRequested(StreamSlotView slot)
     {
-        await RemoveSlotFromDynamicLayoutAsync(slot);
+        _ = RemoveScreenAsync(slot);
+    }
+
+    // 제거 모드(Ctrl 홀드): 보이는 모든 슬롯 위에 제거 버튼을 표시한다.
+    // N-1개 템플릿이 없거나 마지막 한 화면이면 버튼을 띄우지 않고 안내만 한다.
+    private void SetRemoveModeActive(bool isActive)
+    {
+        var visibleSlotIds = _selectedLayout is { } layout
+            ? layout.Slots.Select(s => s.SlotId).ToHashSet()
+            : [];
+
+        if (isActive && !CanRemoveCurrentScreen(out var reason))
+        {
+            StatusTextBlock.Text = reason;
+            isActive = false;
+        }
+
+        foreach (var slot in _slots)
+        {
+            slot.SetRemoveModeActive(isActive && visibleSlotIds.Contains(slot.SlotId));
+        }
+    }
+
+    private bool CanRemoveCurrentScreen(out string reason)
+    {
+        var currentCount = _selectedLayout?.EffectiveSlotCount ?? 0;
+        if (currentCount <= 1)
+        {
+            reason = "마지막 한 화면은 제거할 수 없습니다.";
+            return false;
+        }
+
+        if (_layoutTemplateCandidateService.GetTemplatesForSlotCount(_layouts, currentCount - 1).Count == 0)
+        {
+            reason = $"슬롯 {currentCount - 1}개에 맞는 레이아웃 템플릿이 없어 제거할 수 없습니다.";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private async Task RemoveScreenAsync(StreamSlotView slot)
+    {
+        SetRemoveModeActive(false);
+
+        if (_selectedLayout is not { } currentLayout)
+        {
+            return;
+        }
+
+        var visibleSlotIds = currentLayout.Slots
+            .Select(visibleSlot => visibleSlot.SlotId)
+            .OrderBy(slotId => slotId)
+            .ToArray();
+        if (visibleSlotIds.Length <= 1)
+        {
+            StatusTextBlock.Text = "마지막 한 화면은 제거할 수 없습니다.";
+            return;
+        }
+
+        var template = _layoutTemplateCandidateService
+            .GetTemplatesForSlotCount(_layouts, visibleSlotIds.Length - 1)
+            .FirstOrDefault();
+        if (template is null)
+        {
+            StatusTextBlock.Text = $"슬롯 {visibleSlotIds.Length - 1}개에 맞는 레이아웃 템플릿이 없습니다.";
+            return;
+        }
+
+        // 제거 대상을 뺀 생존 채널을 슬롯 ID 순서대로 스냅샷한 뒤,
+        // 새 템플릿 슬롯에 순서대로 다시 채운다(compaction).
+        var survivors = visibleSlotIds
+            .Where(slotId => slotId != slot.SlotId)
+            .Select(slotId => _slots.First(candidate => candidate.SlotId == slotId))
+            .Select(candidate => (candidate.CurrentUrl, candidate.CurrentStreamName))
+            .ToArray();
+        var targetSlotIds = template.Slots
+            .Select(templateSlot => templateSlot.SlotId)
+            .OrderBy(slotId => slotId)
+            .ToArray();
+
+        await ApplySelectedLayoutAsync(template, clearHiddenSlots: true);
+
+        for (var index = 0; index < targetSlotIds.Length; index++)
+        {
+            var targetSlot = _slots.First(candidate => candidate.SlotId == targetSlotIds[index]);
+            var desiredUrl = index < survivors.Length ? survivors[index].CurrentUrl : "about:blank";
+            var desiredName = index < survivors.Length ? survivors[index].CurrentStreamName : null;
+
+            if (targetSlot.CurrentUrl.Equals(desiredUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (desiredUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+            {
+                await targetSlot.ClearAsync();
+            }
+            else
+            {
+                await NavigateSlotAsync(targetSlot, desiredUrl, desiredName);
+            }
+        }
+
+        StatusTextBlock.Text = $"화면을 제거하고 '{template.Name}' 레이아웃으로 전환했습니다.";
+        UpdateDiagnostics();
+    }
+
+    private void ShowLayoutCards()
+    {
+        var currentVisibleSlotCount = _selectedLayout?.EffectiveSlotCount ?? GetVisibleSlotViews().Count();
+        var candidates = _layoutTemplateCandidateService.GetCandidates(_layouts, currentVisibleSlotCount);
+        _layoutCardPresenter.Show(candidates, SlotsGrid);
+
+        StatusTextBlock.Text = candidates.Count > 0
+            ? $"레이아웃 카드 {candidates.Count}개 표시 중 (슬롯 {currentVisibleSlotCount + 1}개)."
+            : $"슬롯 {currentVisibleSlotCount + 1}개에 맞는 레이아웃 템플릿이 없습니다.";
+    }
+
+    private void HideLayoutCards()
+    {
+        _layoutCardPresenter.Hide();
+    }
+
+    private async void LayoutCardPresenter_CardChosen(LayoutPreset template, IDataObject? data)
+    {
+        HideLayoutCards();
+
+        string? url = null;
+        string? streamName = null;
+        if (data is not null)
+        {
+            StreamDropDataReader.TryGetDroppedStream(data, _streamNavigationService, out url, out streamName);
+        }
+
+        await ApplyTemplateFromCardAsync(template, url, streamName);
+    }
+
+    private async Task ApplyTemplateFromCardAsync(LayoutPreset template, string? url, string? streamName)
+    {
+        var previousSlotIds = _selectedLayout?.Slots.Select(slot => slot.SlotId).ToHashSet() ?? [];
+        var targetSlotId = url is null ? null : ResolveDropTargetSlotId(template, previousSlotIds);
+
+        await ApplySelectedLayoutAsync(template, clearHiddenSlots: true);
+
+        if (url is not null && targetSlotId is int slotId &&
+            _slots.FirstOrDefault(slot => slot.SlotId == slotId) is { } targetSlot)
+        {
+            await LoadDroppedStreamIntoSlotAsync(targetSlot, url, streamName);
+            StatusTextBlock.Text =
+                $"'{template.Name}' 레이아웃으로 전환하고 " +
+                $"{(string.IsNullOrWhiteSpace(streamName) ? url : streamName)}을(를) Slot {slotId}에 배치했습니다.";
+            return;
+        }
+
+        StatusTextBlock.Text = $"'{template.Name}' 레이아웃으로 전환했습니다.";
+    }
+
+    private int? ResolveDropTargetSlotId(LayoutPreset template, HashSet<int> previousSlotIds)
+    {
+        var templateSlotIds = template.Slots
+            .Select(slot => slot.SlotId)
+            .OrderBy(slotId => slotId)
+            .ToArray();
+        if (templateSlotIds.Length == 0)
+        {
+            return null;
+        }
+
+        // 1순위: 이전 레이아웃에 없던 새 슬롯(그로우 케이스에서 새로 추가된 화면)
+        var newSlotId = templateSlotIds.FirstOrDefault(slotId => !previousSlotIds.Contains(slotId));
+        if (newSlotId > 0)
+        {
+            return newSlotId;
+        }
+
+        // 2순위: 현재 비어 있는 슬롯
+        var blankSlotId = templateSlotIds.FirstOrDefault(slotId =>
+            _slots.FirstOrDefault(slot => slot.SlotId == slotId) is { } slot &&
+            slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase));
+        if (blankSlotId > 0)
+        {
+            return blankSlotId;
+        }
+
+        // 3순위: 마지막 슬롯
+        return templateSlotIds[^1];
     }
 
     private void SlotsGrid_DragOver(object sender, DragEventArgs e)
     {
-        var position = GetDockPointerPosition(sender, e);
-        var hasTargetSlot = TryGetDropTargetSlot(position, out var targetSlot);
-
-        if (hasTargetSlot &&
-            targetSlot is not null &&
-            IsSupportedDockDrop(e.Data) &&
-            TryGetDropDirection(targetSlot, position, out var direction))
-        {
-            var canApplyDirection = direction == DockDirection.Center || CanCreateDockedSlot();
-            e.Effects = canApplyDirection ? DragDropEffects.Copy : DragDropEffects.None;
-            if (canApplyDirection)
-            {
-                _lastDockTargetSlot = targetSlot;
-                _lastDockDirection = direction;
-                ShowDockingPreview(targetSlot, direction);
-            }
-            else
-            {
-                _lastDockTargetSlot = null;
-                _lastDockDirection = DockDirection.None;
-                HideDockingPreview();
-            }
-        }
-        else
-        {
-            e.Effects = DragDropEffects.None;
-            _lastDockTargetSlot = null;
-            _lastDockDirection = DockDirection.None;
-            HideDockingPreview();
-        }
-
+        e.Effects = IsSupportedDrop(e.Data) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
-    }
-
-    private void SlotsGrid_DragLeave(object sender, DragEventArgs e)
-    {
-        if (ReferenceEquals(sender, _dockingInputOverlay) && _dockingInputOverlay is not null)
-        {
-            var position = e.GetPosition(_dockingInputOverlay);
-            var bounds = new Rect(0, 0, _dockingInputOverlay.ActualWidth, _dockingInputOverlay.ActualHeight);
-            if (bounds.Contains(position))
-            {
-                return;
-            }
-        }
-
-        HideDockingPreview();
     }
 
     private async void SlotsGrid_Drop(object sender, DragEventArgs e)
     {
-        _dockingOverlayPresenter?.Hide();
-        var position = GetDockPointerPosition(sender, e);
+        var position = e.GetPosition(SlotsGrid);
         if (!TryGetDropTargetSlot(position, out var targetSlot) || targetSlot is null)
-        {
-            targetSlot = _lastDockTargetSlot;
-        }
-
-        if (targetSlot is null)
         {
             StatusTextBlock.Text = "Drop the stream over a visible playback area.";
             e.Handled = true;
-            HideDockingInputOverlay();
-            return;
-        }
-
-        if (!TryGetDropDirection(targetSlot, position, out var direction))
-        {
-            direction = ReferenceEquals(targetSlot, _lastDockTargetSlot)
-                ? _lastDockDirection
-                : DockDirection.None;
-        }
-
-        if (direction == DockDirection.None)
-        {
-            e.Handled = true;
-            HideDockingInputOverlay();
-            return;
-        }
-
-        if (DropZoneService.IsEdge(direction) &&
-            StreamDropDataReader.TryGetDroppedStream(e.Data, _streamNavigationService, out var dockedUrl, out var dockedStreamName))
-        {
-            await CreateDockedSlotFromDropAsync(targetSlot, direction, dockedUrl, dockedStreamName);
-            e.Handled = true;
-            HideDockingInputOverlay();
             return;
         }
 
@@ -627,7 +647,6 @@ public partial class MainWindow : Window
         {
             await SwapSlotStreamsAsync(sourceSlot, targetSlot);
             e.Handled = true;
-            HideDockingInputOverlay();
             return;
         }
 
@@ -636,80 +655,6 @@ public partial class MainWindow : Window
             await LoadDroppedStreamIntoSlotAsync(targetSlot, url, streamName);
             e.Handled = true;
         }
-
-        HideDockingInputOverlay();
-    }
-
-    private Point GetDockPointerPosition(object sender, DragEventArgs e)
-    {
-        if (_dockingInputOverlay is not null && ReferenceEquals(sender, _dockingInputOverlay))
-        {
-            var overlayPosition = e.GetPosition(_dockingInputOverlay);
-            return _dockingInputOverlay.TranslatePoint(overlayPosition, SlotsGrid);
-        }
-
-        return e.GetPosition(SlotsGrid);
-    }
-
-    private void ShowDockingPreview(StreamSlotView targetSlot, DockDirection direction)
-    {
-        if (_dockingInputOverlayPopup?.IsOpen == true)
-        {
-            ShowDockingInputPreview(targetSlot, direction);
-            _dockingOverlayPresenter?.Hide();
-            return;
-        }
-
-        _dockingOverlayPresenter?.Show(targetSlot, direction);
-    }
-
-    private void HideDockingPreview()
-    {
-        HideDockingInputPreview();
-        _dockingOverlayPresenter?.Hide();
-    }
-
-    private void ShowDockingInputPreview(StreamSlotView targetSlot, DockDirection direction)
-    {
-        if (_dockingInputOverlay is null || _dockingInputPreview is null || direction == DockDirection.None)
-        {
-            return;
-        }
-
-        var targetTopLeft = targetSlot.TranslatePoint(new Point(0, 0), SlotsGrid);
-        var targetBounds = new Rect(targetTopLeft, targetSlot.RenderSize);
-        var previewBounds = GetDockingInputPreviewBounds(targetBounds, direction);
-
-        Canvas.SetLeft(_dockingInputPreview, previewBounds.X);
-        Canvas.SetTop(_dockingInputPreview, previewBounds.Y);
-        _dockingInputPreview.Width = previewBounds.Width;
-        _dockingInputPreview.Height = previewBounds.Height;
-        _dockingInputPreview.Visibility = Visibility.Visible;
-    }
-
-    private void HideDockingInputPreview()
-    {
-        if (_dockingInputPreview is not null)
-        {
-            _dockingInputPreview.Visibility = Visibility.Collapsed;
-        }
-    }
-
-    private static Rect GetDockingInputPreviewBounds(Rect targetBounds, DockDirection direction)
-    {
-        return direction switch
-        {
-            DockDirection.Left => new Rect(targetBounds.X, targetBounds.Y, targetBounds.Width / 2, targetBounds.Height),
-            DockDirection.Right => new Rect(targetBounds.X + targetBounds.Width / 2, targetBounds.Y, targetBounds.Width / 2, targetBounds.Height),
-            DockDirection.Top => new Rect(targetBounds.X, targetBounds.Y, targetBounds.Width, targetBounds.Height / 2),
-            DockDirection.Bottom => new Rect(targetBounds.X, targetBounds.Y + targetBounds.Height / 2, targetBounds.Width, targetBounds.Height / 2),
-            DockDirection.Center => new Rect(
-                targetBounds.X + targetBounds.Width * 0.25,
-                targetBounds.Y + targetBounds.Height * 0.25,
-                targetBounds.Width * 0.5,
-                targetBounds.Height * 0.5),
-            _ => Rect.Empty
-        };
     }
 
     private bool TryGetDropTargetSlot(Point position, out StreamSlotView? targetSlot)
@@ -739,35 +684,22 @@ public partial class MainWindow : Window
 
     private IEnumerable<StreamSlotView> GetVisibleSlotViews()
     {
-        if (_currentLayoutTree?.Root is not null)
+        if (_selectedLayout is null)
         {
-            var slotsById = _slots.ToDictionary(slot => slot.SlotId);
-            foreach (var slotId in LayoutTreePresetConverter.GetVisibleSlotIds(_currentLayoutTree))
-            {
-                if (slotsById.TryGetValue(slotId, out var slot))
-                {
-                    yield return slot;
-                }
-            }
-
             yield break;
         }
 
-        foreach (var slot in SlotsGrid.Children.OfType<StreamSlotView>())
+        var slotsById = _slots.ToDictionary(slot => slot.SlotId);
+        foreach (var slotId in _selectedLayout.Slots.Select(slot => slot.SlotId))
         {
-            yield return slot;
+            if (slotsById.TryGetValue(slotId, out var slot))
+            {
+                yield return slot;
+            }
         }
     }
 
-    private bool TryGetDropDirection(StreamSlotView targetSlot, Point positionInSlotsGrid, out DockDirection direction)
-    {
-        var topLeft = targetSlot.TranslatePoint(new Point(0, 0), SlotsGrid);
-        var bounds = new Rect(topLeft, targetSlot.RenderSize);
-        direction = _dropZoneService.Calculate(bounds, positionInSlotsGrid);
-        return direction != DockDirection.None;
-    }
-
-    private bool IsSupportedDockDrop(IDataObject data)
+    private bool IsSupportedDrop(IDataObject data)
     {
         return TryGetDroppedSlotId(data, out _) ||
                StreamDropDataReader.TryGetDroppedStream(data, _streamNavigationService, out _, out _);
@@ -784,103 +716,6 @@ public partial class MainWindow : Window
         var value = data.GetData(StreamDragDataFormats.SlotId)?.ToString();
         return int.TryParse(value, out slotId) &&
                slotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount;
-    }
-
-    private bool CanCreateDockedSlot()
-    {
-        return GetNextAvailableSlotId() is not null;
-    }
-
-    private int? GetNextAvailableSlotId()
-    {
-        var visibleSlotIds = _currentLayoutTree is null
-            ? GetVisibleSlotViews().Select(slot => slot.SlotId).ToHashSet()
-            : LayoutTreePresetConverter.GetVisibleSlotIds(_currentLayoutTree).ToHashSet();
-
-        return Enumerable.Range(1, PlaybackTestPlanService.MaxSlotCount)
-            .FirstOrDefault(slotId => !visibleSlotIds.Contains(slotId)) is var slotId && slotId > 0
-            ? slotId
-            : null;
-    }
-
-    private async Task CreateDockedSlotFromDropAsync(
-        StreamSlotView targetSlot,
-        DockDirection direction,
-        string url,
-        string? streamName)
-    {
-        if (_currentLayoutTree?.Root is null || GetNextAvailableSlotId() is not { } newSlotId)
-        {
-            StatusTextBlock.Text = "No empty slot is available for a new split.";
-            return;
-        }
-
-        var targetLeaf = LayoutTreePresetConverter
-            .GetLeaves(_currentLayoutTree.Root)
-            .FirstOrDefault(leaf => leaf.SlotId == targetSlot.SlotId);
-        if (targetLeaf is null)
-        {
-            StatusTextBlock.Text = "Could not find the target layout leaf.";
-            return;
-        }
-
-        var newLeaf = LayoutTreePresetConverter.CreateLeaf(newSlotId);
-        var nextRoot = _layoutTreeMutationService.InsertSplit(_currentLayoutTree.Root, targetLeaf.Id, newLeaf, direction);
-        _currentLayoutTree = new LayoutTreeDocument
-        {
-            SourceLayoutId = "dynamic",
-            Root = nextRoot,
-            ActiveLeafId = newLeaf.Id
-        };
-        ApplyLayoutTree(_currentLayoutTree);
-
-        var newSlot = _slots.First(slot => slot.SlotId == newSlotId);
-        await LoadDroppedStreamIntoSlotAsync(newSlot, url, streamName);
-        StatusTextBlock.Text = $"Docked {(string.IsNullOrWhiteSpace(streamName) ? url : streamName)} into Slot {newSlotId}.";
-    }
-
-    private async Task RemoveSlotFromDynamicLayoutAsync(StreamSlotView slot)
-    {
-        if (!IsDynamicLayoutTree(_currentLayoutTree) || _currentLayoutTree?.Root is null)
-        {
-            StatusTextBlock.Text = "Only dynamically docked slots can be removed.";
-            return;
-        }
-
-        var leaves = LayoutTreePresetConverter.GetLeaves(_currentLayoutTree.Root).ToArray();
-        if (leaves.Length <= 1)
-        {
-            StatusTextBlock.Text = "The last visible slot cannot be removed.";
-            return;
-        }
-
-        var targetLeaf = leaves.FirstOrDefault(leaf => leaf.SlotId == slot.SlotId);
-        if (targetLeaf is null)
-        {
-            StatusTextBlock.Text = "Could not find the target layout leaf.";
-            return;
-        }
-
-        var clearTask = slot.ClearAsync();
-        var nextRoot = _layoutTreeMutationService.RemoveLeaf(_currentLayoutTree.Root, targetLeaf.Id);
-        var nextActiveLeaf = LayoutTreePresetConverter.GetLeaves(nextRoot).FirstOrDefault();
-        _currentLayoutTree = new LayoutTreeDocument
-        {
-            SourceLayoutId = "dynamic",
-            Root = nextRoot,
-            ActiveLeafId = nextActiveLeaf?.Id
-        };
-
-        ApplyLayoutTree(_currentLayoutTree);
-
-        if (nextActiveLeaf is not null && _slots.FirstOrDefault(candidate => candidate.SlotId == nextActiveLeaf.SlotId) is { } nextSlot)
-        {
-            SelectSlot(nextSlot);
-        }
-
-        await clearTask;
-        StatusTextBlock.Text = $"Removed Slot {slot.SlotId} from the dynamic layout.";
-        UpdateDiagnostics();
     }
 
     private async Task SwapSlotStreamsAsync(StreamSlotView sourceSlot, StreamSlotView targetSlot)
@@ -984,7 +819,6 @@ public partial class MainWindow : Window
             Id = id,
             Name = name,
             LayoutId = layoutId,
-            LayoutTree = _currentLayoutTree,
             Slots = _slots
                 .OrderBy(slot => slot.SlotId)
                 .Select(slot => new WorkspaceSlot
@@ -997,11 +831,6 @@ public partial class MainWindow : Window
                 })
                 .ToArray()
         };
-
-        if (_currentLayoutTree?.Root is not null)
-        {
-            return _workspaceSlotVisibilityService.BlankHiddenSlots(workspace, _currentLayoutTree);
-        }
 
         if (selectedLayout is not null)
         {
@@ -1039,14 +868,7 @@ public partial class MainWindow : Window
         var preparedWorkspace = _workspaceRestoreService.Prepare(workspace, _layouts);
         workspace = preparedWorkspace.Workspace;
         var layout = preparedWorkspace.Layout;
-        if (preparedWorkspace.LayoutTree?.Root is not null)
-        {
-            _selectedLayout = layout;
-            _currentLayoutTree = preparedWorkspace.LayoutTree;
-            RefreshLayoutSelector();
-            ApplyLayoutTree(_currentLayoutTree);
-        }
-        else if (_selectedLayout?.Id.Equals(layout.Id, StringComparison.OrdinalIgnoreCase) != true)
+        if (_selectedLayout?.Id.Equals(layout.Id, StringComparison.OrdinalIgnoreCase) != true)
         {
             await ApplySelectedLayoutAsync(layout, clearHiddenSlots: false);
         }
@@ -1056,7 +878,7 @@ public partial class MainWindow : Window
         }
 
         var workspaceSlots = workspace.Slots.ToDictionary(slot => slot.SlotId);
-        var visibleSlotIds = GetVisibleSlotIds(layout, preparedWorkspace.LayoutTree);
+        var visibleSlotIds = layout.Slots.Select(slot => slot.SlotId).ToHashSet();
 
         foreach (var slot in _slots.OrderBy(slot => slot.SlotId))
         {
@@ -1117,11 +939,7 @@ public partial class MainWindow : Window
     private void SelectSlotFromState(int? selectedSlotId)
     {
         var targetSlotId = selectedSlotId;
-        if (_currentLayoutTree?.Root is not null)
-        {
-            targetSlotId = ResolveVisibleSlotId(_currentLayoutTree, selectedSlotId);
-        }
-        else if (_selectedLayout is LayoutPreset layout)
+        if (_selectedLayout is LayoutPreset layout)
         {
             targetSlotId = _slotSelectionService.ResolveVisibleSlotId(layout, selectedSlotId);
         }
@@ -1140,17 +958,6 @@ public partial class MainWindow : Window
 
     private void EnsureSelectedSlotVisible(LayoutPreset layout)
     {
-        if (_currentLayoutTree?.Root is not null)
-        {
-            if (_selectedSlot is null || LayoutTreePresetConverter.GetVisibleSlotIds(_currentLayoutTree).Contains(_selectedSlot.SlotId))
-            {
-                return;
-            }
-
-            SelectSlotFromState(_selectedSlot.SlotId);
-            return;
-        }
-
         if (_selectedSlot is null || _slotSelectionService.IsSlotVisible(layout, _selectedSlot.SlotId))
         {
             return;
@@ -1339,55 +1146,14 @@ public partial class MainWindow : Window
 
     private StreamSlotView[] GetVisibleNonBlankSlots()
     {
-        HashSet<int>? visibleSlotIds = null;
-        if (_currentLayoutTree?.Root is not null)
-        {
-            visibleSlotIds = LayoutTreePresetConverter.GetVisibleSlotIds(_currentLayoutTree).ToHashSet();
-        }
-        else if (_selectedLayout is LayoutPreset layout)
-        {
-            visibleSlotIds = layout.Slots
-                .Select(slot => slot.SlotId)
-                .ToHashSet();
-        }
+        HashSet<int>? visibleSlotIds = _selectedLayout is { } layout
+            ? layout.Slots.Select(slot => slot.SlotId).ToHashSet()
+            : null;
 
         return _slots
             .Where(slot => visibleSlotIds is null || visibleSlotIds.Contains(slot.SlotId))
             .Where(slot => !slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
             .ToArray();
-    }
-
-    private static HashSet<int> GetVisibleSlotIds(LayoutPreset layout, LayoutTreeDocument? layoutTree)
-    {
-        if (layoutTree?.Root is not null)
-        {
-            return LayoutTreePresetConverter.GetVisibleSlotIds(layoutTree).ToHashSet();
-        }
-
-        return layout.Slots
-            .Select(slot => slot.SlotId)
-            .ToHashSet();
-    }
-
-    private static int? ResolveVisibleSlotId(LayoutTreeDocument layoutTree, int? requestedSlotId)
-    {
-        if (requestedSlotId is null)
-        {
-            return null;
-        }
-
-        var visibleSlotIds = LayoutTreePresetConverter.GetVisibleSlotIds(layoutTree)
-            .Where(slotId => slotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount)
-            .Order()
-            .ToArray();
-        if (visibleSlotIds.Length == 0)
-        {
-            return null;
-        }
-
-        return visibleSlotIds.Contains(requestedSlotId.Value)
-            ? requestedSlotId.Value
-            : visibleSlotIds[0];
     }
 
     private static string? NormalizeQualityKey(string? qualityKey)

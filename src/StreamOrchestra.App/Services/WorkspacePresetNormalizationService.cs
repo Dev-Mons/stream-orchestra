@@ -13,8 +13,7 @@ public sealed class WorkspacePresetNormalizationService
 
     public WorkspacePreset Normalize(WorkspacePreset workspace, IReadOnlyList<LayoutPreset> layouts)
     {
-        var layoutTree = workspace.LayoutTree?.Root is null ? null : workspace.LayoutTree;
-        var layoutId = layoutTree is not null ? "dynamic" : NormalizeLayoutId(workspace.LayoutId, layouts);
+        var layoutId = NormalizeLayoutId(workspace.LayoutId, layouts);
         var sourceSlots = workspace.Slots ?? [];
         var slotsById = sourceSlots
             .Where(slot => slot is { SlotId: >= 1 and <= PlaybackTestPlanService.MaxSlotCount })
@@ -26,7 +25,6 @@ public sealed class WorkspacePresetNormalizationService
             Id = string.IsNullOrWhiteSpace(workspace.Id) ? "workspace_imported" : workspace.Id.Trim(),
             Name = string.IsNullOrWhiteSpace(workspace.Name) ? "Imported Workspace" : workspace.Name.Trim(),
             LayoutId = layoutId,
-            LayoutTree = layoutTree,
             Slots = Enumerable.Range(1, PlaybackTestPlanService.MaxSlotCount)
                 .Select(slotId => NormalizeSlot(slotId, slotsById))
                 .ToArray()

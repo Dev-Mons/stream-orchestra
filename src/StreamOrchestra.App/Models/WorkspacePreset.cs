@@ -8,7 +8,5 @@ public sealed class WorkspacePreset
 
     public string LayoutId { get; init; } = LayoutPresetIds.Default;
 
-    public LayoutTreeDocument? LayoutTree { get; init; }
-
     public IReadOnlyList<WorkspaceSlot> Slots { get; init; } = [];
 }

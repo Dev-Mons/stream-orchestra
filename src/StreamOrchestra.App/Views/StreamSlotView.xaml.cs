@@ -15,8 +15,6 @@ public partial class StreamSlotView : UserControl
     private const int MaxVolumePercent = 100;
     private const int InitialVolumePercent = 100;
     private const int VolumeStepPercent = 10;
-    private const double RemoveSlotButtonSize = 28;
-    private const double RemoveSlotButtonMargin = 8;
 
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
@@ -29,7 +27,6 @@ public partial class StreamSlotView : UserControl
     private string? _playbackViewportScriptId;
     private string? _qualityObserverScriptId;
     private Point? _slotDragStartPoint;
-    private bool _isRemoveSlotActionAvailable;
 
     public StreamSlotView(
         SlotConfiguration configuration,
@@ -64,13 +61,13 @@ public partial class StreamSlotView : UserControl
 
     public event Action? HostDragCompleted;
 
-    public event Action<StreamSlotView, DockDirection>? DockPreviewRequested;
+    public event Action<StreamSlotView, int>? SlotSwapRequested;
 
-    public event Action<StreamSlotView>? DockPreviewEnded;
+    /// <summary>슬롯 위의 제거 버튼이 클릭됨(화면 제거 요청).</summary>
+    public event Action<StreamSlotView>? RemoveSlotRequested;
 
-    public event Action<StreamSlotView, string, string?, DockDirection>? StreamDockDropRequested;
-
-    public event Action<StreamSlotView>? RemoveFromLayoutRequested;
+    /// <summary>WebView2 콘텐츠에서 Ctrl 키 상태가 바뀜(제거 모드 토글용).</summary>
+    public event Action<bool>? CtrlStateChanged;
 
     public SlotConfiguration Configuration { get; }
 
@@ -148,13 +145,17 @@ public partial class StreamSlotView : UserControl
         }
     }
 
-    public void SetRemoveSlotActionAvailable(bool isAvailable)
+    /// <summary>제거 모드(Ctrl 홀드)일 때 이 슬롯 위에 제거 버튼을 표시/숨김.</summary>
+    public void SetRemoveModeActive(bool isActive)
     {
-        _isRemoveSlotActionAvailable = isAvailable;
-        if (!isAvailable)
-        {
-            RemoveSlotPopup.IsOpen = false;
-        }
+        RemoveSlotPopup.IsOpen = isActive;
+    }
+
+    private void RemoveSlotButton_Click(object sender, RoutedEventArgs e)
+    {
+        RemoveSlotPopup.IsOpen = false;
+        RemoveSlotRequested?.Invoke(this);
+        e.Handled = true;
     }
 
     private async void StreamSlotView_Loaded(object sender, RoutedEventArgs e)
@@ -282,35 +283,9 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
-        if (message.Type.Equals("slot-hover-enter", StringComparison.OrdinalIgnoreCase))
+        if (message.Type.Equals("ctrl-state", StringComparison.OrdinalIgnoreCase))
         {
-            ShowRemoveSlotAction();
-            return;
-        }
-
-        if (message.Type.Equals("slot-hover-leave", StringComparison.OrdinalIgnoreCase))
-        {
-            HideRemoveSlotActionWhenPointerLeaves();
-            return;
-        }
-
-        if (message.Type.Equals("stream-dock-preview", StringComparison.OrdinalIgnoreCase))
-        {
-            DockPreviewRequested?.Invoke(this, ParseDockDirection(message.Direction));
-            return;
-        }
-
-        if (message.Type.Equals("stream-dock-leave", StringComparison.OrdinalIgnoreCase))
-        {
-            DockPreviewEnded?.Invoke(this);
-            return;
-        }
-
-        if (message.Type.Equals("stream-dock-drop", StringComparison.OrdinalIgnoreCase) &&
-            StreamDropDataReader.TryNormalizeDroppedText(message.Url, _navigationService, out var dockUrl))
-        {
-            SlotSelected?.Invoke(this);
-            StreamDockDropRequested?.Invoke(this, dockUrl, message.StreamName, ParseDockDirection(message.Direction));
+            CtrlStateChanged?.Invoke(message.Pressed);
             return;
         }
 
@@ -328,53 +303,6 @@ public partial class StreamSlotView : UserControl
     {
         _slotDragStartPoint = e.GetPosition(this);
         SlotSelected?.Invoke(this);
-    }
-
-    private void SlotBorder_MouseEnter(object sender, MouseEventArgs e)
-    {
-        ShowRemoveSlotAction();
-    }
-
-    private void SlotBorder_MouseLeave(object sender, MouseEventArgs e)
-    {
-        HideRemoveSlotActionWhenPointerLeaves();
-    }
-
-    private void RemoveSlotButton_MouseLeave(object sender, MouseEventArgs e)
-    {
-        HideRemoveSlotActionWhenPointerLeaves();
-    }
-
-    private void RemoveSlotButton_Click(object sender, RoutedEventArgs e)
-    {
-        RemoveSlotPopup.IsOpen = false;
-        RemoveFromLayoutRequested?.Invoke(this);
-        e.Handled = true;
-    }
-
-    private void ShowRemoveSlotAction()
-    {
-        if (!_isRemoveSlotActionAvailable)
-        {
-            return;
-        }
-
-        RemoveSlotPopup.HorizontalOffset = Math.Max(
-            RemoveSlotButtonMargin,
-            SlotBorder.ActualWidth - RemoveSlotButtonSize - RemoveSlotButtonMargin);
-        RemoveSlotPopup.VerticalOffset = RemoveSlotButtonMargin;
-        RemoveSlotPopup.IsOpen = true;
-    }
-
-    private void HideRemoveSlotActionWhenPointerLeaves()
-    {
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (!SlotBorder.IsMouseOver && !RemoveSlotButton.IsMouseOver)
-            {
-                RemoveSlotPopup.IsOpen = false;
-            }
-        }, DispatcherPriority.Background);
     }
 
     private void SlotBorder_MouseMove(object sender, MouseEventArgs e)
@@ -483,89 +411,48 @@ public partial class StreamSlotView : UserControl
 
     private void SlotBorder_DragOver(object sender, DragEventArgs e)
     {
-        if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out _, out _))
-        {
-            e.Effects = DragDropEffects.Copy;
-            DockPreviewRequested?.Invoke(this, CalculateDockDirection(sender, e));
-        }
-        else
-        {
-            e.Effects = DragDropEffects.None;
-            DockPreviewEnded?.Invoke(this);
-        }
-
+        e.Effects = IsAcceptableDrop(e.Data)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
         e.Handled = true;
     }
 
     private void SlotBorder_Drop(object sender, DragEventArgs e)
     {
+        // 슬롯 간 드래그(레이아웃 내 영상 위치 교환)
+        if (TryGetDroppedSlotId(e.Data, out var sourceSlotId) && sourceSlotId != SlotId)
+        {
+            SlotSelected?.Invoke(this);
+            SlotSwapRequested?.Invoke(this, sourceSlotId);
+            e.Handled = true;
+            return;
+        }
+
+        // 영상 영역에 채널 드롭 = 현재 슬롯의 영상을 교체
         if (StreamDropDataReader.TryGetDroppedStream(e.Data, _navigationService, out var url, out var streamName))
         {
-            var direction = CalculateDockDirection(sender, e);
             SlotSelected?.Invoke(this);
-            if (direction is DockDirection.Left or DockDirection.Right or DockDirection.Top or DockDirection.Bottom)
-            {
-                StreamDockDropRequested?.Invoke(this, url, streamName, direction);
-            }
-            else
-            {
-                StreamUrlDropRequested?.Invoke(this, url, streamName);
-            }
-
+            StreamUrlDropRequested?.Invoke(this, url, streamName);
             e.Handled = true;
         }
     }
 
-    private static DockDirection CalculateDockDirection(object sender, DragEventArgs e)
+    private bool IsAcceptableDrop(IDataObject data)
     {
-        if (sender is not FrameworkElement element || element.ActualWidth <= 0 || element.ActualHeight <= 0)
-        {
-            return DockDirection.Center;
-        }
-
-        var position = e.GetPosition(element);
-        return CalculateDockDirection(position.X, position.Y, element.ActualWidth, element.ActualHeight);
+        return TryGetDroppedSlotId(data, out _) ||
+               StreamDropDataReader.TryGetDroppedStream(data, _navigationService, out _, out _);
     }
 
-    private static DockDirection CalculateDockDirection(double x, double y, double width, double height)
+    private static bool TryGetDroppedSlotId(IDataObject data, out int slotId)
     {
-        var edgeWidth = width * 0.25;
-        var edgeHeight = height * 0.25;
-
-        if (x <= edgeWidth)
+        slotId = 0;
+        if (!data.GetDataPresent(StreamDragDataFormats.SlotId))
         {
-            return DockDirection.Left;
+            return false;
         }
 
-        if (x >= width - edgeWidth)
-        {
-            return DockDirection.Right;
-        }
-
-        if (y <= edgeHeight)
-        {
-            return DockDirection.Top;
-        }
-
-        if (y >= height - edgeHeight)
-        {
-            return DockDirection.Bottom;
-        }
-
-        return DockDirection.Center;
-    }
-
-    private static DockDirection ParseDockDirection(string? direction)
-    {
-        return direction?.Trim().ToLowerInvariant() switch
-        {
-            "left" => DockDirection.Left,
-            "right" => DockDirection.Right,
-            "top" => DockDirection.Top,
-            "bottom" => DockDirection.Bottom,
-            "center" => DockDirection.Center,
-            _ => DockDirection.Center
-        };
+        var value = data.GetData(StreamDragDataFormats.SlotId)?.ToString();
+        return int.TryParse(value, out slotId);
     }
 
     private static string NormalizeQualityKey(string qualityKey)
@@ -702,25 +589,6 @@ public partial class StreamSlotView : UserControl
   installStyle();
   window.addEventListener("DOMContentLoaded", installStyle, { once: true });
   applySoopImmersiveMode();
-  let isHoveringSlot = false;
-
-  document.addEventListener("pointermove", () => {
-    if (isHoveringSlot) {
-      return;
-    }
-
-    isHoveringSlot = true;
-    window.chrome?.webview?.postMessage({ type: "slot-hover-enter" });
-  }, true);
-
-  document.addEventListener("pointerleave", () => {
-    if (!isHoveringSlot) {
-      return;
-    }
-
-    isHoveringSlot = false;
-    window.chrome?.webview?.postMessage({ type: "slot-hover-leave" });
-  }, true);
 
   document.addEventListener("dragover", event => {
     if (!hasStreamUrlData(event.dataTransfer)) {
@@ -730,18 +598,6 @@ public partial class StreamSlotView : UserControl
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "copy";
-    window.chrome?.webview?.postMessage({
-      type: "stream-dock-preview",
-      direction: calculateDockDirection(event.clientX, event.clientY)
-    });
-  }, true);
-
-  document.addEventListener("dragleave", event => {
-    if (event.relatedTarget) {
-      return;
-    }
-
-    window.chrome?.webview?.postMessage({ type: "stream-dock-leave" });
   }, true);
 
   document.addEventListener("drop", event => {
@@ -753,10 +609,9 @@ public partial class StreamSlotView : UserControl
     event.preventDefault();
     event.stopPropagation();
     window.chrome?.webview?.postMessage({
-      type: "stream-dock-drop",
+      type: "stream-drop",
       url: payload.url,
-      streamName: payload.streamName || "",
-      direction: calculateDockDirection(event.clientX, event.clientY)
+      streamName: payload.streamName || ""
     });
   }, true);
 
@@ -772,6 +627,31 @@ public partial class StreamSlotView : UserControl
       deltaY: event.deltaY
     });
   }, { capture: true, passive: false });
+
+  // Ctrl 홀드 → 호스트에 제거 모드 토글 신호 전달(WebView2가 키 포커스를 가져도 동작).
+  let ctrlReported = false;
+  const reportCtrl = pressed => {
+    if (ctrlReported === pressed) {
+      return;
+    }
+
+    ctrlReported = pressed;
+    window.chrome?.webview?.postMessage({ type: "ctrl-state", pressed });
+  };
+
+  document.addEventListener("keydown", event => {
+    if (event.key === "Control") {
+      reportCtrl(true);
+    }
+  }, true);
+
+  document.addEventListener("keyup", event => {
+    if (event.key === "Control") {
+      reportCtrl(false);
+    }
+  }, true);
+
+  window.addEventListener("blur", () => reportCtrl(false), true);
 
   function hasStreamUrlData(dataTransfer) {
     if (!dataTransfer) {
@@ -796,31 +676,6 @@ public partial class StreamSlotView : UserControl
     return url
       ? { url, streamName: htmlPayload.streamName || "" }
       : null;
-  }
-
-  function calculateDockDirection(clientX, clientY) {
-    const width = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-    const height = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-    const edgeWidth = width * 0.25;
-    const edgeHeight = height * 0.25;
-
-    if (clientX <= edgeWidth) {
-      return "left";
-    }
-
-    if (clientX >= width - edgeWidth) {
-      return "right";
-    }
-
-    if (clientY <= edgeHeight) {
-      return "top";
-    }
-
-    if (clientY >= height - edgeHeight) {
-      return "bottom";
-    }
-
-    return "center";
   }
 
   function readHtmlPayload(html) {
@@ -1294,6 +1149,8 @@ public partial class StreamSlotView : UserControl
         public string? Direction { get; init; }
 
         public double DeltaY { get; init; }
+
+        public bool Pressed { get; init; }
     }
 
 }

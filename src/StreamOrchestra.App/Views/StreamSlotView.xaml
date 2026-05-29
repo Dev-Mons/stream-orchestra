@@ -16,8 +16,6 @@
             AllowDrop="True"
             DragOver="SlotBorder_DragOver"
             Drop="SlotBorder_Drop"
-            MouseEnter="SlotBorder_MouseEnter"
-            MouseLeave="SlotBorder_MouseLeave"
             PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown"
             MouseMove="SlotBorder_MouseMove"
             PreviewMouseWheel="SlotBorder_PreviewMouseWheel">
@@ -64,25 +62,24 @@
             </primitives:Popup>
             <primitives:Popup x:Name="RemoveSlotPopup"
                               PlacementTarget="{Binding ElementName=SlotBorder}"
-                              Placement="Relative"
+                              Placement="Center"
                               IsOpen="False"
                               AllowsTransparency="True"
                               Focusable="False"
                               StaysOpen="True">
                 <Button x:Name="RemoveSlotButton"
-                        Width="28"
-                        Height="28"
+                        Width="64"
+                        Height="64"
                         Padding="0"
-                        Background="#D91F2937"
-                        BorderBrush="#E5F3F6FA"
-                        BorderThickness="1"
+                        Background="#E01F2937"
+                        BorderBrush="#F3F6FA"
+                        BorderThickness="2"
                         Foreground="#F3F6FA"
-                        FontSize="14"
+                        FontSize="26"
                         FontWeight="Bold"
-                        Content="X"
-                        ToolTip="Remove slot"
-                        Click="RemoveSlotButton_Click"
-                        MouseLeave="RemoveSlotButton_MouseLeave" />
+                        Content="🗑"
+                        ToolTip="이 화면 제거 (Ctrl)"
+                        Click="RemoveSlotButton_Click" />
             </primitives:Popup>
         </Grid>
     </Border>

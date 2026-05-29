@@ -30,27 +30,31 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Empty(document
             .Descendants()
             .Where(element => element.Name.LocalName is "TextBox" or "ContextMenu" or "MenuItem"));
+        // Ctrl 제거 버튼(RemoveSlotButton)을 제외하면 슬롯 내부에 다른 Button은 없다.
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "Button" &&
             GetAttribute(element, "Name") != "RemoveSlotButton");
     }
 
     [Fact]
-    public void StreamSlotView_ProvidesHoverRemoveActionAsPopupOutsideBrowserContentRow()
+    public void StreamSlotView_ProvidesCtrlRevealedRemoveButtonAsCenteredPopup()
     {
         var document = LoadStreamSlotViewDocument();
         var popup = FindElementByName(document, "RemoveSlotPopup");
         var button = FindElementByName(document, "RemoveSlotButton");
-        var browser = FindElementByName(document, "Browser");
-        var browserContentGrid = browser.Parent;
 
         Assert.Equal("Popup", popup.Name.LocalName);
         Assert.Equal("False", GetAttribute(popup, "IsOpen"));
-        Assert.Equal("Relative", GetAttribute(popup, "Placement"));
+        Assert.Equal("Center", GetAttribute(popup, "Placement"));
         Assert.Contains("SlotBorder", GetAttribute(popup, "PlacementTarget"));
         Assert.Equal("Button", button.Name.LocalName);
-        Assert.DoesNotContain(browserContentGrid!.Descendants(), element =>
-            GetAttribute(element, "Name") == "RemoveSlotButton");
+        Assert.Equal("RemoveSlotButton_Click", GetAttribute(button, "Click"));
+
+        var codeBehind = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+        Assert.Contains("public void SetRemoveModeActive(bool isActive)", codeBehind);
+        Assert.Contains("RemoveSlotRequested?.Invoke", codeBehind);
+        Assert.Contains("CtrlStateChanged?.Invoke", codeBehind);
+        Assert.Contains("ctrl-state", codeBehind);
     }
 
     [Fact]
@@ -117,17 +121,20 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("StreamUrlDropRequested?.Invoke", slotText);
         Assert.Contains("HostDragStarted?.Invoke", slotText);
         Assert.Contains("HostDragCompleted?.Invoke", slotText);
-        Assert.Contains("RemoveFromLayoutRequested?.Invoke", slotText);
+        Assert.Contains("SlotSwapRequested?.Invoke", slotText);
         Assert.Contains("StreamDropDataReader.TryGetDroppedStream", slotText);
         Assert.Contains("CoreWebView2_WebMessageReceived", slotText);
         Assert.Contains("stream-drop", slotText);
         Assert.Contains("slot-wheel", slotText);
-        Assert.Contains("slot-hover-enter", slotText);
-        Assert.Contains("slot-hover-leave", slotText);
         Assert.Contains("StreamDragDataFormats.StreamUrl", dropReaderText);
         Assert.Contains("DataFormats.UnicodeText", dropReaderText);
         Assert.Contains("PlainTextUrlPattern", dropReaderText);
         Assert.Contains("DragDropEffects.Copy", slotText);
+        // 동적 도킹 잔재가 제거되었다.
+        Assert.DoesNotContain("RemoveFromLayoutRequested", slotText);
+        Assert.DoesNotContain("StreamDockDropRequested", slotText);
+        Assert.DoesNotContain("DockPreviewRequested", slotText);
+        Assert.DoesNotContain("CalculateDockDirection", slotText);
     }
 
     [Theory]
@@ -147,26 +154,6 @@ public sealed class StreamSlotViewLayoutTests
 
         Assert.NotNull(method);
         Assert.Equal(expectedVolumePercent, method!.Invoke(null, [currentVolumePercent, deltaY]));
-    }
-
-    [Theory]
-    [InlineData(160, 300, StreamOrchestra.App.Models.DockDirection.Left)]
-    [InlineData(640, 300, StreamOrchestra.App.Models.DockDirection.Right)]
-    [InlineData(400, 120, StreamOrchestra.App.Models.DockDirection.Top)]
-    [InlineData(400, 480, StreamOrchestra.App.Models.DockDirection.Bottom)]
-    [InlineData(400, 300, StreamOrchestra.App.Models.DockDirection.Center)]
-    public void CodeBehind_UsesGenerousDockZonesInsideWebViewSlots(
-        double x,
-        double y,
-        StreamOrchestra.App.Models.DockDirection expected)
-    {
-        var method = typeof(StreamOrchestra.App.Views.StreamSlotView).GetMethod(
-            "CalculateDockDirection",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(double), typeof(double), typeof(double), typeof(double)]);
-
-        Assert.NotNull(method);
-        Assert.Equal(expected, method!.Invoke(null, [x, y, 800d, 600d]));
     }
 
     [Fact]
@@ -281,6 +268,15 @@ public sealed class StreamSlotViewLayoutTests
         return document
             .Descendants()
             .Single(element => element.Attributes().Any(attribute =>
+                attribute.Name.LocalName == "Name" &&
+                attribute.Value == name));
+    }
+
+    private static XElement? FindElementByNameOrDefault(XDocument document, string name)
+    {
+        return document
+            .Descendants()
+            .SingleOrDefault(element => element.Attributes().Any(attribute =>
                 attribute.Name.LocalName == "Name" &&
                 attribute.Value == name));
     }

@@ -151,7 +151,6 @@ public sealed class PresetStorageService
             Id = id,
             Name = name,
             LayoutId = workspace.LayoutId?.Trim() ?? "",
-            LayoutTree = workspace.LayoutTree,
             Slots = workspace.Slots ?? []
         };
     }

@@ -105,12 +105,11 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("TryGetDropTargetSlot", codeBehind);
         Assert.Contains("LoadDroppedStreamIntoSlotAsync", codeBehind);
         Assert.Contains("StreamDropDataReader.TryGetDroppedStream", codeBehind);
-        Assert.Contains("LayoutTreePresetConverter.Convert", codeBehind);
-        Assert.Contains("LayoutTreeRenderer.Build", codeBehind);
+        Assert.Contains("LayoutGridRenderer.Build", codeBehind);
     }
 
     [Fact]
-    public void PlaybackGrid_WiresDynamicDockingPreviewAndDropFlow()
+    public void PlaybackGrid_WiresCardBasedLayoutSelectionAndRemovesDynamicDocking()
     {
         var document = LoadMainWindowDocument();
         var slotsGrid = FindElementByName(document, "SlotsGrid");
@@ -124,24 +123,35 @@ public sealed class MainWindowLayoutTests
             "MainWindow.xaml.cs"));
         var codeBehind = File.ReadAllText(codeBehindPath);
 
-        Assert.Equal("SlotsGrid_DragLeave", GetAttribute(slotsGrid, "DragLeave"));
-        Assert.Contains("DockingOverlayPresenter", codeBehind);
-        Assert.Contains("LayoutTreeMutationService", codeBehind);
-        Assert.Contains("ApplyLayoutTree", codeBehind);
-        Assert.Contains("CreateDockedSlotFromDropAsync", codeBehind);
-        Assert.Contains("DockingInputOverlay", codeBehind);
-        Assert.Contains("ShowDockingInputOverlay", codeBehind);
-        Assert.Contains("HideDockingInputOverlay", codeBehind);
-        Assert.Contains("GetDockPointerPosition", codeBehind);
-        Assert.Contains("_lastDockTargetSlot", codeBehind);
-        Assert.Contains("_lastDockDirection", codeBehind);
-        Assert.Contains("ShowDockingInputPreview", codeBehind);
-        Assert.Contains("_dockingInputPreview", codeBehind);
-        Assert.Contains("RemoveFromLayoutRequested += SlotView_RemoveFromLayoutRequested", codeBehind);
-        Assert.Contains("RemoveSlotFromDynamicLayoutAsync", codeBehind);
-        Assert.Contains("_layoutTreeMutationService.RemoveLeaf", codeBehind);
-        Assert.Contains("SetRemoveSlotActionAvailable", codeBehind);
-        Assert.Contains("slot.ClearAsync()", codeBehind);
+        // 카드 기반 레이아웃 전환 흐름이 배선되어 있다.
+        Assert.Contains("LayoutCardPresenter", codeBehind);
+        Assert.Contains("LayoutTemplateCandidateService", codeBehind);
+        Assert.Contains("ShowLayoutCards", codeBehind);
+        Assert.Contains("HideLayoutCards", codeBehind);
+        Assert.Contains("ApplyTemplateFromCardAsync", codeBehind);
+        Assert.Contains("CardChosen += LayoutCardPresenter_CardChosen", codeBehind);
+        Assert.Contains("SlotSwapRequested += SlotView_SlotSwapRequested", codeBehind);
+
+        // Ctrl 홀드 기반 화면 제거 흐름이 배선되어 있다.
+        Assert.Contains("RemoveSlotRequested += SlotView_RemoveSlotRequested", codeBehind);
+        Assert.Contains("CtrlStateChanged += SetRemoveModeActive", codeBehind);
+        Assert.Contains("RemoveScreenAsync", codeBehind);
+        Assert.Contains("GetTemplatesForSlotCount", codeBehind);
+        Assert.Contains("MainWindow_PreviewKeyDown", codeBehind);
+
+        // 동적 도킹/트리 레이아웃 경로가 완전히 제거되었다.
+        Assert.Null(GetAttribute(slotsGrid, "DragLeave"));
+        Assert.DoesNotContain("DockingOverlayPresenter", codeBehind);
+        Assert.DoesNotContain("LayoutTreeMutationService", codeBehind);
+        Assert.DoesNotContain("LayoutTreePresetConverter", codeBehind);
+        Assert.DoesNotContain("LayoutTreeRenderer", codeBehind);
+        Assert.DoesNotContain("ApplyLayoutTree", codeBehind);
+        Assert.DoesNotContain("CreateDockedSlotFromDropAsync", codeBehind);
+        Assert.DoesNotContain("RemoveSlotFromDynamicLayoutAsync", codeBehind);
+        Assert.DoesNotContain("_currentLayoutTree", codeBehind);
+        Assert.DoesNotContain("DockingInputOverlay", codeBehind);
+        Assert.DoesNotContain("_lastDockDirection", codeBehind);
+        Assert.DoesNotContain("SetRemoveSlotActionAvailable", codeBehind);
     }
 
     [Fact]

@@ -13,48 +13,33 @@ public sealed class LayoutPresetServiceTests
 
         var layouts = service.LoadFromFile(path);
 
-        Assert.Collection(
-            layouts,
-            layout =>
-            {
-                Assert.Equal("layout_8_small_1_main", layout.Id);
-                Assert.Equal(4, layout.GridColumns);
-                Assert.Equal(3, layout.GridRows);
-                Assert.Equal(9, layout.Slots.Count);
-                Assert.Contains(layout.Slots, slot => slot.SlotId == 9 && slot.X == 2 && slot.Y == 1 && slot.W == 2 && slot.H == 2);
-            },
-            layout =>
-            {
-                Assert.Equal("layout_4x4", layout.Id);
-                Assert.Equal(4, layout.GridColumns);
-                Assert.Equal(4, layout.GridRows);
-                Assert.Equal(16, layout.Slots.Count);
-                Assert.Contains(layout.Slots, slot => slot.SlotId == 16 && slot.X == 3 && slot.Y == 3 && slot.W == 1 && slot.H == 1);
-            },
-            layout =>
-            {
-                Assert.Equal(LayoutPresetIds.ThreeByTwo, layout.Id);
-                Assert.Equal(3, layout.GridColumns);
-                Assert.Equal(2, layout.GridRows);
-                Assert.Equal(6, layout.Slots.Count);
-                Assert.Contains(layout.Slots, slot => slot.SlotId == 6 && slot.X == 2 && slot.Y == 1 && slot.W == 1 && slot.H == 1);
-            },
-            layout =>
-            {
-                Assert.Equal(LayoutPresetIds.TwoByTwo, layout.Id);
-                Assert.Equal(2, layout.GridColumns);
-                Assert.Equal(2, layout.GridRows);
-                Assert.Equal(4, layout.Slots.Count);
-                Assert.Contains(layout.Slots, slot => slot.SlotId == 4 && slot.X == 1 && slot.Y == 1 && slot.W == 1 && slot.H == 1);
-            },
-            layout =>
-            {
-                Assert.Equal(LayoutPresetIds.TwoByTwoBottomWide, layout.Id);
-                Assert.Equal(2, layout.GridColumns);
-                Assert.Equal(3, layout.GridRows);
-                Assert.Equal(5, layout.Slots.Count);
-                Assert.Contains(layout.Slots, slot => slot.SlotId == 5 && slot.X == 0 && slot.Y == 2 && slot.W == 2 && slot.H == 1);
-            });
+        // 카드형 레이아웃을 위해 슬롯 1~9 및 16개짜리 템플릿이 슬롯 수 오름차순으로 제공된다.
+        Assert.Equal(
+            [
+                "layout_1",
+                "layout_2",
+                "layout_3",
+                LayoutPresetIds.TwoByTwo,
+                LayoutPresetIds.TwoByTwoBottomWide,
+                LayoutPresetIds.ThreeByTwo,
+                "layout_7",
+                "layout_8",
+                LayoutPresetIds.Default,
+                LayoutPresetIds.Tournament
+            ],
+            layouts.Select(layout => layout.Id).ToArray());
+
+        // 모든 템플릿이 명시적 slotCount(=EffectiveSlotCount)를 노출한다.
+        Assert.Equal(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 16],
+            layouts.Select(layout => layout.EffectiveSlotCount).ToArray());
+        Assert.All(layouts, layout => Assert.Equal(layout.SlotCount, layout.EffectiveSlotCount));
+
+        var defaultLayout = layouts.Single(layout => layout.Id == LayoutPresetIds.Default);
+        Assert.Contains(defaultLayout.Slots, slot => slot.SlotId == 9 && slot.X == 2 && slot.Y == 1 && slot.W == 2 && slot.H == 2);
+
+        var bottomWide = layouts.Single(layout => layout.Id == LayoutPresetIds.TwoByTwoBottomWide);
+        Assert.Contains(bottomWide.Slots, slot => slot.SlotId == 5 && slot.X == 0 && slot.Y == 2 && slot.W == 2 && slot.H == 1);
     }
 
     [Fact]
@@ -135,11 +120,16 @@ public sealed class LayoutPresetServiceTests
 
         Assert.Equal(
             [
-                LayoutPresetIds.Default,
-                LayoutPresetIds.Tournament,
-                LayoutPresetIds.ThreeByTwo,
+                "layout_1",
+                "layout_2",
+                "layout_3",
                 LayoutPresetIds.TwoByTwo,
-                LayoutPresetIds.TwoByTwoBottomWide
+                LayoutPresetIds.TwoByTwoBottomWide,
+                LayoutPresetIds.ThreeByTwo,
+                "layout_7",
+                "layout_8",
+                LayoutPresetIds.Default,
+                LayoutPresetIds.Tournament
             ],
             layouts.Select(layout => layout.Id).ToArray());
     }

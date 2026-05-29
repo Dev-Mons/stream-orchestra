@@ -23,23 +23,13 @@ public sealed class WorkspaceRestoreService
         }
 
         var normalizedWorkspace = _normalizationService.Normalize(workspace, layouts);
-        if (normalizedWorkspace.LayoutTree?.Root is not null)
-        {
-            var fallbackLayout = layouts.FirstOrDefault(candidate =>
-                                     candidate.Id.Equals(LayoutPresetIds.Default, StringComparison.OrdinalIgnoreCase))
-                                 ?? layouts.First();
-            var visibleDynamicWorkspace = _visibilityService.BlankHiddenSlots(normalizedWorkspace, normalizedWorkspace.LayoutTree);
-
-            return new PreparedWorkspace(visibleDynamicWorkspace, fallbackLayout, normalizedWorkspace.LayoutTree);
-        }
-
         var layout = layouts.FirstOrDefault(candidate =>
                          candidate.Id.Equals(normalizedWorkspace.LayoutId, StringComparison.OrdinalIgnoreCase))
                      ?? LayoutPresetService.SelectDefaultLayout(layouts);
         var visibleWorkspace = _visibilityService.BlankHiddenSlots(normalizedWorkspace, layout);
 
-        return new PreparedWorkspace(visibleWorkspace, layout, null);
+        return new PreparedWorkspace(visibleWorkspace, layout);
     }
 }
 
-public sealed record PreparedWorkspace(WorkspacePreset Workspace, LayoutPreset Layout, LayoutTreeDocument? LayoutTree = null);
+public sealed record PreparedWorkspace(WorkspacePreset Workspace, LayoutPreset Layout);

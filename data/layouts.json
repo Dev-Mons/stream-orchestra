@@ -1,7 +1,116 @@
 [
   {
+    "id": "layout_1",
+    "name": "1 Screen",
+    "slotCount": 1,
+    "gridColumns": 1,
+    "gridRows": 1,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_2",
+    "name": "2 Screens",
+    "slotCount": 2,
+    "gridColumns": 2,
+    "gridRows": 1,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_3",
+    "name": "3 Screens",
+    "slotCount": 3,
+    "gridColumns": 3,
+    "gridRows": 1,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 2, "y": 0, "w": 1, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_2x2",
+    "name": "2x2 Grid",
+    "slotCount": 4,
+    "gridColumns": 2,
+    "gridRows": 2,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 0, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 4, "x": 1, "y": 1, "w": 1, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_2x2_bottom_wide",
+    "name": "2x2 + Bottom Wide",
+    "slotCount": 5,
+    "gridColumns": 2,
+    "gridRows": 3,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 0, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 4, "x": 1, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 5, "x": 0, "y": 2, "w": 2, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_3x2",
+    "name": "3x2 Grid",
+    "slotCount": 6,
+    "gridColumns": 3,
+    "gridRows": 2,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 2, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 4, "x": 0, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 5, "x": 1, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 6, "x": 2, "y": 1, "w": 1, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_7",
+    "name": "7 Screens",
+    "slotCount": 7,
+    "gridColumns": 4,
+    "gridRows": 2,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 2, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 4, "x": 3, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 5, "x": 0, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 6, "x": 1, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 7, "x": 2, "y": 1, "w": 2, "h": 1 }
+    ]
+  },
+  {
+    "id": "layout_8",
+    "name": "8 Screens",
+    "slotCount": 8,
+    "gridColumns": 4,
+    "gridRows": 2,
+    "slots": [
+      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 3, "x": 2, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 4, "x": 3, "y": 0, "w": 1, "h": 1 },
+      { "slotId": 5, "x": 0, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 6, "x": 1, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 7, "x": 2, "y": 1, "w": 1, "h": 1 },
+      { "slotId": 8, "x": 3, "y": 1, "w": 1, "h": 1 }
+    ]
+  },
+  {
     "id": "layout_8_small_1_main",
     "name": "8 Small + 1 Main",
+    "slotCount": 9,
     "gridColumns": 4,
     "gridRows": 3,
     "slots": [
@@ -19,6 +128,7 @@
   {
     "id": "layout_4x4",
     "name": "4x4 Tournament",
+    "slotCount": 16,
     "gridColumns": 4,
     "gridRows": 4,
     "slots": [
@@ -38,45 +148,6 @@
       { "slotId": 14, "x": 1, "y": 3, "w": 1, "h": 1 },
       { "slotId": 15, "x": 2, "y": 3, "w": 1, "h": 1 },
       { "slotId": 16, "x": 3, "y": 3, "w": 1, "h": 1 }
-    ]
-  },
-  {
-    "id": "layout_3x2",
-    "name": "3x2 Grid",
-    "gridColumns": 3,
-    "gridRows": 2,
-    "slots": [
-      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
-      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
-      { "slotId": 3, "x": 2, "y": 0, "w": 1, "h": 1 },
-      { "slotId": 4, "x": 0, "y": 1, "w": 1, "h": 1 },
-      { "slotId": 5, "x": 1, "y": 1, "w": 1, "h": 1 },
-      { "slotId": 6, "x": 2, "y": 1, "w": 1, "h": 1 }
-    ]
-  },
-  {
-    "id": "layout_2x2",
-    "name": "2x2 Grid",
-    "gridColumns": 2,
-    "gridRows": 2,
-    "slots": [
-      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
-      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
-      { "slotId": 3, "x": 0, "y": 1, "w": 1, "h": 1 },
-      { "slotId": 4, "x": 1, "y": 1, "w": 1, "h": 1 }
-    ]
-  },
-  {
-    "id": "layout_2x2_bottom_wide",
-    "name": "2x2 + Bottom Wide",
-    "gridColumns": 2,
-    "gridRows": 3,
-    "slots": [
-      { "slotId": 1, "x": 0, "y": 0, "w": 1, "h": 1 },
-      { "slotId": 2, "x": 1, "y": 0, "w": 1, "h": 1 },
-      { "slotId": 3, "x": 0, "y": 1, "w": 1, "h": 1 },
-      { "slotId": 4, "x": 1, "y": 1, "w": 1, "h": 1 },
-      { "slotId": 5, "x": 0, "y": 2, "w": 2, "h": 1 }
     ]
   }
 ]
