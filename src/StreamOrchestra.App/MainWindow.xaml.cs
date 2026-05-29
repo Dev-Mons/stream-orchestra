@@ -343,14 +343,16 @@ public partial class MainWindow : Window
 
         dialog.ShowDialog();
 
-        // 편집 창은 생성/수정/삭제 전용이다. 레이아웃 적용은 채널 드래그 카드로만 수행한다.
         if (!dialog.HasCustomLayoutChanges)
         {
             return;
         }
 
-        LoadLayouts(currentLayout?.Id);
-        StatusTextBlock.Text = "사용자 지정 레이아웃 목록을 갱신했습니다.";
+        // "저장 후 적용"으로 닫혔으면 해당 레이아웃을 바로 적용하고, 그 외에는 목록만 갱신한다.
+        LoadLayouts(dialog.AppliedLayoutId ?? currentLayout?.Id);
+        StatusTextBlock.Text = dialog.AppliedLayoutId is not null
+            ? "사용자 지정 레이아웃을 적용했습니다."
+            : "사용자 지정 레이아웃 목록을 갱신했습니다.";
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)

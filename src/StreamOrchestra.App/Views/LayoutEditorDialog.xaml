@@ -9,132 +9,90 @@
         WindowStartupLocation="CenterOwner"
         Background="#0B0F14">
     <Grid Margin="14">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <DockPanel Grid.Row="0"
-                   Margin="0,0,0,12"
-                   LastChildFill="True">
-            <TextBlock DockPanel.Dock="Left"
-                       Text="레이아웃 편집"
-                       Foreground="#F3F6FA"
-                       FontSize="20"
-                       FontWeight="SemiBold"
-                       VerticalAlignment="Center" />
-            <TextBlock x:Name="DialogStatusTextBlock"
-                       DockPanel.Dock="Right"
-                       Foreground="#B9C2CC"
-                       TextAlignment="Right"
-                       VerticalAlignment="Center" />
-        </DockPanel>
+        <!-- 왼쪽: 레이아웃 목록(세로 스크롤) + 새 레이아웃/삭제 -->
+        <Border Grid.Column="0"
+                Background="#0F141B"
+                BorderBrush="#2D3642"
+                BorderThickness="1"
+                Padding="10">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Bottom"
+                            Orientation="Vertical"
+                            HorizontalAlignment="Stretch"
+                            Margin="0,10,0,0">
+                    <Button Content="새 레이아웃"
+                            Height="30"
+                            Margin="0,0,0,8"
+                            Click="NewCustomLayoutButton_Click" />
+                    <Button Content="삭제"
+                            Height="30"
+                            Click="DeleteCustomLayoutButton_Click" />
+                </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="CustomLayoutListPanel" />
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
 
-        <TabControl x:Name="EditorTabControl"
-                    Grid.Row="1"
-                    Background="#121820"
-                    BorderBrush="#2D3642"
-                    Foreground="#F3F6FA">
-            <TabItem Header="사용자 지정">
-                <Grid Margin="12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="260" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <Border Grid.Column="0"
-                            Background="#0F141B"
-                            BorderBrush="#2D3642"
-                            BorderThickness="1"
-                            Padding="10">
-                        <DockPanel LastChildFill="True">
-                            <StackPanel DockPanel.Dock="Bottom"
-                                        Orientation="Vertical"
-                                        HorizontalAlignment="Stretch"
-                                        Margin="0,10,0,0">
-                                <Button Content="새 레이아웃"
-                                        Height="30"
-                                        Margin="0,0,0,8"
-                                        Click="NewCustomLayoutButton_Click" />
-                                <DockPanel LastChildFill="False">
-                                    <Button Content="삭제"
-                                            MinWidth="64"
-                                            Height="30"
-                                            Click="DeleteCustomLayoutButton_Click" />
-                                </DockPanel>
-                            </StackPanel>
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel x:Name="CustomLayoutListPanel" />
-                            </ScrollViewer>
-                        </DockPanel>
-                    </Border>
-
-                    <Border Grid.Column="2"
-                            Background="#0F141B"
-                            BorderBrush="#2D3642"
-                            BorderThickness="1"
-                            Padding="10">
+        <Border Grid.Column="2"
+                Background="#0F141B"
+                BorderBrush="#2D3642"
+                BorderThickness="1"
+                Padding="10">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <WrapPanel Grid.Row="0"
-                                       Margin="0,0,0,10">
-                                <TextBlock Text="이름"
+                            <!-- 헤더: 이름 + 요약 + 미저장 표시 -->
+                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="이름"
                                            Foreground="#F3F6FA"
                                            FontWeight="SemiBold"
                                            VerticalAlignment="Center"
                                            Margin="0,0,8,0" />
                                 <TextBox x:Name="LayoutNameTextBox"
-                                         Width="96"
+                                         Grid.Column="1"
                                          Height="28"
+                                         MaxWidth="320"
+                                         HorizontalAlignment="Left"
+                                         MinWidth="200"
                                          Foreground="#111827"
-                                         Margin="0,0,8,0"
                                          VerticalContentAlignment="Center"
                                          TextChanged="LayoutNameTextBox_TextChanged" />
-                                <Button x:Name="VerticalSplitButton"
-                                        Content="세로분할"
-                                        Height="28"
-                                        MinWidth="82"
-                                        Margin="0,0,8,0"
-                                        ToolTip="세로 선을 기준으로 좌/우 분할"
-                                        Click="VerticalSplitButton_Click" />
-                                <Button x:Name="HorizontalSplitButton"
-                                        Content="가로분할"
-                                        Height="28"
-                                        MinWidth="82"
-                                        Margin="0,0,8,0"
-                                        ToolTip="가로 선을 기준으로 상/하 분할"
-                                        Click="HorizontalSplitButton_Click" />
-                                <Button x:Name="RemoveSelectedSlotButton"
-                                        Content="슬롯 제거"
-                                        Height="28"
-                                        MinWidth="82"
-                                        Margin="0,0,8,0"
-                                        ToolTip="선택 슬롯을 제거하고 형제 영역을 확장"
-                                        Click="RemoveSelectedSlotButton_Click" />
-                                <Button x:Name="MergeSelectedZonesButton"
-                                        Content="선택 병합"
-                                        Height="28"
-                                        MinWidth="82"
-                                        Margin="0,0,8,0"
-                                        ToolTip="Ctrl+클릭으로 선택한 인접 zone을 하나로 병합"
-                                        Click="MergeSelectedZonesButton_Click" />
-                                <Button x:Name="ResetZoneSizeButton"
-                                        Content="비율 초기화"
-                                        Height="28"
-                                        MinWidth="92"
-                                        Margin="0,0,8,0"
-                                        Click="ResetZoneSizeButton_Click" />
-                                <Button Content="저장"
-                                        Height="28"
-                                        MinWidth="64"
-                                        Click="SaveCustomLayoutButton_Click" />
-                            </WrapPanel>
+                                <TextBlock x:Name="LayoutSummaryTextBlock"
+                                           Grid.Column="2"
+                                           Text=""
+                                           Foreground="#B9C2CC"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Margin="12,0,12,0" />
+                                <TextBlock x:Name="UnsavedIndicator"
+                                           Grid.Column="3"
+                                           Text="● 미저장"
+                                           Foreground="#F2B84B"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           Visibility="Collapsed" />
+                            </Grid>
 
                             <Border Grid.Row="1"
                                     Background="#05070A"
@@ -146,15 +104,91 @@
                                                 VerticalContentAlignment="Stretch" />
                             </Border>
 
-                            <TextBlock x:Name="SplitEditorHintTextBlock"
-                                       Grid.Row="2"
-                                       Text="슬롯 내부 클릭은 선택(Ctrl+클릭 다중 선택)입니다. 슬롯 분할은 분할 버튼으로 수행하고, 경계선을 드래그하면 비율이 실시간 조절됩니다."
-                                       Foreground="#788492"
-                                       Margin="0,8,0,0" />
+                            <!-- 선택 컨텍스트 바: 선택 상태에 따라 활성/비활성 -->
+                            <Border Grid.Row="2"
+                                    Background="#121820"
+                                    BorderBrush="#2D3642"
+                                    BorderThickness="1"
+                                    Padding="8,6"
+                                    Margin="0,10,0,0">
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock x:Name="SelectionInfoTextBlock"
+                                               DockPanel.Dock="Left"
+                                               Text="선택 없음"
+                                               Foreground="#B9C2CC"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,12,0" />
+                                    <WrapPanel>
+                                        <Button x:Name="VerticalSplitButton"
+                                                Content="⬌ 세로분할"
+                                                Height="28"
+                                                MinWidth="92"
+                                                Margin="0,0,8,0"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                Click="VerticalSplitButton_Click" />
+                                        <Button x:Name="HorizontalSplitButton"
+                                                Content="⬍ 가로분할"
+                                                Height="28"
+                                                MinWidth="92"
+                                                Margin="0,0,8,0"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                Click="HorizontalSplitButton_Click" />
+                                        <Button x:Name="RemoveSelectedSlotButton"
+                                                Content="✕ 슬롯 제거"
+                                                Height="28"
+                                                MinWidth="92"
+                                                Margin="0,0,8,0"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                Click="RemoveSelectedSlotButton_Click" />
+                                        <Button x:Name="MergeSelectedZonesButton"
+                                                Content="⛶ 선택 병합"
+                                                Height="28"
+                                                MinWidth="92"
+                                                Margin="0,0,8,0"
+                                                ToolTipService.ShowOnDisabled="True"
+                                                Click="MergeSelectedZonesButton_Click" />
+                                        <Button x:Name="ResetZoneSizeButton"
+                                                Content="⊟ 비율 초기화"
+                                                Height="28"
+                                                MinWidth="100"
+                                                ToolTip="열/행 비율을 균등하게 초기화"
+                                                Click="ResetZoneSizeButton_Click" />
+                                    </WrapPanel>
+                                </DockPanel>
+                            </Border>
+
+                            <!-- 푸터: 상태 메시지(좌) + 저장 / 저장 후 적용 / 닫기(우) -->
+                            <DockPanel Grid.Row="3"
+                                       Margin="0,10,0,0"
+                                       LastChildFill="True">
+                                <StackPanel DockPanel.Dock="Right"
+                                            Orientation="Horizontal">
+                                    <Button Content="저장"
+                                            Height="32"
+                                            MinWidth="80"
+                                            Margin="0,0,8,0"
+                                            Click="SaveCustomLayoutButton_Click" />
+                                    <Button Content="저장 후 적용"
+                                            Height="32"
+                                            MinWidth="110"
+                                            Margin="0,0,8,0"
+                                            Background="#1F6FEB"
+                                            Foreground="#F3F6FA"
+                                            ToolTip="저장하고 이 레이아웃을 화면에 바로 적용"
+                                            Click="SaveAndApplyButton_Click" />
+                                    <Button Content="닫기"
+                                            Height="32"
+                                            MinWidth="80"
+                                            Click="CloseButton_Click" />
+                                </StackPanel>
+                                <TextBlock x:Name="DialogStatusTextBlock"
+                                           Foreground="#B9C2CC"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,0,12,0" />
+                            </DockPanel>
                         </Grid>
-                    </Border>
-                </Grid>
-            </TabItem>
-        </TabControl>
+        </Border>
     </Grid>
 </Window>

@@ -23,11 +23,12 @@ public partial class LayoutEditorDialog : Window
     private readonly HashSet<int> _selectedZoneIds = new();
     private bool _isRefreshingEditor;
     private bool _isRefreshingLayoutName;
+    private bool _hasUnsavedEdits;
     private LayoutPreset? _selectedCustomLayout;
     private string _editingLayoutName = "Custom Layout";
 
     private Canvas? _editorCanvas;
-    private readonly List<(Button Button, int SlotId, TextBlock SizeTextBlock)> _editorZoneButtons = new();
+    private readonly List<(FrameworkElement Container, int SlotId, TextBlock SizeTextBlock)> _editorZoneButtons = new();
     private readonly List<(Thumb Thumb, LayoutEditorSplitterSegment Segment)> _editorColumnSplitters = new();
     private readonly List<(Thumb Thumb, LayoutEditorSplitterSegment Segment)> _editorRowSplitters = new();
     private Size _editorSurfaceSize = new(760, 440);
@@ -59,6 +60,9 @@ public partial class LayoutEditorDialog : Window
     }
 
     public bool HasCustomLayoutChanges { get; private set; }
+
+    /// <summary>"저장 후 적용"으로 닫혔을 때 메인 화면에 즉시 적용할 레이아웃 ID. 그 외에는 null.</summary>
+    public string? AppliedLayoutId { get; private set; }
 
     private void RefreshCustomLayoutList(LayoutPreset? selectedLayout = null)
     {
@@ -144,6 +148,8 @@ public partial class LayoutEditorDialog : Window
         }
 
         _editingLayoutName = LayoutNameTextBox.Text;
+        _hasUnsavedEdits = true;
+        UpdateEditorChrome();
     }
 
     private void NewCustomLayoutButton_Click(object sender, RoutedEventArgs e)
@@ -198,10 +204,10 @@ public partial class LayoutEditorDialog : Window
 
     private void ResetZoneSizeButton_Click(object sender, RoutedEventArgs e)
     {
-        _columnWeights = CreateDefaultWeights(_zoneCells.GetLength(1));
-        _rowWeights = CreateDefaultWeights(_zoneCells.GetLength(0));
+        (_columnWeights, _rowWeights) = ComputeDesignBalancedWeights(_zoneCells);
+        _hasUnsavedEdits = true;
         RefreshZoneEditorSurface();
-        DialogStatusTextBlock.Text = "열/행 비율을 균등하게 초기화했습니다.";
+        DialogStatusTextBlock.Text = "현재 레이아웃 디자인에 맞춰 비율을 초기화했습니다.";
     }
 
     private void SplitSelectedZone(SplitAxis axis)
@@ -231,6 +237,7 @@ public partial class LayoutEditorDialog : Window
 
         _selectedZoneIds.Clear();
         _selectedZoneIds.Add(newZoneId);
+        _hasUnsavedEdits = true;
         RefreshZoneEditorSurface();
     }
 
@@ -375,6 +382,7 @@ public partial class LayoutEditorDialog : Window
                 _zoneCells = candidateCells;
                 _selectedZoneIds.Clear();
                 _selectedZoneIds.Add(candidateZoneId);
+                _hasUnsavedEdits = true;
                 RefreshZoneEditorSurface();
                 DialogStatusTextBlock.Text = "선택 슬롯을 제거하고 인접 슬롯을 확장했습니다.";
                 return;
@@ -432,6 +440,7 @@ public partial class LayoutEditorDialog : Window
 
         _selectedZoneIds.Clear();
         _selectedZoneIds.Add(targetZoneId);
+        _hasUnsavedEdits = true;
         RefreshZoneEditorSurface();
         DialogStatusTextBlock.Text = "선택한 슬롯을 병합했습니다.";
     }
@@ -475,6 +484,7 @@ public partial class LayoutEditorDialog : Window
         _selectedZoneIds.Clear();
         _selectedZoneIds.Add(1);
         _editingLayoutName = layoutName;
+        _hasUnsavedEdits = false;
         SetLayoutNameText(layoutName);
         RefreshZoneEditorSurface();
     }
@@ -498,6 +508,7 @@ public partial class LayoutEditorDialog : Window
         _selectedZoneIds.Clear();
         _selectedZoneIds.Add(layout.Slots.OrderBy(slot => slot.SlotId).FirstOrDefault()?.SlotId ?? 1);
         _editingLayoutName = layoutName;
+        _hasUnsavedEdits = false;
         SetLayoutNameText(layoutName);
         RefreshZoneEditorSurface();
     }
@@ -511,7 +522,9 @@ public partial class LayoutEditorDialog : Window
 
     private void RefreshZoneEditorSurface()
     {
+        CompactRedundantBoundaries();
         NormalizeZoneIdsFromVisualOrder();
+        UpdateEditorChrome();
 
         if (!TryCreateLayoutFromEditor("preview", _editingLayoutName, out var layout, out var error))
         {
@@ -528,6 +541,51 @@ public partial class LayoutEditorDialog : Window
         }
 
         SplitEditorHost.Content = BuildZoneEditorGrid(layout);
+    }
+
+    // 헤더 요약, 미저장 표시, 선택 컨텍스트 바의 활성/비활성·툴팁을 현재 상태에 맞춘다.
+    private void UpdateEditorChrome()
+    {
+        // InitializeComponent 도중 TextChanged가 먼저 발생할 수 있어, 컨트롤이 준비되기 전이면 건너뛴다.
+        if (VerticalSplitButton is null)
+        {
+            return;
+        }
+
+        var zoneCount = GetZoneRects().Count;
+        var columns = _zoneCells.GetLength(1);
+        var rows = _zoneCells.GetLength(0);
+
+        LayoutSummaryTextBlock.Text = zoneCount > 0 ? $"{columns}x{rows} · 슬롯 {zoneCount}개" : "";
+        UnsavedIndicator.Visibility = _hasUnsavedEdits ? Visibility.Visible : Visibility.Collapsed;
+
+        var selectionCount = _selectedZoneIds.Count;
+        SelectionInfoTextBlock.Text = selectionCount == 0
+            ? "선택 없음"
+            : $"선택: 슬롯 {string.Join(", ", _selectedZoneIds.OrderBy(id => id))}";
+
+        var single = selectionCount == 1;
+        var atMax = zoneCount >= PlaybackTestPlanService.MaxSlotCount;
+        var splitDisabledReason = !single
+            ? "분할하려면 슬롯을 하나만 선택하세요."
+            : atMax ? $"최대 {PlaybackTestPlanService.MaxSlotCount}개 슬롯까지 만들 수 있습니다." : null;
+
+        SetActionButton(VerticalSplitButton, splitDisabledReason, "세로 선 기준 좌/우 분할");
+        SetActionButton(HorizontalSplitButton, splitDisabledReason, "가로 선 기준 상/하 분할");
+        SetActionButton(
+            RemoveSelectedSlotButton,
+            !single ? "제거하려면 슬롯을 하나만 선택하세요." : zoneCount <= 1 ? "마지막 한 슬롯은 제거할 수 없습니다." : null,
+            "선택 슬롯을 제거하고 인접 슬롯을 확장");
+        SetActionButton(
+            MergeSelectedZonesButton,
+            selectionCount < 2 ? "Ctrl+클릭으로 슬롯을 둘 이상 선택하세요." : null,
+            "선택한 인접 슬롯을 하나로 병합");
+    }
+
+    private static void SetActionButton(Button button, string? disabledReason, string enabledTooltip)
+    {
+        button.IsEnabled = disabledReason is null;
+        button.ToolTip = disabledReason ?? enabledTooltip;
     }
 
     private FrameworkElement BuildZoneEditorGrid(LayoutPreset layout)
@@ -547,25 +605,9 @@ public partial class LayoutEditorDialog : Window
 
         foreach (var slot in layout.Slots.OrderBy(slot => slot.SlotId))
         {
-            var isSelected = _selectedZoneIds.Contains(slot.SlotId);
-            var button = new Button
-            {
-                Tag = slot.SlotId,
-                Content = CreateZoneButtonContent(slot.SlotId, out var sizeTextBlock),
-                Foreground = Brushes.Black,
-                Background = LayoutPreviewBuilder.GetSlotBrush(slot.SlotId),
-                BorderBrush = isSelected
-                    ? new SolidColorBrush(Color.FromRgb(243, 246, 250))
-                    : new SolidColorBrush(Color.FromRgb(45, 54, 66)),
-                BorderThickness = isSelected ? new Thickness(4) : new Thickness(1),
-                Cursor = Cursors.Cross,
-                ToolTip = "클릭: 선택",
-                HorizontalContentAlignment = HorizontalAlignment.Center,
-                VerticalContentAlignment = VerticalAlignment.Center
-            };
-            button.Click += Zone_Click;
-            canvas.Children.Add(button);
-            _editorZoneButtons.Add((button, slot.SlotId, sizeTextBlock));
+            var container = CreateZoneElement(slot.SlotId, out var sizeTextBlock);
+            canvas.Children.Add(container);
+            _editorZoneButtons.Add((container, slot.SlotId, sizeTextBlock));
         }
 
         foreach (var segment in LayoutEditorGridGeometry.CreateVerticalSplitterSegments(layout))
@@ -599,6 +641,7 @@ public partial class LayoutEditorDialog : Window
             Text = slotId.ToString(),
             FontSize = 24,
             FontWeight = FontWeights.Bold,
+            Foreground = Brushes.Black,
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center
         };
@@ -608,6 +651,7 @@ public partial class LayoutEditorDialog : Window
             Text = "0x0",
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.Black,
             Opacity = 0.78,
             Margin = new Thickness(0, 2, 0, 0),
             TextAlignment = TextAlignment.Center,
@@ -622,6 +666,103 @@ public partial class LayoutEditorDialog : Window
         panel.Children.Add(slotNumberTextBlock);
         panel.Children.Add(sizeTextBlock);
         return panel;
+    }
+
+    // zone 한 칸: 선택용 본체 + 마우스를 올리면 나타나는 분할/제거 핸들.
+    private FrameworkElement CreateZoneElement(int slotId, out TextBlock sizeTextBlock)
+    {
+        var isSelected = _selectedZoneIds.Contains(slotId);
+
+        var zoneBorder = new Border
+        {
+            Background = LayoutPreviewBuilder.GetSlotBrush(slotId),
+            BorderBrush = isSelected
+                ? new SolidColorBrush(Color.FromRgb(243, 246, 250))
+                : new SolidColorBrush(Color.FromRgb(45, 54, 66)),
+            BorderThickness = isSelected ? new Thickness(4) : new Thickness(1),
+            Child = CreateZoneButtonContent(slotId, out sizeTextBlock)
+        };
+
+        var handles = CreateZoneHandles(slotId);
+
+        var container = new Grid
+        {
+            Tag = slotId,
+            Cursor = Cursors.Hand,
+            Background = Brushes.Transparent,
+            ToolTip = "클릭: 선택 (Ctrl+클릭: 다중 선택) · 마우스를 올리면 분할/제거 핸들이 나타납니다."
+        };
+        container.Children.Add(zoneBorder);
+        container.Children.Add(handles);
+
+        container.MouseEnter += (_, _) => handles.Visibility = Visibility.Visible;
+        container.MouseLeave += (_, _) => handles.Visibility = Visibility.Collapsed;
+        container.MouseLeftButtonUp += Zone_Click;
+        return container;
+    }
+
+    private UIElement CreateZoneHandles(int slotId)
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 5, 5, 0),
+            Visibility = Visibility.Collapsed
+        };
+
+        panel.Children.Add(CreateHandleButton("⬌", "세로 선 기준 좌/우 분할",
+            () => SplitZoneFromHandle(slotId, SplitAxis.Vertical)));
+        panel.Children.Add(CreateHandleButton("⬍", "가로 선 기준 상/하 분할",
+            () => SplitZoneFromHandle(slotId, SplitAxis.Horizontal)));
+        panel.Children.Add(CreateHandleButton("✕", "이 슬롯 제거",
+            () => RemoveZoneFromHandle(slotId)));
+        return panel;
+    }
+
+    private static Button CreateHandleButton(string glyph, string tooltip, Action action)
+    {
+        var button = new Button
+        {
+            Content = glyph,
+            Width = 24,
+            Height = 24,
+            Padding = new Thickness(0),
+            Margin = new Thickness(3, 0, 0, 0),
+            FontSize = 13,
+            FontWeight = FontWeights.Bold,
+            Background = new SolidColorBrush(Color.FromArgb(0xE0, 0x1F, 0x29, 0x37)),
+            Foreground = new SolidColorBrush(Color.FromRgb(243, 246, 250)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(243, 246, 250)),
+            BorderThickness = new Thickness(1),
+            Cursor = Cursors.Hand,
+            ToolTip = tooltip
+        };
+        button.Click += (_, e) =>
+        {
+            e.Handled = true;
+            action();
+        };
+        return button;
+    }
+
+    private void SplitZoneFromHandle(int slotId, SplitAxis axis)
+    {
+        SetSingleSelection(slotId);
+        SplitSelectedZone(axis);
+    }
+
+    private void RemoveZoneFromHandle(int slotId)
+    {
+        SetSingleSelection(slotId);
+        RemoveSelectedZone();
+    }
+
+    private void SetSingleSelection(int zoneId)
+    {
+        _selectedZoneIds.Clear();
+        _selectedZoneIds.Add(zoneId);
     }
 
     private static Thumb CreateSplitter(bool isVertical)
@@ -674,7 +815,7 @@ public partial class LayoutEditorDialog : Window
         var rowOffsets = CumulativeOffsets(_rowWeights, height);
         var rects = GetZoneRects().ToDictionary(rect => rect.ZoneId);
 
-        foreach (var (button, slotId, sizeTextBlock) in _editorZoneButtons)
+        foreach (var (container, slotId, sizeTextBlock) in _editorZoneButtons)
         {
             if (!rects.TryGetValue(slotId, out var rect))
             {
@@ -688,10 +829,10 @@ public partial class LayoutEditorDialog : Window
             var slotWidth = Math.Max(0, right - left);
             var slotHeight = Math.Max(0, bottom - top);
 
-            Canvas.SetLeft(button, left + ZoneGap);
-            Canvas.SetTop(button, top + ZoneGap);
-            button.Width = Math.Max(0, slotWidth - 2 * ZoneGap);
-            button.Height = Math.Max(0, slotHeight - 2 * ZoneGap);
+            Canvas.SetLeft(container, left + ZoneGap);
+            Canvas.SetTop(container, top + ZoneGap);
+            container.Width = Math.Max(0, slotWidth - 2 * ZoneGap);
+            container.Height = Math.Max(0, slotHeight - 2 * ZoneGap);
             sizeTextBlock.Text = FormatSlotSizeLabel(slotWidth, slotHeight);
         }
 
@@ -910,13 +1051,14 @@ public partial class LayoutEditorDialog : Window
     {
         _columnWeights = NormalizeWeightAverage(_columnWeights);
         _rowWeights = NormalizeWeightAverage(_rowWeights);
+        _hasUnsavedEdits = true;
         RefreshZoneEditorSurface();
         DialogStatusTextBlock.Text = "분할선을 드래그해 열/행 비율을 조정했습니다.";
     }
 
-    private void Zone_Click(object sender, RoutedEventArgs e)
+    private void Zone_Click(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not Button { Tag: int zoneId })
+        if (sender is not FrameworkElement { Tag: int zoneId })
         {
             return;
         }
@@ -989,11 +1131,29 @@ public partial class LayoutEditorDialog : Window
         HasCustomLayoutChanges = true;
         _selectedCustomLayout = layout;
         _editingLayoutName = layout.Name;
+        _hasUnsavedEdits = false;
         SetLayoutNameText(layout.Name);
         savedLayout = layout;
         RefreshCustomLayoutList(layout);
+        UpdateEditorChrome();
 
         return true;
+    }
+
+    private void SaveAndApplyButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!SaveCustomLayoutFromEditor(out var savedLayout))
+        {
+            return;
+        }
+
+        AppliedLayoutId = savedLayout.Id;
+        Close();
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
     }
 
     private void DeleteCustomLayoutButton_Click(object sender, RoutedEventArgs e)
@@ -1077,6 +1237,182 @@ public partial class LayoutEditorDialog : Window
         }
 
         return true;
+    }
+
+    // '비율 초기화': 분할 구조는 그대로 두고, 현재 레이아웃 디자인에 맞춰 균형 비율을 계산한다.
+    // 각 트랙의 가중치 = 1 / (그 트랙에 걸친 zone들의 최대 span).
+    // 예) 한 zone이 2행에 걸치면 그 두 행은 각각 1/2이 되어, 큰 화면이 작은 화면 2개 합과 같아진다.
+    internal static (double[] ColumnWeights, double[] RowWeights) ComputeDesignBalancedWeights(int[,] cells)
+    {
+        var columns = cells.GetLength(1);
+        var rows = cells.GetLength(0);
+        if (!TryGetZoneRects(cells, out var rects))
+        {
+            return (CreateDefaultWeights(columns), CreateDefaultWeights(rows));
+        }
+
+        var columnWeights = new double[columns];
+        for (var x = 0; x < columns; x++)
+        {
+            var maxWidth = 1;
+            foreach (var rect in rects)
+            {
+                if (rect.X <= x && x < rect.X + rect.W && rect.W > maxWidth)
+                {
+                    maxWidth = rect.W;
+                }
+            }
+
+            columnWeights[x] = 1.0 / maxWidth;
+        }
+
+        var rowWeights = new double[rows];
+        for (var y = 0; y < rows; y++)
+        {
+            var maxHeight = 1;
+            foreach (var rect in rects)
+            {
+                if (rect.Y <= y && y < rect.Y + rect.H && rect.H > maxHeight)
+                {
+                    maxHeight = rect.H;
+                }
+            }
+
+            rowWeights[y] = 1.0 / maxHeight;
+        }
+
+        return (NormalizeWeightAverage(columnWeights), NormalizeWeightAverage(rowWeights));
+    }
+
+    // 병합/제거 등으로 생긴, 어떤 zone도 가르지 않는 중복 경계선을 없애 그리드를 최소화한다.
+    // 시각 비율은 보존(접히는 트랙의 가중치를 이웃에 합산)하면서 행/열 개수만 줄여,
+    // '비율 초기화'가 항상 현재 레이아웃 디자인 기준으로 동작하게 한다.
+    private void CompactRedundantBoundaries()
+    {
+        var (cells, columnWeights, rowWeights) =
+            CompactRedundantTracks(_zoneCells, _columnWeights, _rowWeights);
+        _zoneCells = cells;
+        _columnWeights = columnWeights;
+        _rowWeights = rowWeights;
+    }
+
+    internal static (int[,] Cells, double[] ColumnWeights, double[] RowWeights) CompactRedundantTracks(
+        int[,] cells, double[] columnWeights, double[] rowWeights)
+    {
+        var (columnCells, compactedColumnWeights) = CompactColumns(cells, columnWeights);
+        var (rowCells, compactedRowWeights) = CompactRows(columnCells, rowWeights);
+        return (rowCells, compactedColumnWeights, compactedRowWeights);
+    }
+
+    private static (int[,] Cells, double[] Weights) CompactColumns(int[,] cells, double[] weights)
+    {
+        var rows = cells.GetLength(0);
+        var columns = cells.GetLength(1);
+        if (columns <= 1)
+        {
+            return (cells, weights);
+        }
+
+        // 첫 열은 항상 유지. 경계선 x는 어떤 행에서든 좌/우 zone이 다르면 '실제' 경계다.
+        var keep = new bool[columns];
+        keep[0] = true;
+        for (var x = 1; x < columns; x++)
+        {
+            for (var y = 0; y < rows; y++)
+            {
+                if (cells[y, x] != cells[y, x - 1])
+                {
+                    keep[x] = true;
+                    break;
+                }
+            }
+        }
+
+        var keptColumns = keep.Count(value => value);
+        if (keptColumns == columns)
+        {
+            return (cells, weights);
+        }
+
+        var columnMap = new int[columns];
+        var newWeights = new double[keptColumns];
+        var target = -1;
+        for (var x = 0; x < columns; x++)
+        {
+            if (keep[x])
+            {
+                target++;
+            }
+
+            columnMap[x] = target;
+            newWeights[target] += x < weights.Length && weights[x] > 0 ? weights[x] : 0;
+        }
+
+        var newCells = new int[rows, keptColumns];
+        for (var y = 0; y < rows; y++)
+        {
+            for (var x = 0; x < columns; x++)
+            {
+                newCells[y, columnMap[x]] = cells[y, x];
+            }
+        }
+
+        return (newCells, NormalizeWeightAverage(newWeights));
+    }
+
+    private static (int[,] Cells, double[] Weights) CompactRows(int[,] cells, double[] weights)
+    {
+        var rows = cells.GetLength(0);
+        var columns = cells.GetLength(1);
+        if (rows <= 1)
+        {
+            return (cells, weights);
+        }
+
+        var keep = new bool[rows];
+        keep[0] = true;
+        for (var y = 1; y < rows; y++)
+        {
+            for (var x = 0; x < columns; x++)
+            {
+                if (cells[y, x] != cells[y - 1, x])
+                {
+                    keep[y] = true;
+                    break;
+                }
+            }
+        }
+
+        var keptRows = keep.Count(value => value);
+        if (keptRows == rows)
+        {
+            return (cells, weights);
+        }
+
+        var rowMap = new int[rows];
+        var newWeights = new double[keptRows];
+        var target = -1;
+        for (var y = 0; y < rows; y++)
+        {
+            if (keep[y])
+            {
+                target++;
+            }
+
+            rowMap[y] = target;
+            newWeights[target] += y < weights.Length && weights[y] > 0 ? weights[y] : 0;
+        }
+
+        var newCells = new int[keptRows, columns];
+        for (var y = 0; y < rows; y++)
+        {
+            for (var x = 0; x < columns; x++)
+            {
+                newCells[rowMap[y], x] = cells[y, x];
+            }
+        }
+
+        return (newCells, NormalizeWeightAverage(newWeights));
     }
 
     private void NormalizeZoneIdsFromVisualOrder()
