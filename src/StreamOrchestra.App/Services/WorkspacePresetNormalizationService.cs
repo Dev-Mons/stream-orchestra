@@ -44,6 +44,7 @@ public sealed class WorkspacePresetNormalizationService
             StreamUrl = streamUrl,
             StreamName = CreateNormalizedStreamName(streamUrl, source.StreamName),
             Muted = source.Muted,
+            VolumePercent = Math.Clamp(source.VolumePercent, 0, 100),
             ProfileGroupId = GetProfileGroupIdForSlot(slotId)
         };
     }

@@ -10,5 +10,7 @@ public sealed class WorkspaceSlot
 
     public bool Muted { get; init; }
 
+    public int VolumePercent { get; init; } = 100;
+
     public string ProfileGroupId { get; init; } = "";
 }

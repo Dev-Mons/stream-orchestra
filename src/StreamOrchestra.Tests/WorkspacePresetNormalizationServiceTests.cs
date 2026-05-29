@@ -57,6 +57,32 @@ public sealed class WorkspacePresetNormalizationServiceTests
     }
 
     [Fact]
+    public void Normalize_PreservesVolumePercentAndClampsOutOfRange()
+    {
+        var service = new WorkspacePresetNormalizationService(new StreamNavigationService());
+        var workspace = new WorkspacePreset
+        {
+            Id = "workspace_test",
+            Name = "Test",
+            LayoutId = "layout_8_small_1_main",
+            Slots =
+            [
+                new WorkspaceSlot { SlotId = 1, StreamUrl = "example.com/one", VolumePercent = 40 },
+                new WorkspaceSlot { SlotId = 2, StreamUrl = "example.com/two", VolumePercent = 250 },
+                new WorkspaceSlot { SlotId = 3, StreamUrl = "example.com/three", VolumePercent = -30 }
+            ]
+        };
+
+        var normalized = service.Normalize(workspace, Layouts);
+
+        Assert.Contains(normalized.Slots, slot => slot.SlotId == 1 && slot.VolumePercent == 40);
+        Assert.Contains(normalized.Slots, slot => slot.SlotId == 2 && slot.VolumePercent == 100);
+        Assert.Contains(normalized.Slots, slot => slot.SlotId == 3 && slot.VolumePercent == 0);
+        // 저장된 값이 없는 슬롯은 기본 100%로 복원된다.
+        Assert.Contains(normalized.Slots, slot => slot.SlotId == 9 && slot.VolumePercent == 100);
+    }
+
+    [Fact]
     public void Normalize_DropsOutOfRangeSlotsAndUsesLastDuplicateSlot()
     {
         var service = new WorkspacePresetNormalizationService(new StreamNavigationService());

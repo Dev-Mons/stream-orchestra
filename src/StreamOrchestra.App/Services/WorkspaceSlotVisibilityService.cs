@@ -34,6 +34,7 @@ public sealed class WorkspaceSlotVisibilityService
             StreamName = "Empty",
             StreamUrl = "about:blank",
             Muted = slot.Muted,
+            VolumePercent = slot.VolumePercent,
             ProfileGroupId = slot.ProfileGroupId
         };
     }

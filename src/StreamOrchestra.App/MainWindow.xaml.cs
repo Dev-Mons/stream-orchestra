@@ -1042,6 +1042,17 @@ public partial class MainWindow : Window
         SaveWorkspaceAs();
     }
 
+    private void MuteAllButton_Click(object sender, RoutedEventArgs e)
+    {
+        // 단발성 동작: 모든 슬롯 볼륨을 0%로 내린다(복원 없음).
+        foreach (var slot in _slots)
+        {
+            slot.SetVolumePercentSilently(0);
+        }
+
+        StatusTextBlock.Text = "전체 볼륨을 0%로 변경했습니다.";
+    }
+
     private void SelectSlot(StreamSlotView slot)
     {
         if (_selectedSlot is not null)
@@ -1096,6 +1107,7 @@ public partial class MainWindow : Window
                     StreamName = slot.CurrentStreamName,
                     StreamUrl = slot.CurrentUrl,
                     Muted = false,
+                    VolumePercent = slot.VolumePercent,
                     ProfileGroupId = slot.ProfileGroupId
                 })
                 .ToArray()
@@ -1170,6 +1182,7 @@ public partial class MainWindow : Window
             }
 
             slot.SetMuted(false);
+            slot.SetVolumePercentSilently(workspaceSlot.VolumePercent);
             if (visibleSlotIds.Contains(slot.SlotId))
             {
                 await NavigateSlotAsync(slot, workspaceSlot.StreamUrl, workspaceSlot.StreamName);

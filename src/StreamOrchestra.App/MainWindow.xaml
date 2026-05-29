@@ -168,9 +168,25 @@
                 BorderBrush="#2D3642"
                 BorderThickness="0,1,0,0"
                 Padding="10,6">
-            <TextBlock x:Name="StatusTextBlock"
-                       Foreground="#B9C2CC"
-                       TextWrapping="Wrap" />
+            <DockPanel LastChildFill="True">
+                <Button x:Name="MuteAllButton"
+                        DockPanel.Dock="Right"
+                        Margin="10,0,0,0"
+                        Padding="10,3"
+                        VerticalAlignment="Center"
+                        Background="#223044"
+                        BorderBrush="#2D3642"
+                        BorderThickness="1"
+                        Foreground="#F3F6FA"
+                        Content="전체 볼륨 0%"
+                        ToolTip="모든 화면의 볼륨을 0%로 변경"
+                        Click="MuteAllButton_Click" />
+
+                <TextBlock x:Name="StatusTextBlock"
+                           VerticalAlignment="Center"
+                           Foreground="#B9C2CC"
+                           TextWrapping="Wrap" />
+            </DockPanel>
         </Border>
 
         <Border x:Name="AutoShowExplorerHitTarget"
