@@ -16,6 +16,10 @@ public partial class StreamSlotView : UserControl
     private const int MaxVolumePercent = 100;
     private const int InitialVolumePercent = 100;
     private const int VolumeStepPercent = 10;
+    private static readonly Brush RemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 31, 41, 55));
+    private static readonly Brush RemoveButtonBorder = new SolidColorBrush(Color.FromRgb(243, 246, 250));
+    private static readonly Brush SelectedRemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 185, 28, 28));
+    private static readonly Brush SelectedRemoveButtonBorder = new SolidColorBrush(Color.FromRgb(252, 165, 165));
 
     // 웹페이지마다 휠 한 칸에 wheel 이벤트를 1~3개씩 발생시켜, 한 번 스크롤에 볼륨이
     // 20~30%씩 바뀌는 버그가 있었다. 한 번의 물리적 스크롤에서 연달아 들어오는 이벤트
@@ -167,16 +171,22 @@ public partial class StreamSlotView : UserControl
     }
 
     /// <summary>제거 모드(Ctrl 홀드)일 때 이 슬롯 위에 제거 버튼을 표시/숨김.</summary>
-    public void SetRemoveModeActive(bool isActive)
+    public void SetRemoveModeActive(bool isActive, bool isSelectedForRemoval = false)
     {
         RemoveSlotPopup.IsOpen = isActive;
+        SetRemoveButtonSelected(isSelectedForRemoval);
     }
 
     private void RemoveSlotButton_Click(object sender, RoutedEventArgs e)
     {
-        RemoveSlotPopup.IsOpen = false;
         RemoveSlotRequested?.Invoke(this);
         e.Handled = true;
+    }
+
+    private void SetRemoveButtonSelected(bool isSelected)
+    {
+        RemoveSlotButton.Background = isSelected ? SelectedRemoveButtonBackground : RemoveButtonBackground;
+        RemoveSlotButton.BorderBrush = isSelected ? SelectedRemoveButtonBorder : RemoveButtonBorder;
     }
 
     /// <summary>교체 모드(Shift 홀드)일 때 이 슬롯 위에 드래그용 오버레이를 표시/숨김.</summary>

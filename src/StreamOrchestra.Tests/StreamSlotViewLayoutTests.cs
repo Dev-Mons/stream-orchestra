@@ -51,8 +51,10 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Equal("RemoveSlotButton_Click", GetAttribute(button, "Click"));
 
         var codeBehind = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
-        Assert.Contains("public void SetRemoveModeActive(bool isActive)", codeBehind);
+        Assert.Contains("public void SetRemoveModeActive(bool isActive, bool isSelectedForRemoval = false)", codeBehind);
+        Assert.Contains("SetRemoveButtonSelected(isSelectedForRemoval)", codeBehind);
         Assert.Contains("RemoveSlotRequested?.Invoke", codeBehind);
+        Assert.DoesNotContain("RemoveSlotPopup.IsOpen = false;", codeBehind);
         Assert.Contains("CtrlStateChanged?.Invoke", codeBehind);
         Assert.Contains("ctrl-state", codeBehind);
     }

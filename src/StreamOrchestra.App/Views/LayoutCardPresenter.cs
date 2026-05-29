@@ -111,7 +111,7 @@ public sealed class LayoutCardPresenter
 
         _title.Text = mode switch
         {
-            LayoutCardMode.Remove => "전환할 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)",
+            LayoutCardMode.Remove => "삭제 후 전환할 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)",
             LayoutCardMode.Switch => "현재 화면 수에 맞는 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)",
             _ => "채널을 카드 위에 드롭하면 레이아웃이 전환됩니다."
         };
@@ -119,7 +119,7 @@ public sealed class LayoutCardPresenter
         // 첫 번째 카드는 항상 "아무것도 안 함"(취소) 카드.
         _cardPanel.Children.Add(CreateCancelCard());
 
-        _emptyMessage.Visibility = candidates.Count == 0 && mode != LayoutCardMode.Remove
+        _emptyMessage.Visibility = candidates.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
 

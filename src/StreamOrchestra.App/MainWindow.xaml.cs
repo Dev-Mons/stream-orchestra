@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly StreamNavigationService _streamNavigationService = new();
     private readonly SlotSelectionService _slotSelectionService = new();
     private readonly SlotSwapService _slotSwapService = new();
+    private readonly SlotRemovalSelectionService _slotRemovalSelectionService = new();
     private readonly LayoutTemplateCandidateService _layoutTemplateCandidateService = new();
     private readonly AppWindowPlacementService _appWindowPlacementService = new();
     private readonly WorkspaceSlotVisibilityService _workspaceSlotVisibilityService = new();
@@ -38,7 +39,6 @@ public partial class MainWindow : Window
     private ExplorerPanel? _explorerPanel;
     private readonly LayoutCardPresenter _layoutCardPresenter = new();
     private LayoutCardMode _layoutCardMode = LayoutCardMode.Add;
-    private StreamSlotView? _pendingRemovalSlot;
     private bool _isExplorerPanelVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
     private LayoutPreset? _selectedLayout;
@@ -552,48 +552,45 @@ public partial class MainWindow : Window
         _ = SwapSlotStreamsAsync(sourceSlot, targetSlot);
     }
 
-    // 슬롯 제거 버튼 클릭 → 자동 적용하지 않고 N-1 레이아웃 카드를 띄운다(사용자가 카드를 눌러야 전환).
+    // 슬롯 제거 버튼 클릭 → 삭제 예정 상태를 토글하고, 남은 슬롯 수에 맞는 레이아웃 카드를 갱신한다.
     private void SlotView_RemoveSlotRequested(StreamSlotView slot)
     {
-        BeginRemoveScreen(slot);
+        ToggleRemoveScreen(slot);
     }
 
-    private void BeginRemoveScreen(StreamSlotView slot)
+    private void ToggleRemoveScreen(StreamSlotView slot)
     {
-        SetRemoveModeActive(false);
-
         if (_selectedLayout is not { } layout)
         {
             return;
         }
 
-        var currentCount = layout.EffectiveSlotCount;
-        if (currentCount <= 1)
+        var visibleSlotIds = layout.Slots
+            .Select(visibleSlot => visibleSlot.SlotId)
+            .OrderBy(slotId => slotId)
+            .ToArray();
+        if (!visibleSlotIds.Contains(slot.SlotId))
+        {
+            return;
+        }
+
+        if (!_slotRemovalSelectionService.ToggleSlot(slot.SlotId, visibleSlotIds.Length))
         {
             StatusTextBlock.Text = "마지막 한 화면은 제거할 수 없습니다.";
             return;
         }
 
-        var candidates = _layoutTemplateCandidateService.GetTemplatesForSlotCount(_layouts, currentCount - 1);
-        if (candidates.Count == 0)
-        {
-            StatusTextBlock.Text = $"슬롯 {currentCount - 1}개에 맞는 레이아웃 템플릿이 없어 제거할 수 없습니다.";
-            return;
-        }
-
-        _pendingRemovalSlot = slot;
-        _layoutCardMode = LayoutCardMode.Remove;
-        _layoutCardPresenter.Show(candidates, SlotsGrid, LayoutCardMode.Remove);
-        StatusTextBlock.Text = $"Slot {slot.SlotId}을(를) 제거합니다. 전환할 레이아웃 카드를 선택하세요.";
+        UpdateRemoveSlotButtons(isActive: true, visibleSlotIds.ToHashSet());
+        UpdateRemovalLayoutCards(visibleSlotIds);
     }
 
     // 제거 모드(Ctrl 홀드): 보이는 모든 슬롯 위에 제거 버튼을 표시한다.
-    // N-1개 템플릿이 없거나 마지막 한 화면이면 버튼을 띄우지 않고 안내만 한다.
+    // 마지막 한 화면이면 버튼을 띄우지 않고 안내만 한다.
     private void SetRemoveModeActive(bool isActive)
     {
-        // 제거 카드 오버레이가 이미 떠 있으면 Ctrl로 제거 버튼을 다시 띄우지 않는다.
-        if (isActive && _pendingRemovalSlot is not null)
+        if (!isActive)
         {
+            ClearRemoveSelection(hideCards: true);
             return;
         }
 
@@ -601,16 +598,66 @@ public partial class MainWindow : Window
             ? layout.Slots.Select(s => s.SlotId).ToHashSet()
             : [];
 
-        if (isActive && !CanRemoveCurrentScreen(out var reason))
+        if (visibleSlotIds.Count <= 1)
         {
-            StatusTextBlock.Text = reason;
-            isActive = false;
+            StatusTextBlock.Text = "마지막 한 화면은 제거할 수 없습니다.";
+            ClearRemoveSelection(hideCards: true);
+            return;
         }
+
+        UpdateRemoveSlotButtons(isActive: true, visibleSlotIds);
+    }
+
+    private void UpdateRemoveSlotButtons(bool isActive, HashSet<int> visibleSlotIds)
+    {
+        foreach (var slot in _slots)
+        {
+            slot.SetRemoveModeActive(
+                isActive && visibleSlotIds.Contains(slot.SlotId),
+                _slotRemovalSelectionService.IsSelected(slot.SlotId));
+        }
+    }
+
+    private void ClearRemoveSelection(bool hideCards)
+    {
+        _slotRemovalSelectionService.Clear();
 
         foreach (var slot in _slots)
         {
-            slot.SetRemoveModeActive(isActive && visibleSlotIds.Contains(slot.SlotId));
+            slot.SetRemoveModeActive(false);
         }
+
+        if (hideCards && _layoutCardMode == LayoutCardMode.Remove)
+        {
+            _layoutCardPresenter.Hide();
+            _layoutCardMode = LayoutCardMode.Add;
+        }
+    }
+
+    private void UpdateRemovalLayoutCards(IReadOnlyCollection<int> visibleSlotIds)
+    {
+        var removalSlotIds = _slotRemovalSelectionService.GetSelectedSlotIds();
+        if (removalSlotIds.Count == 0)
+        {
+            if (_layoutCardMode == LayoutCardMode.Remove)
+            {
+                _layoutCardPresenter.Hide();
+                _layoutCardMode = LayoutCardMode.Add;
+            }
+
+            StatusTextBlock.Text = "제거할 화면을 선택하세요.";
+            return;
+        }
+
+        var targetSlotCount = _slotRemovalSelectionService.GetTargetSlotCount(visibleSlotIds.Count);
+        var candidates = _layoutTemplateCandidateService.GetTemplatesForSlotCount(_layouts, targetSlotCount);
+        var removalLabel = string.Join(", ", removalSlotIds.Select(slotId => $"Slot {slotId}"));
+
+        _layoutCardMode = LayoutCardMode.Remove;
+        _layoutCardPresenter.Show(candidates, SlotsGrid, LayoutCardMode.Remove);
+        StatusTextBlock.Text = candidates.Count > 0
+            ? $"{removalLabel} 제거 예정. 슬롯 {targetSlotCount}개 레이아웃 카드를 선택하세요."
+            : $"{removalLabel} 제거 예정이지만 슬롯 {targetSlotCount}개에 맞는 레이아웃 템플릿이 없습니다.";
     }
 
     // 교체 모드(왼쪽 Shift 홀드): 보이는 모든 슬롯 위에 드래그용 오버레이를 표시한다.
@@ -632,27 +679,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool CanRemoveCurrentScreen(out string reason)
-    {
-        var currentCount = _selectedLayout?.EffectiveSlotCount ?? 0;
-        if (currentCount <= 1)
-        {
-            reason = "마지막 한 화면은 제거할 수 없습니다.";
-            return false;
-        }
-
-        if (_layoutTemplateCandidateService.GetTemplatesForSlotCount(_layouts, currentCount - 1).Count == 0)
-        {
-            reason = $"슬롯 {currentCount - 1}개에 맞는 레이아웃 템플릿이 없어 제거할 수 없습니다.";
-            return false;
-        }
-
-        reason = string.Empty;
-        return true;
-    }
-
-    // 선택된 N-1 템플릿으로 전환하면서, 제거 대상을 뺀 생존 채널을 새 템플릿 슬롯에 순서대로 다시 채운다(compaction).
-    private async Task ApplyRemovalAsync(StreamSlotView slot, LayoutPreset template)
+    // 선택된 템플릿으로 전환하면서, 제거 대상을 뺀 생존 채널을 새 템플릿 슬롯에 순서대로 다시 채운다(compaction).
+    private async Task ApplyRemovalAsync(IReadOnlyCollection<int> removalSlotIds, LayoutPreset template)
     {
         if (_selectedLayout is not { } currentLayout)
         {
@@ -663,21 +691,21 @@ public partial class MainWindow : Window
             .Select(visibleSlot => visibleSlot.SlotId)
             .OrderBy(slotId => slotId)
             .ToArray();
-        if (visibleSlotIds.Length <= 1)
+        if (visibleSlotIds.Length <= 1 || removalSlotIds.Count >= visibleSlotIds.Length)
         {
             StatusTextBlock.Text = "마지막 한 화면은 제거할 수 없습니다.";
             return;
         }
 
         var survivors = visibleSlotIds
-            .Where(slotId => slotId != slot.SlotId)
+            .Where(slotId => !removalSlotIds.Contains(slotId))
             .Select(slotId => _slots.First(candidate => candidate.SlotId == slotId))
             .Select(candidate => (candidate.CurrentUrl, candidate.CurrentStreamName))
             .ToArray();
 
         await RefillTemplateSlotsAsync(template, survivors);
 
-        StatusTextBlock.Text = $"화면을 제거하고 '{template.Name}' 레이아웃으로 전환했습니다.";
+        StatusTextBlock.Text = $"화면 {removalSlotIds.Count}개를 제거하고 '{template.Name}' 레이아웃으로 전환했습니다.";
         UpdateDiagnostics();
     }
 
@@ -745,7 +773,7 @@ public partial class MainWindow : Window
 
     private void ShowLayoutCards()
     {
-        _pendingRemovalSlot = null;
+        ClearRemoveSelection(hideCards: false);
         _layoutCardMode = LayoutCardMode.Add;
         var currentVisibleSlotCount = _selectedLayout?.EffectiveSlotCount ?? GetVisibleSlotViews().Count();
         var candidates = _layoutTemplateCandidateService.GetCandidates(_layouts, currentVisibleSlotCount);
@@ -765,7 +793,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        _pendingRemovalSlot = null;
+        ClearRemoveSelection(hideCards: false);
         SetRemoveModeActive(false);
 
         var currentCount = _selectedLayout?.EffectiveSlotCount ?? GetVisibleSlotViews().Count();
@@ -804,10 +832,14 @@ public partial class MainWindow : Window
     private async void LayoutCardPresenter_CardChosen(LayoutPreset? template, IDataObject? data)
     {
         var mode = _layoutCardMode;
-        var removalSlot = _pendingRemovalSlot;
+        var removalSlotIds = _slotRemovalSelectionService.GetSelectedSlotIds();
 
         _layoutCardPresenter.Hide();
-        _pendingRemovalSlot = null;
+        if (mode == LayoutCardMode.Remove)
+        {
+            ClearRemoveSelection(hideCards: false);
+        }
+
         _layoutCardMode = LayoutCardMode.Add;
 
         // "아무것도 안 함"(취소) 카드.
@@ -819,9 +851,9 @@ public partial class MainWindow : Window
 
         if (mode == LayoutCardMode.Remove)
         {
-            if (removalSlot is not null)
+            if (removalSlotIds.Count > 0)
             {
-                await ApplyRemovalAsync(removalSlot, template);
+                await ApplyRemovalAsync(removalSlotIds, template);
             }
 
             return;
