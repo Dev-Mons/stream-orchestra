@@ -76,6 +76,10 @@ public partial class StreamSlotView : UserControl
 
     public event Action? HostDragCompleted;
 
+    public event Action? SwapDragStarted;
+
+    public event Action? SwapDragCompleted;
+
     public event Action<StreamSlotView, int>? SlotSwapRequested;
 
     /// <summary>슬롯 위의 제거 버튼이 클릭됨(화면 제거 요청).</summary>
@@ -233,7 +237,16 @@ public partial class StreamSlotView : UserControl
 
         var data = new DataObject();
         data.SetData(StreamDragDataFormats.SlotId, SlotId.ToString());
-        DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+        try
+        {
+            SwapDragStarted?.Invoke();
+            DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+        }
+        finally
+        {
+            ResetSwapOverlayHighlight();
+            SwapDragCompleted?.Invoke();
+        }
     }
 
     private void SwapOverlay_DragOver(object sender, DragEventArgs e)

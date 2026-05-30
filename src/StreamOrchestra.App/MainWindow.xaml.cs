@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 using StreamOrchestra.App.Views;
@@ -13,6 +14,9 @@ namespace StreamOrchestra.App;
 
 public partial class MainWindow : Window
 {
+    private const int LeftShiftVirtualKey = 0xA0;
+    private const int KeyPressedMask = 0x8000;
+
     private readonly WebViewProfileService _profileService = new();
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
     private readonly PresetStorageService _presetStorageService = new();
@@ -34,6 +38,7 @@ public partial class MainWindow : Window
     private List<WorkspacePreset> _workspaces = [];
     private AppState? _loadedAppState;
     private readonly DispatcherTimer _diagnosticsTimer;
+    private readonly DispatcherTimer _swapModeKeyboardPollTimer;
     private WorkspacePreset? _activeWorkspace;
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
@@ -68,6 +73,7 @@ public partial class MainWindow : Window
         StatusTextBlock.Text = $"Profile data persists under: {_profileService.BaseProfileFolder}";
         UpdateDiagnostics();
         _diagnosticsTimer.Start();
+        _swapModeKeyboardPollTimer = CreateSwapModeKeyboardPollTimer();
 
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
@@ -159,6 +165,7 @@ public partial class MainWindow : Window
             slotView.RemoveSlotRequested += SlotView_RemoveSlotRequested;
             slotView.CtrlStateChanged += SetRemoveModeActive;
             slotView.ShiftStateChanged += SetSwapModeActive;
+            slotView.SwapDragCompleted += ReconcileSwapModeWithKeyboardState;
             _slots.Add(slotView);
         }
     }
@@ -677,7 +684,42 @@ public partial class MainWindow : Window
         {
             slot.SetSwapModeActive(isActive && visibleSlotIds.Contains(slot.SlotId));
         }
+
+        if (isActive && visibleSlotIds.Count > 0)
+        {
+            _swapModeKeyboardPollTimer.Start();
+        }
+        else
+        {
+            _swapModeKeyboardPollTimer.Stop();
+        }
     }
+
+    private void ReconcileSwapModeWithKeyboardState()
+    {
+        if (!IsLeftShiftPhysicallyDown())
+        {
+            SetSwapModeActive(false);
+        }
+    }
+
+    private DispatcherTimer CreateSwapModeKeyboardPollTimer()
+    {
+        var timer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(50)
+        };
+        timer.Tick += (_, _) => ReconcileSwapModeWithKeyboardState();
+        return timer;
+    }
+
+    private static bool IsLeftShiftPhysicallyDown()
+    {
+        return (GetAsyncKeyState(LeftShiftVirtualKey) & KeyPressedMask) != 0;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int virtualKey);
 
     // 선택된 템플릿으로 전환하면서, 제거 대상을 뺀 생존 채널을 새 템플릿 슬롯에 순서대로 다시 채운다(compaction).
     private async Task ApplyRemovalAsync(IReadOnlyCollection<int> removalSlotIds, LayoutPreset template)

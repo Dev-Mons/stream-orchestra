@@ -139,6 +139,38 @@ public sealed class StreamSlotViewLayoutTests
         Assert.DoesNotContain("CalculateDockDirection", slotText);
     }
 
+    [Fact]
+    public void CodeBehind_ReconcilesSwapOverlayWhenSwapDragCompletes()
+    {
+        var slotText = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+        var mainWindowText = File.ReadAllText(GetMainWindowPath());
+
+        Assert.Contains("public event Action? SwapDragStarted;", slotText);
+        Assert.Contains("public event Action? SwapDragCompleted;", slotText);
+        Assert.Contains("SwapDragStarted?.Invoke();", slotText);
+        Assert.Contains("SwapDragCompleted?.Invoke();", slotText);
+        Assert.Contains("try", slotText);
+        Assert.Contains("finally", slotText);
+        Assert.Contains("slotView.SwapDragCompleted += ReconcileSwapModeWithKeyboardState;", mainWindowText);
+        Assert.Contains("private void ReconcileSwapModeWithKeyboardState()", mainWindowText);
+        Assert.Contains("IsLeftShiftPhysicallyDown()", mainWindowText);
+    }
+
+    [Fact]
+    public void CodeBehind_PollsPhysicalShiftStateWhileSwapOverlayIsOpen()
+    {
+        var mainWindowText = File.ReadAllText(GetMainWindowPath());
+
+        Assert.Contains("private readonly DispatcherTimer _swapModeKeyboardPollTimer;", mainWindowText);
+        Assert.Contains("_swapModeKeyboardPollTimer = CreateSwapModeKeyboardPollTimer();", mainWindowText);
+        Assert.Contains("private DispatcherTimer CreateSwapModeKeyboardPollTimer()", mainWindowText);
+        Assert.Contains("Interval = TimeSpan.FromMilliseconds(50)", mainWindowText);
+        Assert.Contains("Tick += (_, _) => ReconcileSwapModeWithKeyboardState();", mainWindowText);
+        Assert.Contains("_swapModeKeyboardPollTimer.Start();", mainWindowText);
+        Assert.Contains("_swapModeKeyboardPollTimer.Stop();", mainWindowText);
+        Assert.Contains("GetAsyncKeyState(LeftShiftVirtualKey)", mainWindowText);
+    }
+
     [Theory]
     [InlineData(100, -120, 100)]
     [InlineData(100, 120, 90)]
@@ -263,6 +295,18 @@ public sealed class StreamSlotViewLayoutTests
             "StreamOrchestra.App",
             "Views",
             fileName));
+    }
+
+    private static string GetMainWindowPath()
+    {
+        return Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "MainWindow.xaml.cs"));
     }
 
     private static XElement FindElementByName(XDocument document, string name)
