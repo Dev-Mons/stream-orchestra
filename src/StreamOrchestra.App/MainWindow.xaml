@@ -290,11 +290,17 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
+            <!-- 탐색바를 열면 내부 WebView2(native HWND)가 창 왼쪽 가장자리에 닿아
+                 WindowChrome의 좌측 리사이즈 핸들(ResizeBorderThickness=8)을 가로챈다.
+                 콘텐츠를 왼쪽으로 8px 들여 그 띠를 리사이즈 전용 영역으로 양보한다.
+                 이 띠는 일반 WPF Border라 hit-test가 chrome으로 넘어가 리사이즈가 동작하고,
+                 사이드바 배경색으로 채워지므로 시각적 위화감도 없다. -->
             <Border x:Name="ExplorerBorder"
                     Grid.Column="0"
                     Background="#0F141B"
                     BorderBrush="#2D3642"
-                    BorderThickness="0,0,1,0">
+                    BorderThickness="0,0,1,0"
+                    Padding="8,0,0,0">
                 <ContentControl x:Name="ExplorerHost" />
             </Border>
 
