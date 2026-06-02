@@ -174,11 +174,28 @@ public partial class StreamSlotView : UserControl
         }
     }
 
+    // 제거 버튼을 슬롯 오른쪽 하단에 붙일 때 두는 여백(px).
+    private const double RemoveButtonMargin = 12;
+
     /// <summary>제거 모드(Ctrl 홀드)일 때 이 슬롯 위에 제거 버튼을 표시/숨김.</summary>
     public void SetRemoveModeActive(bool isActive, bool isSelectedForRemoval = false)
     {
+        if (isActive)
+        {
+            PositionRemoveButtonAtBottomRight();
+        }
+
         RemoveSlotPopup.IsOpen = isActive;
         SetRemoveButtonSelected(isSelectedForRemoval);
+    }
+
+    // 제거 버튼 Popup을 슬롯 영역의 오른쪽 하단 모서리에 배치한다(Relative 배치 기준 오프셋).
+    private void PositionRemoveButtonAtBottomRight()
+    {
+        RemoveSlotPopup.HorizontalOffset =
+            Math.Max(0, SlotBorder.ActualWidth - RemoveSlotButton.Width - RemoveButtonMargin);
+        RemoveSlotPopup.VerticalOffset =
+            Math.Max(0, SlotBorder.ActualHeight - RemoveSlotButton.Height - RemoveButtonMargin);
     }
 
     private void RemoveSlotButton_Click(object sender, RoutedEventArgs e)

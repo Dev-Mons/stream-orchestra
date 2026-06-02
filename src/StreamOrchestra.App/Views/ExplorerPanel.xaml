@@ -7,6 +7,43 @@
              mc:Ignorable="d"
              d:DesignHeight="800"
              d:DesignWidth="360">
+    <UserControl.Resources>
+        <!-- 주소창 옆 탐색 아이콘 버튼: 어두운 패널 톤에 맞춘 사각 아이콘 버튼 -->
+        <Style x:Key="NavIconButton" TargetType="Button">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Background" Value="#1B2531" />
+            <Setter Property="BorderBrush" Value="#2D3642" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#243140" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#3A4757" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2D3C4D" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#4A5A6E" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
     <Grid Background="#0F141B">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -39,30 +76,46 @@
         <Border Grid.Row="1"
                 Background="#101820"
                 Padding="8">
-        <StackPanel>
-            <TextBox x:Name="ExplorerUrlTextBox"
-                     Height="28"
-                         Text="https://www.sooplive.co.kr"
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Button Style="{StaticResource NavIconButton}"
+                            ToolTip="뒤로"
+                            Click="BackButton_Click">
+                        <Image Source="/Assets/arrow-back.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform" />
+                    </Button>
+                    <Button Style="{StaticResource NavIconButton}"
+                            ToolTip="이동"
+                            Click="GoButton_Click">
+                        <Image Source="/Assets/arrow-forward.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform" />
+                    </Button>
+                    <Button Style="{StaticResource NavIconButton}"
+                            ToolTip="새로고침"
+                            Click="RefreshButton_Click">
+                        <Image Source="/Assets/refresh.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform" />
+                    </Button>
+                </StackPanel>
+                <TextBox x:Name="ExplorerUrlTextBox"
+                         Grid.Column="1"
+                         Height="32"
                          VerticalContentAlignment="Center"
+                         Text="https://www.sooplive.co.kr"
                          KeyDown="ExplorerUrlTextBox_KeyDown" />
-                <WrapPanel Margin="0,6,0,0">
-                    <Button Content="Go"
-                            MinWidth="44"
-                            Height="28"
-                            Margin="0,0,6,0"
-                            Click="GoButton_Click" />
-                    <Button Content="Back"
-                            MinWidth="52"
-                            Height="28"
-                            Margin="0,0,6,0"
-                            Click="BackButton_Click" />
-                    <Button Content="Refresh"
-                            MinWidth="68"
-                            Height="28"
-                            Margin="0,0,0,0"
-                            Click="RefreshButton_Click" />
-                </WrapPanel>
-            </StackPanel>
+            </Grid>
         </Border>
 
         <Grid Grid.Row="2"

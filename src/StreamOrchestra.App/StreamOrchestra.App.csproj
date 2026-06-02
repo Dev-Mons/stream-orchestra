@@ -34,6 +34,10 @@
     <Resource Include="Assets\app-icon.png" />
     <Resource Include="Assets\explorer-toggle.png" />
     <Resource Include="Assets\explorer-toggle-single.png" />
+    <Resource Include="Assets\delete-icon.png" />
+    <Resource Include="Assets\arrow-back.png" />
+    <Resource Include="Assets\arrow-forward.png" />
+    <Resource Include="Assets\refresh.png" />
   </ItemGroup>
 
 </Project>

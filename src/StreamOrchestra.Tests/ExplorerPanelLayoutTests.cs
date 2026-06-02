@@ -8,22 +8,25 @@ public sealed class ExplorerPanelLayoutTests
     public void ExplorerPanel_ProvidesNavigationActions()
     {
         var document = LoadExplorerPanelDocument();
+        // 버튼은 텍스트 대신 아이콘 이미지로 표시된다(Click 핸들러 → 아이콘 리소스 경로).
         var expectedButtons = new Dictionary<string, string>
         {
-            ["Go"] = "GoButton_Click",
-            ["Back"] = "BackButton_Click",
-            ["Refresh"] = "RefreshButton_Click"
+            ["GoButton_Click"] = "/Assets/arrow-forward.png",
+            ["BackButton_Click"] = "/Assets/arrow-back.png",
+            ["RefreshButton_Click"] = "/Assets/refresh.png"
         };
 
-        foreach (var (content, clickHandler) in expectedButtons)
+        foreach (var (clickHandler, iconSource) in expectedButtons)
         {
             var button = document
                 .Descendants()
                 .SingleOrDefault(element => element.Name.LocalName == "Button" &&
-                    GetAttribute(element, "Content") == content &&
                     GetAttribute(element, "Click") == clickHandler);
 
             Assert.NotNull(button);
+
+            var icon = button!.Descendants().Single(element => element.Name.LocalName == "Image");
+            Assert.Equal(iconSource, GetAttribute(icon, "Source"));
         }
 
         Assert.Equal("ExplorerUrlTextBox", GetElementName(FindNamedElement(document, "ExplorerUrlTextBox")));

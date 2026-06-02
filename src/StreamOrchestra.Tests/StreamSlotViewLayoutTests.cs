@@ -37,7 +37,7 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
-    public void StreamSlotView_ProvidesCtrlRevealedRemoveButtonAsCenteredPopup()
+    public void StreamSlotView_ProvidesCtrlRevealedRemoveButtonAtBottomRightPopup()
     {
         var document = LoadStreamSlotViewDocument();
         var popup = FindElementByName(document, "RemoveSlotPopup");
@@ -45,10 +45,15 @@ public sealed class StreamSlotViewLayoutTests
 
         Assert.Equal("Popup", popup.Name.LocalName);
         Assert.Equal("False", GetAttribute(popup, "IsOpen"));
-        Assert.Equal("Center", GetAttribute(popup, "Placement"));
+        Assert.Equal("Relative", GetAttribute(popup, "Placement"));
         Assert.Contains("SlotBorder", GetAttribute(popup, "PlacementTarget"));
         Assert.Equal("Button", button.Name.LocalName);
         Assert.Equal("RemoveSlotButton_Click", GetAttribute(button, "Click"));
+
+        // 버튼 내용은 delete-icon.png 이미지다.
+        var icon = button.Descendants().Single(element => element.Name.LocalName == "Image");
+        // Views/ 하위 XAML이라 앱 루트 기준 절대 리소스 경로(/Assets/...)여야 한다.
+        Assert.Equal("/Assets/delete-icon.png", GetAttribute(icon, "Source"));
 
         var codeBehind = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
         Assert.Contains("public void SetRemoveModeActive(bool isActive, bool isSelectedForRemoval = false)", codeBehind);
@@ -57,6 +62,10 @@ public sealed class StreamSlotViewLayoutTests
         Assert.DoesNotContain("RemoveSlotPopup.IsOpen = false;", codeBehind);
         Assert.Contains("CtrlStateChanged?.Invoke", codeBehind);
         Assert.Contains("ctrl-state", codeBehind);
+        // 제거 버튼은 슬롯 오른쪽 하단에 배치된다.
+        Assert.Contains("PositionRemoveButtonAtBottomRight", codeBehind);
+        Assert.Contains("RemoveSlotPopup.HorizontalOffset", codeBehind);
+        Assert.Contains("RemoveSlotPopup.VerticalOffset", codeBehind);
     }
 
     [Fact]

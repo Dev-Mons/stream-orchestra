@@ -62,7 +62,7 @@
             </primitives:Popup>
             <primitives:Popup x:Name="RemoveSlotPopup"
                               PlacementTarget="{Binding ElementName=SlotBorder}"
-                              Placement="Center"
+                              Placement="Relative"
                               IsOpen="False"
                               AllowsTransparency="True"
                               Focusable="False"
@@ -75,11 +75,13 @@
                         BorderBrush="#F3F6FA"
                         BorderThickness="2"
                         Foreground="#F3F6FA"
-                        FontSize="26"
-                        FontWeight="Bold"
-                        Content="🗑"
                         ToolTip="이 화면 제거 (Ctrl)"
-                        Click="RemoveSlotButton_Click" />
+                        Click="RemoveSlotButton_Click">
+                    <Image Source="/Assets/delete-icon.png"
+                           Width="32"
+                           Height="32"
+                           Stretch="Uniform" />
+                </Button>
             </primitives:Popup>
             <primitives:Popup x:Name="SwapModePopup"
                               PlacementTarget="{Binding ElementName=SlotBorder}"
