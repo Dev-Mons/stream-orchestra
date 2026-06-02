@@ -20,7 +20,8 @@ public partial class ShortcutSettingsDialog : Window
             [ShortcutAction.Remove] = RemoveKeyButton,
             [ShortcutAction.Swap] = SwapKeyButton,
             [ShortcutAction.Switch] = SwitchKeyButton,
-            [ShortcutAction.ToggleExplorer] = SidebarKeyButton
+            [ShortcutAction.ToggleExplorer] = SidebarKeyButton,
+            [ShortcutAction.MuteAll] = MuteAllKeyButton
         };
 
         RefreshButtons();
@@ -164,6 +165,7 @@ public partial class ShortcutSettingsDialog : Window
         ShortcutAction.Swap => "화면 교체",
         ShortcutAction.Switch => "레이아웃 전환",
         ShortcutAction.ToggleExplorer => "사이드바 열기/닫기",
+        ShortcutAction.MuteAll => "전체 볼륨 0%",
         _ => action.ToString()
     };
 }

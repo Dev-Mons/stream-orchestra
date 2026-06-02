@@ -13,7 +13,10 @@ public enum ShortcutAction
     Switch,
 
     /// <summary>왼쪽 탐색(사이드바) 패널 열기/닫기 토글.</summary>
-    ToggleExplorer
+    ToggleExplorer,
+
+    /// <summary>모든 화면의 볼륨을 0%로 내림(단발성).</summary>
+    MuteAll
 }
 
 /// <summary>
@@ -43,6 +46,9 @@ public sealed class ShortcutSettings
     // 사이드바 토글 기본값: Tab(0x09).
     public ShortcutKey ToggleExplorerKey { get; init; } = ShortcutKey.Create(0x09, "Tab");
 
+    // 전체 볼륨 0% 기본값: M(0x4D).
+    public ShortcutKey MuteAllKey { get; init; } = ShortcutKey.Create(0x4D, "M");
+
     /// <summary>지정한 동작에 매핑된 키를 돌려준다.</summary>
     public ShortcutKey GetKey(ShortcutAction action) => action switch
     {
@@ -50,6 +56,7 @@ public sealed class ShortcutSettings
         ShortcutAction.Swap => SwapKey,
         ShortcutAction.Switch => SwitchKey,
         ShortcutAction.ToggleExplorer => ToggleExplorerKey,
+        ShortcutAction.MuteAll => MuteAllKey,
         _ => RemoveKey
     };
 
@@ -81,6 +88,11 @@ public sealed class ShortcutSettings
             return ShortcutAction.ToggleExplorer;
         }
 
+        if (MuteAllKey.VirtualKey == virtualKey)
+        {
+            return ShortcutAction.MuteAll;
+        }
+
         return null;
     }
 
@@ -92,7 +104,8 @@ public sealed class ShortcutSettings
             RemoveKey.VirtualKey,
             SwapKey.VirtualKey,
             SwitchKey.VirtualKey,
-            ToggleExplorerKey.VirtualKey
+            ToggleExplorerKey.VirtualKey,
+            MuteAllKey.VirtualKey
         ];
 
         if (keys.Any(virtualKey => virtualKey == 0 || virtualKey == VkEscape))
@@ -105,10 +118,11 @@ public sealed class ShortcutSettings
 
     public ShortcutSettings With(ShortcutAction action, ShortcutKey key) => action switch
     {
-        ShortcutAction.Remove => new ShortcutSettings { RemoveKey = key, SwapKey = SwapKey, SwitchKey = SwitchKey, ToggleExplorerKey = ToggleExplorerKey },
-        ShortcutAction.Swap => new ShortcutSettings { RemoveKey = RemoveKey, SwapKey = key, SwitchKey = SwitchKey, ToggleExplorerKey = ToggleExplorerKey },
-        ShortcutAction.Switch => new ShortcutSettings { RemoveKey = RemoveKey, SwapKey = SwapKey, SwitchKey = key, ToggleExplorerKey = ToggleExplorerKey },
-        ShortcutAction.ToggleExplorer => new ShortcutSettings { RemoveKey = RemoveKey, SwapKey = SwapKey, SwitchKey = SwitchKey, ToggleExplorerKey = key },
+        ShortcutAction.Remove => new ShortcutSettings { RemoveKey = key, SwapKey = SwapKey, SwitchKey = SwitchKey, ToggleExplorerKey = ToggleExplorerKey, MuteAllKey = MuteAllKey },
+        ShortcutAction.Swap => new ShortcutSettings { RemoveKey = RemoveKey, SwapKey = key, SwitchKey = SwitchKey, ToggleExplorerKey = ToggleExplorerKey, MuteAllKey = MuteAllKey },
+        ShortcutAction.Switch => new ShortcutSettings { RemoveKey = RemoveKey, SwapKey = SwapKey, SwitchKey = key, ToggleExplorerKey = ToggleExplorerKey, MuteAllKey = MuteAllKey },
+        ShortcutAction.ToggleExplorer => new ShortcutSettings { RemoveKey = RemoveKey, SwapKey = SwapKey, SwitchKey = SwitchKey, ToggleExplorerKey = key, MuteAllKey = MuteAllKey },
+        ShortcutAction.MuteAll => new ShortcutSettings { RemoveKey = RemoveKey, SwapKey = SwapKey, SwitchKey = SwitchKey, ToggleExplorerKey = ToggleExplorerKey, MuteAllKey = key },
         _ => this
     };
 

@@ -14,7 +14,8 @@ public sealed class ShortcutSettingsDialogLayoutTests
             ["RemoveKeyButton"] = "Remove",
             ["SwapKeyButton"] = "Swap",
             ["SwitchKeyButton"] = "Switch",
-            ["SidebarKeyButton"] = "ToggleExplorer"
+            ["SidebarKeyButton"] = "ToggleExplorer",
+            ["MuteAllKeyButton"] = "MuteAll"
         };
 
         foreach (var (buttonName, tag) in expectedTags)

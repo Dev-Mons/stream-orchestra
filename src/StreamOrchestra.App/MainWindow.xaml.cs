@@ -2,7 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.ComponentModel;
@@ -45,6 +47,8 @@ public partial class MainWindow : Window
     private AppState? _loadedAppState;
     private readonly DispatcherTimer _diagnosticsTimer;
     private readonly DispatcherTimer _swapModeKeyboardPollTimer;
+    private DispatcherTimer? _statusToastTimer;
+    private DispatcherTimer? _centerVolumeTimer;
     private WorkspacePreset? _activeWorkspace;
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
@@ -74,6 +78,7 @@ public partial class MainWindow : Window
         CreateExplorerPanel();
         CreateSlots();
         ApplyShortcutLabelsToSlots();
+        UpdateMuteAllTooltip();
         LoadLayouts();
         LoadWorkspacePresets();
         ApplyViewState(_loadedAppState);
@@ -93,6 +98,11 @@ public partial class MainWindow : Window
             SetRemoveModeActive(false);
             SetSwapModeActive(false);
         };
+
+        // 상태 메시지가 갱신될 때마다 좌측 토스트를 잠깐 띄운다.
+        DependencyPropertyDescriptor
+            .FromProperty(TextBlock.TextProperty, typeof(TextBlock))
+            .AddValueChanged(StatusTextBlock, (_, _) => ShowStatusToast());
     }
 
     private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -166,6 +176,14 @@ public partial class MainWindow : Window
                     StatusTextBlock.Text = _isExplorerPanelVisible
                         ? "탐색 패널을 표시했습니다."
                         : "탐색 패널을 숨겼습니다.";
+                }
+
+                break;
+            case ShortcutAction.MuteAll:
+                // 단발성 동작: 누를 때 한 번만 실행한다(자동 반복은 무시).
+                if (pressed && !isRepeat)
+                {
+                    MuteAllSlots();
                 }
 
                 break;
@@ -430,6 +448,7 @@ public partial class MainWindow : Window
         _shortcutSettings = settings;
         ApplyShortcutLabelsToSlots();
         UpdateExplorerToggleTooltip();
+        UpdateMuteAllTooltip();
 
         // 진행 중이던 모드 오버레이는 새 매핑과 어긋날 수 있으니 모두 닫는다.
         SetRemoveModeActive(false);
@@ -442,7 +461,8 @@ public partial class MainWindow : Window
             $"제거 {_shortcutSettings.RemoveKey.Name} · " +
             $"교체 {_shortcutSettings.SwapKey.Name} · " +
             $"전환 {_shortcutSettings.SwitchKey.Name} · " +
-            $"사이드바 {_shortcutSettings.ToggleExplorerKey.Name}.";
+            $"사이드바 {_shortcutSettings.ToggleExplorerKey.Name} · " +
+            $"볼륨0% {_shortcutSettings.MuteAllKey.Name}.";
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -1170,13 +1190,85 @@ public partial class MainWindow : Window
 
     private void MuteAllButton_Click(object sender, RoutedEventArgs e)
     {
-        // 단발성 동작: 모든 슬롯 볼륨을 0%로 내린다(복원 없음).
+        MuteAllSlots();
+    }
+
+    // 단발성 동작: 모든 슬롯 볼륨을 0%로 내린다(복원 없음). 버튼과 단축키가 함께 호출한다.
+    private void MuteAllSlots()
+    {
         foreach (var slot in _slots)
         {
             slot.SetVolumePercentSilently(0);
         }
 
+        ShowCenterVolumeIndicator("볼륨 0%");
         StatusTextBlock.Text = "전체 볼륨을 0%로 변경했습니다.";
+    }
+
+    // 앱 정중앙에 큰 볼륨 표시를 잠깐(1초) 띄웠다 사라지게 한다(Popup 페이드는 PopupAnimation이 처리).
+    private void ShowCenterVolumeIndicator(string text)
+    {
+        CenterVolumeText.Text = text;
+
+        _centerVolumeTimer ??= CreateCenterVolumeTimer();
+        CenterVolumePopup.IsOpen = true;
+        _centerVolumeTimer.Stop();
+        _centerVolumeTimer.Start();
+    }
+
+    private DispatcherTimer CreateCenterVolumeTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            CenterVolumePopup.IsOpen = false;
+        };
+        return timer;
+    }
+
+    // 상태 메시지를 좌측 하단 토스트로 페이드인 후 2초 뒤 페이드아웃한다.
+    private void ShowStatusToast()
+    {
+        if (string.IsNullOrWhiteSpace(StatusTextBlock.Text))
+        {
+            return;
+        }
+
+        _statusToastTimer ??= CreateStatusToastTimer();
+        _statusToastTimer.Stop();
+
+        StatusToast.Visibility = Visibility.Visible;
+        StatusToast.BeginAnimation(
+            UIElement.OpacityProperty,
+            new DoubleAnimation(1, TimeSpan.FromMilliseconds(150)));
+
+        _statusToastTimer.Start();
+    }
+
+    private DispatcherTimer CreateStatusToastTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            HideStatusToast();
+        };
+        return timer;
+    }
+
+    private void HideStatusToast()
+    {
+        var fadeOut = new DoubleAnimation(0, TimeSpan.FromMilliseconds(220));
+        fadeOut.Completed += (_, _) =>
+        {
+            // 페이드아웃 중 새 메시지로 다시 떠 있으면(타이머 작동 중) 숨기지 않는다.
+            if (!(_statusToastTimer?.IsEnabled ?? false))
+            {
+                StatusToast.Visibility = Visibility.Collapsed;
+            }
+        };
+        StatusToast.BeginAnimation(UIElement.OpacityProperty, fadeOut);
     }
 
     private void SelectSlot(StreamSlotView slot)
@@ -1449,6 +1541,12 @@ public partial class MainWindow : Window
             : $"탐색 표시 ({keyLabel})";
     }
 
+    // 전체 볼륨 0% 버튼 툴팁에 현재 단축키를 함께 표시한다.
+    private void UpdateMuteAllTooltip()
+    {
+        MuteAllButton.ToolTip = $"모든 화면의 볼륨을 0%로 변경 ({_shortcutSettings.MuteAllKey.Name})";
+    }
+
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
         _presetStorageService.SaveAppState(CaptureAppState());
@@ -1662,6 +1760,133 @@ public partial class MainWindow : Window
 
         DiagnosticsTextBlock.Text =
             $"WebView2 {snapshot.WebViewProcessCount} proc | {cpuText} | WS {snapshot.WebViewWorkingSetMegabytes:F0} MB | Private {snapshot.WebViewPrivateMemoryMegabytes:F0} MB";
+    }
+
+    // ===== 커스텀 타이틀바(WindowChrome) 창 제어 =====
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        // 테두리 없는 창 최대화 시 작업 표시줄 가림/가장자리 잘림 보정을 위해 메시지를 가로챈다.
+        if (PresentationSource.FromVisual(this) is HwndSource source)
+        {
+            source.AddHook(WindowMessageHook);
+        }
+
+        UpdateMaximizeRestoreGlyph();
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        UpdateMaximizeRestoreGlyph();
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+        => WindowState = WindowState.Minimized;
+
+    private void MaximizeRestoreButton_Click(object sender, RoutedEventArgs e)
+        => WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void UpdateMaximizeRestoreGlyph()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        // Segoe MDL2 Assets: E922=최대화, E923=이전 크기로 복원
+        MaximizeRestoreButton.Content = maximized ? "" : "";
+        MaximizeRestoreButton.ToolTip = maximized ? "이전 크기로 복원" : "최대화";
+    }
+
+    private IntPtr WindowMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int wmGetMinMaxInfo = 0x0024;
+        if (msg != wmGetMinMaxInfo)
+        {
+            return IntPtr.Zero;
+        }
+
+        const uint monitorDefaultToNearest = 0x00000002;
+        var monitor = MonitorFromWindow(hwnd, monitorDefaultToNearest);
+        if (monitor == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        var monitorInfo = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref monitorInfo))
+        {
+            return IntPtr.Zero;
+        }
+
+        var minMaxInfo = Marshal.PtrToStructure<MinMaxInfo>(lParam);
+        var work = monitorInfo.rcWork;
+        var bounds = monitorInfo.rcMonitor;
+
+        // 최대화 위치/크기를 모니터의 작업 영역(작업 표시줄 제외)에 정확히 맞춘다.
+        minMaxInfo.ptMaxPosition.X = work.Left - bounds.Left;
+        minMaxInfo.ptMaxPosition.Y = work.Top - bounds.Top;
+        minMaxInfo.ptMaxSize.X = work.Right - work.Left;
+        minMaxInfo.ptMaxSize.Y = work.Bottom - work.Top;
+
+        // handled=true로 OS 기본 처리를 막으므로, 주 모니터 크기로 미리 채워진
+        // ptMaxTrackSize가 ptMaxSize를 깎지 않도록 현재 모니터 작업 영역에 맞춘다.
+        // (이 값이 없으면 주 모니터보다 큰 보조 모니터에서 최대화가 작게 잘린다.)
+        minMaxInfo.ptMaxTrackSize.X = work.Right - work.Left;
+        minMaxInfo.ptMaxTrackSize.Y = work.Bottom - work.Top;
+
+        // 메시지를 직접 처리하므로 MinWidth/MinHeight 제약을 픽셀 단위로 보존한다.
+        var dpi = VisualTreeHelper.GetDpi(this);
+        minMaxInfo.ptMinTrackSize.X = (int)(MinWidth * dpi.DpiScaleX);
+        minMaxInfo.ptMinTrackSize.Y = (int)(MinHeight * dpi.DpiScaleY);
+
+        Marshal.StructureToPtr(minMaxInfo, lParam, true);
+        handled = true;
+        return IntPtr.Zero;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int cbSize;
+        public NativeRect rcMonitor;
+        public NativeRect rcWork;
+        public uint dwFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxInfo
+    {
+        public NativePoint ptReserved;
+        public NativePoint ptMaxSize;
+        public NativePoint ptMaxPosition;
+        public NativePoint ptMinTrackSize;
+        public NativePoint ptMaxTrackSize;
     }
 
 }

@@ -11,6 +11,13 @@
         MinHeight="720"
         MinWidth="1100"
         Background="#0B0F14">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="34"
+                      ResizeBorderThickness="8"
+                      CornerRadius="0"
+                      GlassFrameThickness="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
     <Window.Resources>
         <!-- 최상단 사이드탭 토글: 어두운 툴바 톤에 맞춘 사각 아이콘 버튼 -->
         <Style x:Key="SidebarToggleButton" TargetType="Button">
@@ -46,24 +53,92 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- 커스텀 타이틀바의 창 제어 버튼(최소화/최대화/닫기) 공통 스타일.
+             버튼 시각(배경/글리프)은 가장자리까지 채우되, 클릭 감지 영역만 위쪽 8px를
+             비워 그 부분을 상단 리사이즈 테두리로 양보한다. -->
+        <Style x:Key="CaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#C7D0DA" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" />
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                            <!-- 클릭/호버 감지 영역: 위쪽 8px(ResizeBorderThickness)는 비워 상단 리사이즈로 양보 -->
+                            <Border Background="Transparent"
+                                    Margin="0,8,0,0"
+                                    WindowChrome.IsHitTestVisibleInChrome="True" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#243140" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2D3C4D" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 닫기 버튼: 호버 시 빨간 강조. 우상단 모서리이므로 클릭 영역에서 위/오른쪽 8px를 비운다. -->
+        <Style x:Key="CloseCaptionButton"
+               TargetType="Button"
+               BasedOn="{StaticResource CaptionButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" />
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                            <!-- 클릭/호버 감지 영역: 위/오른쪽 8px는 비워 상단·우측 리사이즈로 양보 -->
+                            <Border Background="Transparent"
+                                    Margin="0,8,8,0"
+                                    WindowChrome.IsHitTestVisibleInChrome="True" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#C42B1C" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#B0271A" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
                 Background="#121820"
                 BorderBrush="#2D3642"
-                BorderThickness="0,0,0,1"
-                Padding="6,4">
+                BorderThickness="0,0,0,1">
             <DockPanel LastChildFill="True">
                 <Button x:Name="ToggleExplorerButton"
                         DockPanel.Dock="Left"
-                        Margin="0,0,6,0"
+                        Margin="6,0,6,0"
                         VerticalAlignment="Center"
+                        WindowChrome.IsHitTestVisibleInChrome="True"
                         Style="{StaticResource SidebarToggleButton}"
                         ToolTip="탐색 숨김"
                         Click="ToggleExplorerButton_Click">
@@ -74,15 +149,54 @@
                            Stretch="Uniform" />
                 </Button>
 
+                <!-- 창 제어 버튼: 닫기가 가장 바깥쪽(우측 끝) 모서리에 오도록 먼저 선언 -->
+                <Button x:Name="CloseButton"
+                        DockPanel.Dock="Right"
+                        Style="{StaticResource CloseCaptionButton}"
+                        ToolTip="닫기"
+                        Content="&#xE8BB;"
+                        Click="CloseButton_Click" />
+
+                <Button x:Name="MaximizeRestoreButton"
+                        DockPanel.Dock="Right"
+                        Style="{StaticResource CaptionButton}"
+                        ToolTip="최대화"
+                        Content="&#xE922;"
+                        Click="MaximizeRestoreButton_Click" />
+
+                <Button x:Name="MinimizeButton"
+                        DockPanel.Dock="Right"
+                        Style="{StaticResource CaptionButton}"
+                        ToolTip="최소화"
+                        Content="&#xE921;"
+                        Click="MinimizeButton_Click" />
+
+                <Button x:Name="MuteAllButton"
+                        DockPanel.Dock="Right"
+                        Margin="8,0,8,0"
+                        Padding="12,3"
+                        Height="28"
+                        VerticalAlignment="Center"
+                        WindowChrome.IsHitTestVisibleInChrome="True"
+                        Background="#223044"
+                        BorderBrush="#2D3642"
+                        BorderThickness="1"
+                        Foreground="#F3F6FA"
+                        Content="볼륨"
+                        ToolTip="모든 화면의 볼륨을 0%로 변경"
+                        Click="MuteAllButton_Click" />
+
                 <TextBlock x:Name="DiagnosticsTextBlock"
                            DockPanel.Dock="Right"
+                           Margin="0,0,8,0"
                            Foreground="#B9C2CC"
                            VerticalAlignment="Center"
                            TextAlignment="Right" />
 
                 <Menu Background="Transparent"
                       Foreground="#F3F6FA"
-                      VerticalAlignment="Center">
+                      VerticalAlignment="Center"
+                      WindowChrome.IsHitTestVisibleInChrome="True">
                     <MenuItem Header="설정">
                         <MenuItem x:Name="LayoutMenuItem"
                                   Header="레이아웃"
@@ -147,8 +261,10 @@
                 <ComboBox x:Name="AudibleQualityComboBox"
                           Width="92"
                           Height="28"
+                          VerticalAlignment="Center"
                           SelectedIndex="0"
                           Visibility="Collapsed"
+                          WindowChrome.IsHitTestVisibleInChrome="True"
                           SelectionChanged="AudibleQualityComboBox_SelectionChanged">
                     <ComboBoxItem Content="1440p"
                                   Tag="q1440" />
@@ -197,30 +313,53 @@
                   Drop="SlotsGrid_Drop" />
         </Grid>
 
-        <Border Grid.Row="2"
-                Background="#121820"
-                BorderBrush="#2D3642"
-                BorderThickness="0,1,0,0"
-                Padding="10,6">
-            <DockPanel LastChildFill="True">
-                <Button x:Name="MuteAllButton"
-                        DockPanel.Dock="Right"
-                        Margin="10,0,0,0"
-                        Padding="10,3"
-                        VerticalAlignment="Center"
-                        Background="#223044"
-                        BorderBrush="#2D3642"
-                        BorderThickness="1"
-                        Foreground="#F3F6FA"
-                        Content="전체 볼륨 0%"
-                        ToolTip="모든 화면의 볼륨을 0%로 변경"
-                        Click="MuteAllButton_Click" />
-
-                <TextBlock x:Name="StatusTextBlock"
-                           VerticalAlignment="Center"
-                           Foreground="#B9C2CC"
-                           TextWrapping="Wrap" />
-            </DockPanel>
+        <!-- 좌측 하단에 잠깐(2초) 떴다 사라지는 상태 토스트 -->
+        <Border x:Name="StatusToast"
+                Grid.Row="1"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="16"
+                MaxWidth="460"
+                Padding="14,10"
+                Background="#E6141C26"
+                BorderBrush="#3A4757"
+                BorderThickness="1"
+                CornerRadius="8"
+                Opacity="0"
+                Visibility="Collapsed"
+                IsHitTestVisible="False">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="16"
+                                  ShadowDepth="0"
+                                  Opacity="0.55"
+                                  Color="Black" />
+            </Border.Effect>
+            <TextBlock x:Name="StatusTextBlock"
+                       Foreground="#F3F6FA"
+                       FontSize="13"
+                       TextWrapping="Wrap" />
         </Border>
+
+        <!-- 앱 정중앙에 잠깐 떴다 사라지는 전역 볼륨 표시(전체 볼륨 0% 피드백).
+             WebView2(영상) HWND는 WPF 레이어보다 항상 위에 합성되므로, 일반 Border 대신
+             자체 HWND로 영상 위에 뜨는 Popup을 사용한다(슬롯 볼륨 오버레이와 동일 방식). -->
+        <Popup x:Name="CenterVolumePopup"
+               PlacementTarget="{Binding ElementName=MainContentGrid}"
+               Placement="Center"
+               IsOpen="False"
+               StaysOpen="True"
+               AllowsTransparency="True"
+               PopupAnimation="Fade"
+               IsHitTestVisible="False"
+               Focusable="False">
+            <Border Background="#B3000000"
+                    Padding="28,18"
+                    CornerRadius="12">
+                <TextBlock x:Name="CenterVolumeText"
+                           Foreground="#FAFAFA"
+                           FontSize="40"
+                           FontWeight="Bold" />
+            </Border>
+        </Popup>
     </Grid>
 </Window>

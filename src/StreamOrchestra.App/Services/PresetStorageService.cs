@@ -142,7 +142,8 @@ public sealed class PresetStorageService
             RemoveKey = NormalizeShortcutKey(shortcuts.RemoveKey),
             SwapKey = NormalizeShortcutKey(shortcuts.SwapKey),
             SwitchKey = NormalizeShortcutKey(shortcuts.SwitchKey),
-            ToggleExplorerKey = NormalizeShortcutKey(shortcuts.ToggleExplorerKey)
+            ToggleExplorerKey = NormalizeShortcutKey(shortcuts.ToggleExplorerKey),
+            MuteAllKey = NormalizeShortcutKey(shortcuts.MuteAllKey)
         };
 
         return normalized.IsValidPermutation() ? normalized : new ShortcutSettings();

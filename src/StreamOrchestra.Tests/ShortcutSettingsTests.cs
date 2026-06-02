@@ -10,10 +10,11 @@ public sealed class ShortcutSettingsTests
     private const int VkControl = 0x11;
     private const int VkMenu = 0x12;
     private const int VkA = 0x41;
+    private const int VkM = 0x4D;
     private const int VkEscape = 0x1B;
 
     [Fact]
-    public void Defaults_MapRemoveToCtrlSwapToShiftSwitchToAltToggleToTab()
+    public void Defaults_MapRemoveToCtrlSwapToShiftSwitchToAltToggleToTabMuteToM()
     {
         var settings = new ShortcutSettings();
 
@@ -21,8 +22,10 @@ public sealed class ShortcutSettingsTests
         Assert.Equal(VkShift, settings.SwapKey.VirtualKey);
         Assert.Equal(VkMenu, settings.SwitchKey.VirtualKey);
         Assert.Equal(VkTab, settings.ToggleExplorerKey.VirtualKey);
+        Assert.Equal(VkM, settings.MuteAllKey.VirtualKey);
         Assert.Equal("Ctrl", settings.RemoveKey.Name);
         Assert.Equal("Tab", settings.ToggleExplorerKey.Name);
+        Assert.Equal("M", settings.MuteAllKey.Name);
         Assert.True(settings.IsValidPermutation());
     }
 
@@ -31,6 +34,7 @@ public sealed class ShortcutSettingsTests
     [InlineData(ShortcutAction.Swap, VkShift)]
     [InlineData(ShortcutAction.Switch, VkMenu)]
     [InlineData(ShortcutAction.ToggleExplorer, VkTab)]
+    [InlineData(ShortcutAction.MuteAll, VkM)]
     public void GetKey_ReturnsMappedKeyForAction(ShortcutAction action, int expectedVirtualKey)
     {
         Assert.Equal(expectedVirtualKey, new ShortcutSettings().GetKey(action).VirtualKey);
@@ -41,6 +45,7 @@ public sealed class ShortcutSettingsTests
     [InlineData(VkShift, ShortcutAction.Swap)]
     [InlineData(VkMenu, ShortcutAction.Switch)]
     [InlineData(VkTab, ShortcutAction.ToggleExplorer)]
+    [InlineData(VkM, ShortcutAction.MuteAll)]
     public void GetAction_ReturnsMappedActionForVirtualKey(int virtualKey, ShortcutAction expected)
     {
         Assert.Equal(expected, new ShortcutSettings().GetAction(virtualKey));
@@ -113,5 +118,17 @@ public sealed class ShortcutSettingsTests
         Assert.Equal(VkShift, updated.SwapKey.VirtualKey);
         Assert.Equal(VkMenu, updated.SwitchKey.VirtualKey);
         Assert.Equal(VkTab, updated.ToggleExplorerKey.VirtualKey);
+        Assert.Equal(VkM, updated.MuteAllKey.VirtualKey);
+    }
+
+    [Fact]
+    public void With_RemappingAnotherActionKeepsMuteAllKey()
+    {
+        // MuteAll을 'A'로 바꾼 뒤 다른 동작(제거)을 바꿔도 MuteAll 매핑이 유지된다.
+        var withMutedToA = new ShortcutSettings().With(ShortcutAction.MuteAll, ShortcutKey.Create(VkA, "A"));
+        var updated = withMutedToA.With(ShortcutAction.Remove, ShortcutKey.Create(VkM, "M"));
+
+        Assert.Equal(VkA, updated.MuteAllKey.VirtualKey);
+        Assert.Equal(VkM, updated.RemoveKey.VirtualKey);
     }
 }
