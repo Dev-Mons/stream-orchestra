@@ -115,7 +115,8 @@
                                        FontSize="30"
                                        FontWeight="Bold"
                                        HorizontalAlignment="Center" />
-                            <TextBlock Text="드래그하여 위치 교체 (Shift)"
+                            <TextBlock x:Name="SwapModeLabel"
+                                       Text="드래그하여 위치 교체 (Shift)"
                                        Foreground="#F3F6FA"
                                        FontSize="12"
                                        Margin="0,4,0,0"

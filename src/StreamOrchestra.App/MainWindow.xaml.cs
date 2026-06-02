@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -14,8 +15,13 @@ namespace StreamOrchestra.App;
 
 public partial class MainWindow : Window
 {
-    private const int LeftShiftVirtualKey = 0xA0;
     private const int KeyPressedMask = 0x8000;
+
+    // 사이드탭 토글 버튼 아이콘: 열린 상태에선 닫기(close), 닫힌 상태에선 열기(open) 아이콘을 표시한다.
+    private static readonly ImageSource SidebarCloseIcon =
+        new BitmapImage(new Uri("pack://application:,,,/Assets/sidebar-close.png"));
+    private static readonly ImageSource SidebarOpenIcon =
+        new BitmapImage(new Uri("pack://application:,,,/Assets/sidebar-open.png"));
 
     private readonly WebViewProfileService _profileService = new();
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
@@ -47,6 +53,7 @@ public partial class MainWindow : Window
     private bool _isExplorerPanelVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
     private LayoutPreset? _selectedLayout;
+    private ShortcutSettings _shortcutSettings = new();
 
     public MainWindow()
     {
@@ -60,11 +67,13 @@ public partial class MainWindow : Window
 
         _loadedAppState = _presetStorageService.LoadAppState();
         RestoreWindowPlacement(_loadedAppState?.Window);
+        _shortcutSettings = _loadedAppState?.Shortcuts ?? new ShortcutSettings();
 
         _updateService = TryCreateUpdateService(_loadedAppState?.AutoUpdate ?? new AutoUpdateState());
 
         CreateExplorerPanel();
         CreateSlots();
+        ApplyShortcutLabelsToSlots();
         LoadLayouts();
         LoadWorkspacePresets();
         ApplyViewState(_loadedAppState);
@@ -88,58 +97,101 @@ public partial class MainWindow : Window
 
     private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key is Key.LeftCtrl or Key.RightCtrl)
-        {
-            SetRemoveModeActive(true);
-            return;
-        }
-
-        // 왼쪽 Shift를 누르고 있는 동안 슬롯 간 영상 교체 오버레이를 표시한다(홀드 방식).
-        if (e.Key == Key.LeftShift)
-        {
-            SetSwapModeActive(true);
-            return;
-        }
-
-        // 왼쪽 Alt를 누르고 있는 동안 현재 화면 수(N) 레이아웃 카드를 표시한다(홀드 방식).
-        // Alt 키는 SystemKey로 들어오며, 자동 반복이어도 메뉴 활성화를 막기 위해 항상 소비한다.
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (key == Key.LeftAlt)
-        {
-            if (!e.IsRepeat)
-            {
-                ShowSwitchLayoutCards();
-            }
-
-            e.Handled = true;
-        }
+        HandleShortcutKeyEvent(e, pressed: true, e.IsRepeat);
     }
 
     private void MainWindow_PreviewKeyUp(object sender, KeyEventArgs e)
     {
-        if (e.Key is Key.LeftCtrl or Key.RightCtrl)
+        HandleShortcutKeyEvent(e, pressed: false, e.IsRepeat);
+    }
+
+    private void HandleShortcutKeyEvent(KeyEventArgs e, bool pressed, bool isRepeat)
+    {
+        // 텍스트 입력란(예: 탐색 URL 창)에 포커스가 있으면 임의 키 단축키가 입력을 가로채지 않도록 무시한다.
+        if (Keyboard.FocusedElement is TextBoxBase)
         {
-            SetRemoveModeActive(false);
             return;
         }
 
-        // 왼쪽 Shift를 떼면 교체 오버레이를 닫는다.
-        if (e.Key == Key.LeftShift)
+        if (!ShortcutKeyResolver.TryResolveVirtualKey(e, out var virtualKey))
         {
-            SetSwapModeActive(false);
             return;
         }
 
-        // 왼쪽 Alt를 떼면 전환 카드를 닫는다(메뉴 진입 방지를 위해 이벤트를 소비).
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (key == Key.LeftAlt)
+        var action = _shortcutSettings.GetAction(virtualKey);
+        if (action is null)
         {
-            if (_layoutCardMode == LayoutCardMode.Switch)
-            {
-                HideSwitchLayoutCards();
-            }
+            return;
+        }
 
+        // Tab(포커스 이동)·Alt(메뉴 활성화)에 매핑된 단축키는 기본 동작을 막기 위해 이벤트를 소비한다.
+        if (virtualKey is ShortcutKeyResolver.VkTab or ShortcutKeyResolver.VkMenu)
+        {
             e.Handled = true;
+        }
+
+        ActivateAction(action.Value, pressed, isRepeat);
+    }
+
+    // 화면 조작 동작을 활성/비활성한다(창 키 이벤트·WebView2 메시지 공용).
+    private void ActivateAction(ShortcutAction action, bool pressed, bool isRepeat)
+    {
+        switch (action)
+        {
+            case ShortcutAction.Remove:
+                SetRemoveModeActive(pressed);
+                break;
+            case ShortcutAction.Swap:
+                SetSwapModeActive(pressed);
+                break;
+            case ShortcutAction.Switch:
+                if (pressed)
+                {
+                    if (!isRepeat)
+                    {
+                        ShowSwitchLayoutCards();
+                    }
+                }
+                else if (_layoutCardMode == LayoutCardMode.Switch)
+                {
+                    HideSwitchLayoutCards();
+                }
+
+                break;
+            case ShortcutAction.ToggleExplorer:
+                // 홀드가 아니라 누를 때마다 토글한다(자동 반복은 무시).
+                if (pressed && !isRepeat)
+                {
+                    SetExplorerPanelVisible(!_isExplorerPanelVisible);
+                    StatusTextBlock.Text = _isExplorerPanelVisible
+                        ? "탐색 패널을 표시했습니다."
+                        : "탐색 패널을 숨겼습니다.";
+                }
+
+                break;
+        }
+    }
+
+    private void OnSlotKeyStateChanged(int virtualKey, bool pressed)
+    {
+        // WebView2 JS는 키 상태 전이마다 한 번씩만 보고하므로 자동 반복(isRepeat) 개념이 없다.
+        var action = _shortcutSettings.GetAction(virtualKey);
+        if (action is not null)
+        {
+            ActivateAction(action.Value, pressed, isRepeat: false);
+        }
+    }
+
+    // 현재 단축키 매핑을 슬롯 오버레이 안내 문구(제거 버튼 툴팁·교체 오버레이 문구)에 반영한다.
+    private void ApplyShortcutLabelsToSlots()
+    {
+        var removeLabel = _shortcutSettings.RemoveKey.Name;
+        var swapLabel = _shortcutSettings.SwapKey.Name;
+
+        foreach (var slot in _slots)
+        {
+            slot.SetRemoveKeyLabel(removeLabel);
+            slot.SetSwapKeyLabel(swapLabel);
         }
     }
 
@@ -163,8 +215,7 @@ public partial class MainWindow : Window
             slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
             slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
             slotView.RemoveSlotRequested += SlotView_RemoveSlotRequested;
-            slotView.CtrlStateChanged += SetRemoveModeActive;
-            slotView.ShiftStateChanged += SetSwapModeActive;
+            slotView.KeyStateChanged += OnSlotKeyStateChanged;
             slotView.SwapDragCompleted += ReconcileSwapModeWithKeyboardState;
             _slots.Add(slotView);
         }
@@ -362,6 +413,38 @@ public partial class MainWindow : Window
             : "사용자 지정 레이아웃 목록을 갱신했습니다.";
     }
 
+    private void ShortcutSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ShortcutSettingsDialog(_shortcutSettings)
+        {
+            Owner = this
+        };
+
+        // 키를 캡처할 때마다 즉시 적용·저장한다(다이얼로그는 변경만 통지).
+        dialog.ShortcutsChanged += ApplyShortcutSettings;
+        dialog.ShowDialog();
+    }
+
+    private void ApplyShortcutSettings(ShortcutSettings settings)
+    {
+        _shortcutSettings = settings;
+        ApplyShortcutLabelsToSlots();
+        UpdateExplorerToggleTooltip();
+
+        // 진행 중이던 모드 오버레이는 새 매핑과 어긋날 수 있으니 모두 닫는다.
+        SetRemoveModeActive(false);
+        SetSwapModeActive(false);
+
+        // 단축키 변경은 즉시 영속화해 크래시 등으로 손실되지 않게 한다.
+        _presetStorageService.SaveAppState(CaptureAppState());
+
+        StatusTextBlock.Text = "단축키 설정을 적용했습니다. " +
+            $"제거 {_shortcutSettings.RemoveKey.Name} · " +
+            $"교체 {_shortcutSettings.SwapKey.Name} · " +
+            $"전환 {_shortcutSettings.SwitchKey.Name} · " +
+            $"사이드바 {_shortcutSettings.ToggleExplorerKey.Name}.";
+    }
+
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         try
@@ -385,7 +468,6 @@ public partial class MainWindow : Window
         }
         finally
         {
-            RefreshAutoShowExplorerEdgeVisibility();
             _ = StartAutomaticUpdateCheckAsync();
         }
     }
@@ -510,37 +592,6 @@ public partial class MainWindow : Window
     {
         SetExplorerPanelVisible(!_isExplorerPanelVisible);
         StatusTextBlock.Text = _isExplorerPanelVisible ? "Explorer panel shown." : "Explorer panel hidden.";
-    }
-
-    private void AutoShowExplorerButton_Click(object sender, RoutedEventArgs e)
-    {
-        SetExplorerPanelVisible(true);
-        StatusTextBlock.Text = "Explorer panel shown.";
-    }
-
-    private void AutoShowExplorerButton_MouseEnter(object sender, MouseEventArgs e)
-    {
-        if (!_isExplorerPanelVisible)
-        {
-            AutoShowExplorerPopup.IsOpen = true;
-        }
-    }
-
-    private void AutoShowExplorerButton_MouseLeave(object sender, MouseEventArgs e)
-    {
-        AutoShowExplorerPopup.IsOpen = false;
-    }
-
-    private void AutoShowExplorerHitTarget_MouseEnter(object sender, MouseEventArgs e)
-    {
-        if (!_isExplorerPanelVisible)
-        {
-            AutoShowExplorerPopup.IsOpen = true;
-        }
-    }
-
-    private void AutoShowExplorerHitTarget_MouseLeave(object sender, MouseEventArgs e)
-    {
     }
 
     private async void SlotView_StreamUrlDropRequested(StreamSlotView targetSlot, string url, string? streamName)
@@ -697,7 +748,8 @@ public partial class MainWindow : Window
 
     private void ReconcileSwapModeWithKeyboardState()
     {
-        if (!IsLeftShiftPhysicallyDown())
+        // 교체 모드에 매핑된 키가 물리적으로 떼졌으면 오버레이를 닫는다(드래그 중 KeyUp이 들어오지 않는 경우 대비).
+        if (!IsKeyPhysicallyDown(_shortcutSettings.SwapKey.VirtualKey))
         {
             SetSwapModeActive(false);
         }
@@ -713,9 +765,9 @@ public partial class MainWindow : Window
         return timer;
     }
 
-    private static bool IsLeftShiftPhysicallyDown()
+    private static bool IsKeyPhysicallyDown(int virtualKey)
     {
-        return (GetAsyncKeyState(LeftShiftVirtualKey) & KeyPressedMask) != 0;
+        return virtualKey != 0 && (GetAsyncKeyState(virtualKey) & KeyPressedMask) != 0;
     }
 
     [DllImport("user32.dll")]
@@ -1206,6 +1258,7 @@ public partial class MainWindow : Window
             LastSession = CaptureWorkspace("last_session", "Last Session"),
             IsExplorerPanelVisible = _isExplorerPanelVisible,
             AudibleQualityKey = GetQualityKey(AudibleQualityComboBox),
+            Shortcuts = _shortcutSettings,
             Window = new AppWindowState
             {
                 X = bounds.X,
@@ -1383,14 +1436,17 @@ public partial class MainWindow : Window
         ExplorerGridSplitter.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
         ExplorerColumn.Width = isVisible ? _lastExplorerColumnWidth : new GridLength(0);
         ExplorerSplitterColumn.Width = isVisible ? new GridLength(6) : new GridLength(0);
-        ToggleExplorerButton.ToolTip = isVisible ? "탐색 숨김" : "탐색 표시";
-        RefreshAutoShowExplorerEdgeVisibility();
+        ToggleExplorerIcon.Source = isVisible ? SidebarCloseIcon : SidebarOpenIcon;
+        UpdateExplorerToggleTooltip();
     }
 
-    private void RefreshAutoShowExplorerEdgeVisibility()
+    // 사이드바 토글 버튼 툴팁에 현재 상태와 단축키를 함께 표시한다.
+    private void UpdateExplorerToggleTooltip()
     {
-        AutoShowExplorerHitTarget.Visibility = _isExplorerPanelVisible ? Visibility.Collapsed : Visibility.Visible;
-        AutoShowExplorerPopup.IsOpen = false;
+        var keyLabel = _shortcutSettings.ToggleExplorerKey.Name;
+        ToggleExplorerButton.ToolTip = _isExplorerPanelVisible
+            ? $"탐색 숨김 ({keyLabel})"
+            : $"탐색 표시 ({keyLabel})";
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)

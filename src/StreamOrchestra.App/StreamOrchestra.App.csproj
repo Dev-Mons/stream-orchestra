@@ -32,12 +32,12 @@
   <ItemGroup>
     <Resource Include="Assets\app-icon.ico" />
     <Resource Include="Assets\app-icon.png" />
-    <Resource Include="Assets\explorer-toggle.png" />
-    <Resource Include="Assets\explorer-toggle-single.png" />
     <Resource Include="Assets\delete-icon.png" />
     <Resource Include="Assets\arrow-back.png" />
     <Resource Include="Assets\arrow-forward.png" />
     <Resource Include="Assets\refresh.png" />
+    <Resource Include="Assets\sidebar-open.png" />
+    <Resource Include="Assets\sidebar-close.png" />
   </ItemGroup>
 
 </Project>

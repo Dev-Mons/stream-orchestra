@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using StreamOrchestra.App.Models;
 
 namespace StreamOrchestra.App.Services;
@@ -10,7 +11,8 @@ public sealed class PresetStorageService
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
-        WriteIndented = true
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() }
     };
 
     public PresetStorageService(string? dataFolder = null)
@@ -122,8 +124,39 @@ public sealed class PresetStorageService
             AreSlotUrlEditorsVisible = appState.AreSlotUrlEditorsVisible,
             AreSlotControlBarsAlwaysVisible = appState.AreSlotControlBarsAlwaysVisible,
             AudibleQualityKey = NormalizeQualityKey(appState.AudibleQualityKey, "original"),
+            Shortcuts = NormalizeShortcuts(appState.Shortcuts),
             AutoUpdate = NormalizeAutoUpdate(appState.AutoUpdate)
         };
+    }
+
+    // 세 동작이 서로 다른(0·ESC가 아닌) 키를 가지지 않으면(손상·중복) 기본 매핑(Ctrl/Shift/Alt)으로 되돌린다.
+    private static ShortcutSettings NormalizeShortcuts(ShortcutSettings? shortcuts)
+    {
+        if (shortcuts is null)
+        {
+            return new ShortcutSettings();
+        }
+
+        var normalized = new ShortcutSettings
+        {
+            RemoveKey = NormalizeShortcutKey(shortcuts.RemoveKey),
+            SwapKey = NormalizeShortcutKey(shortcuts.SwapKey),
+            SwitchKey = NormalizeShortcutKey(shortcuts.SwitchKey),
+            ToggleExplorerKey = NormalizeShortcutKey(shortcuts.ToggleExplorerKey)
+        };
+
+        return normalized.IsValidPermutation() ? normalized : new ShortcutSettings();
+    }
+
+    private static ShortcutKey NormalizeShortcutKey(ShortcutKey? key)
+    {
+        if (key is null)
+        {
+            return ShortcutKey.Create(0, "");
+        }
+
+        var name = string.IsNullOrWhiteSpace(key.Name) ? $"Key {key.VirtualKey}" : key.Name.Trim();
+        return ShortcutKey.Create(key.VirtualKey, name);
     }
 
     private static string NormalizeQualityKey(string? qualityKey, string fallback)

@@ -60,8 +60,11 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("SetRemoveButtonSelected(isSelectedForRemoval)", codeBehind);
         Assert.Contains("RemoveSlotRequested?.Invoke", codeBehind);
         Assert.DoesNotContain("RemoveSlotPopup.IsOpen = false;", codeBehind);
-        Assert.Contains("CtrlStateChanged?.Invoke", codeBehind);
-        Assert.Contains("ctrl-state", codeBehind);
+        // 키 상태는 일반화된 KeyStateChanged(가상 키 코드) 이벤트로 호스트에 전달된다.
+        Assert.Contains("KeyStateChanged?.Invoke", codeBehind);
+        Assert.Contains("shortcut-key", codeBehind);
+        // 편집 가능한 요소(채팅 입력 등) 포커스 시에는 임의 키 단축키를 보고하지 않는다.
+        Assert.Contains("isEditableTarget", codeBehind);
         // 제거 버튼은 슬롯 오른쪽 하단에 배치된다.
         Assert.Contains("PositionRemoveButtonAtBottomRight", codeBehind);
         Assert.Contains("RemoveSlotPopup.HorizontalOffset", codeBehind);
@@ -162,7 +165,7 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("finally", slotText);
         Assert.Contains("slotView.SwapDragCompleted += ReconcileSwapModeWithKeyboardState;", mainWindowText);
         Assert.Contains("private void ReconcileSwapModeWithKeyboardState()", mainWindowText);
-        Assert.Contains("IsLeftShiftPhysicallyDown()", mainWindowText);
+        Assert.Contains("IsKeyPhysicallyDown(_shortcutSettings.SwapKey.VirtualKey)", mainWindowText);
     }
 
     [Fact]
@@ -177,7 +180,7 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("Tick += (_, _) => ReconcileSwapModeWithKeyboardState();", mainWindowText);
         Assert.Contains("_swapModeKeyboardPollTimer.Start();", mainWindowText);
         Assert.Contains("_swapModeKeyboardPollTimer.Stop();", mainWindowText);
-        Assert.Contains("GetAsyncKeyState(LeftShiftVirtualKey)", mainWindowText);
+        Assert.Contains("GetAsyncKeyState(virtualKey)", mainWindowText);
     }
 
     [Theory]

@@ -18,5 +18,7 @@ public sealed class AppState
 
     public string AudibleQualityKey { get; init; } = "original";
 
+    public ShortcutSettings Shortcuts { get; init; } = new();
+
     public AutoUpdateState AutoUpdate { get; init; } = new();
 }

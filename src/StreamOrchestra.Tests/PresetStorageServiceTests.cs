@@ -186,6 +186,99 @@ public sealed class PresetStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void SaveAppState_AndLoadAppState_RoundTripsRemappedArbitraryShortcutKeys()
+    {
+        var service = new PresetStorageService(_dataFolder);
+        var appState = new AppState
+        {
+            Shortcuts = new ShortcutSettings
+            {
+                RemoveKey = ShortcutKey.Create(0x12, "Alt"),
+                SwapKey = ShortcutKey.Create(0x41, "A"),
+                SwitchKey = ShortcutKey.Create(0x70, "F1")
+            }
+        };
+
+        service.SaveAppState(appState);
+        var loadedAppState = service.LoadAppState();
+
+        Assert.NotNull(loadedAppState);
+        Assert.Equal(0x12, loadedAppState.Shortcuts.RemoveKey.VirtualKey);
+        Assert.Equal(0x41, loadedAppState.Shortcuts.SwapKey.VirtualKey);
+        Assert.Equal(0x70, loadedAppState.Shortcuts.SwitchKey.VirtualKey);
+        Assert.Equal("A", loadedAppState.Shortcuts.SwapKey.Name);
+        Assert.Equal("F1", loadedAppState.Shortcuts.SwitchKey.Name);
+        // 사이드바 토글 키는 지정하지 않았으므로 기본값 Tab(0x09)을 유지한다.
+        Assert.Equal(0x09, loadedAppState.Shortcuts.ToggleExplorerKey.VirtualKey);
+        // 가상 키 코드와 표시 이름이 함께 저장된다.
+        var json = File.ReadAllText(service.AppStateFilePath);
+        Assert.Contains("\"virtualKey\": 65", json);
+        Assert.Contains("\"name\": \"A\"", json);
+    }
+
+    [Fact]
+    public void LoadAppState_ResetsShortcutsToDefaultsWhenKeysCollide()
+    {
+        var service = new PresetStorageService(_dataFolder);
+        File.WriteAllText(
+            service.AppStateFilePath,
+            """
+            {
+              "shortcuts": {
+                "removeKey": { "virtualKey": 17, "name": "Ctrl" },
+                "swapKey": { "virtualKey": 17, "name": "Ctrl" },
+                "switchKey": { "virtualKey": 18, "name": "Alt" }
+              }
+            }
+            """);
+
+        var appState = service.LoadAppState();
+
+        Assert.NotNull(appState);
+        Assert.Equal(0x11, appState.Shortcuts.RemoveKey.VirtualKey);
+        Assert.Equal(0x10, appState.Shortcuts.SwapKey.VirtualKey);
+        Assert.Equal(0x12, appState.Shortcuts.SwitchKey.VirtualKey);
+    }
+
+    [Fact]
+    public void LoadAppState_ResetsShortcutsToDefaultsWhenEscapeIsBound()
+    {
+        var service = new PresetStorageService(_dataFolder);
+        File.WriteAllText(
+            service.AppStateFilePath,
+            """
+            {
+              "shortcuts": {
+                "removeKey": { "virtualKey": 27, "name": "Esc" },
+                "swapKey": { "virtualKey": 16, "name": "Shift" },
+                "switchKey": { "virtualKey": 18, "name": "Alt" }
+              }
+            }
+            """);
+
+        var appState = service.LoadAppState();
+
+        Assert.NotNull(appState);
+        Assert.Equal(0x11, appState.Shortcuts.RemoveKey.VirtualKey);
+        Assert.Equal("Ctrl", appState.Shortcuts.RemoveKey.Name);
+    }
+
+    [Fact]
+    public void LoadAppState_DefaultsShortcutsWhenMissing()
+    {
+        var service = new PresetStorageService(_dataFolder);
+        File.WriteAllText(service.AppStateFilePath, "{ \"audibleQualityKey\": \"original\" }");
+
+        var appState = service.LoadAppState();
+
+        Assert.NotNull(appState);
+        Assert.Equal(0x11, appState.Shortcuts.RemoveKey.VirtualKey);
+        Assert.Equal(0x10, appState.Shortcuts.SwapKey.VirtualKey);
+        Assert.Equal(0x12, appState.Shortcuts.SwitchKey.VirtualKey);
+        Assert.Equal(0x09, appState.Shortcuts.ToggleExplorerKey.VirtualKey);
+    }
+
+    [Fact]
     public void LoadAppState_NormalizesHandEditedStateMetadata()
     {
         var service = new PresetStorageService(_dataFolder);

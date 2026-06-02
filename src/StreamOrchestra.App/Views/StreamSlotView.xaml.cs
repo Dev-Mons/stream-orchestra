@@ -85,11 +85,8 @@ public partial class StreamSlotView : UserControl
     /// <summary>슬롯 위의 제거 버튼이 클릭됨(화면 제거 요청).</summary>
     public event Action<StreamSlotView>? RemoveSlotRequested;
 
-    /// <summary>WebView2 콘텐츠에서 Ctrl 키 상태가 바뀜(제거 모드 토글용).</summary>
-    public event Action<bool>? CtrlStateChanged;
-
-    /// <summary>WebView2 콘텐츠에서 왼쪽 Shift 키 상태가 바뀜(교체 모드 토글용).</summary>
-    public event Action<bool>? ShiftStateChanged;
+    /// <summary>WebView2 콘텐츠에서 키 상태가 바뀜(가상 키 코드, 눌림 여부). 어떤 동작에 매핑됐는지는 호스트가 결정한다.</summary>
+    public event Action<int, bool>? KeyStateChanged;
 
     public SlotConfiguration Configuration { get; }
 
@@ -208,6 +205,18 @@ public partial class StreamSlotView : UserControl
     {
         RemoveSlotButton.Background = isSelected ? SelectedRemoveButtonBackground : RemoveButtonBackground;
         RemoveSlotButton.BorderBrush = isSelected ? SelectedRemoveButtonBorder : RemoveButtonBorder;
+    }
+
+    /// <summary>제거 모드 키가 바뀌면 제거 버튼 툴팁의 키 안내를 갱신한다.</summary>
+    public void SetRemoveKeyLabel(string keyLabel)
+    {
+        RemoveSlotButton.ToolTip = $"이 화면 제거 ({keyLabel})";
+    }
+
+    /// <summary>교체 모드 키가 바뀌면 교체 오버레이 안내 문구의 키 안내를 갱신한다.</summary>
+    public void SetSwapKeyLabel(string keyLabel)
+    {
+        SwapModeLabel.Text = $"드래그하여 위치 교체 ({keyLabel})";
     }
 
     /// <summary>교체 모드(Shift 홀드)일 때 이 슬롯 위에 드래그용 오버레이를 표시/숨김.</summary>
@@ -422,15 +431,13 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
-        if (message.Type.Equals("ctrl-state", StringComparison.OrdinalIgnoreCase))
+        if (message.Type.Equals("shortcut-key", StringComparison.OrdinalIgnoreCase))
         {
-            CtrlStateChanged?.Invoke(message.Pressed);
-            return;
-        }
+            if (message.KeyCode != 0)
+            {
+                KeyStateChanged?.Invoke(message.KeyCode, message.Pressed);
+            }
 
-        if (message.Type.Equals("shift-state", StringComparison.OrdinalIgnoreCase))
-        {
-            ShiftStateChanged?.Invoke(message.Pressed);
             return;
         }
 
@@ -783,55 +790,58 @@ public partial class StreamSlotView : UserControl
     });
   }, { capture: true, passive: false });
 
-  // Ctrl 홀드 → 호스트에 제거 모드 토글 신호 전달(WebView2가 키 포커스를 가져도 동작).
-  let ctrlReported = false;
-  const reportCtrl = pressed => {
-    if (ctrlReported === pressed) {
+  // 단축키로 쓰는 키(ESC 제외 임의 키) 홀드 → 호스트에 키 상태 전달(WebView2가 키 포커스를 가져도 동작).
+  // 어떤 키가 어떤 동작(제거/교체/전환)에 매핑되는지는 호스트가 설정으로 결정한다.
+  // keyCode는 Chromium 기준 Win32 가상 키 코드와 동일하므로 호스트의 가상 키 코드와 그대로 맞는다.
+  const pressedKeyCodes = new Set();
+
+  const reportKey = (keyCode, pressed) => {
+    if (!keyCode) {
       return;
     }
 
-    ctrlReported = pressed;
-    window.chrome?.webview?.postMessage({ type: "ctrl-state", pressed });
+    if (pressed) {
+      if (pressedKeyCodes.has(keyCode)) {
+        return;
+      }
+
+      pressedKeyCodes.add(keyCode);
+    } else {
+      if (!pressedKeyCodes.has(keyCode)) {
+        return;
+      }
+
+      pressedKeyCodes.delete(keyCode);
+    }
+
+    window.chrome?.webview?.postMessage({ type: "shortcut-key", keyCode, pressed });
+  };
+
+  // 채팅 입력 등 편집 가능한 요소에 포커스가 있을 때는, 임의 키 단축키가 타이핑을 가로채지 않도록 보고하지 않는다.
+  const isEditableTarget = () => {
+    const element = document.activeElement;
+    if (!element) {
+      return false;
+    }
+
+    const tag = element.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || element.isContentEditable === true;
   };
 
   document.addEventListener("keydown", event => {
-    if (event.key === "Control") {
-      reportCtrl(true);
-    }
-  }, true);
-
-  document.addEventListener("keyup", event => {
-    if (event.key === "Control") {
-      reportCtrl(false);
-    }
-  }, true);
-
-  window.addEventListener("blur", () => reportCtrl(false), true);
-
-  // 왼쪽 Shift 홀드 → 호스트에 교체 모드 토글 신호 전달(WebView2가 키 포커스를 가져도 동작).
-  let shiftReported = false;
-  const reportShift = pressed => {
-    if (shiftReported === pressed) {
+    if (isEditableTarget()) {
       return;
     }
 
-    shiftReported = pressed;
-    window.chrome?.webview?.postMessage({ type: "shift-state", pressed });
-  };
-
-  document.addEventListener("keydown", event => {
-    if (event.code === "ShiftLeft") {
-      reportShift(true);
+    reportKey(event.keyCode, true);
+  }, true);
+  document.addEventListener("keyup", event => reportKey(event.keyCode, false), true);
+  window.addEventListener("blur", () => {
+    for (const keyCode of Array.from(pressedKeyCodes)) {
+      pressedKeyCodes.delete(keyCode);
+      window.chrome?.webview?.postMessage({ type: "shortcut-key", keyCode, pressed: false });
     }
   }, true);
-
-  document.addEventListener("keyup", event => {
-    if (event.code === "ShiftLeft") {
-      reportShift(false);
-    }
-  }, true);
-
-  window.addEventListener("blur", () => reportShift(false), true);
 
   function hasStreamUrlData(dataTransfer) {
     if (!dataTransfer) {
@@ -1331,6 +1341,8 @@ public partial class StreamSlotView : UserControl
         public double DeltaY { get; init; }
 
         public bool Pressed { get; init; }
+
+        public int KeyCode { get; init; }
     }
 
 }

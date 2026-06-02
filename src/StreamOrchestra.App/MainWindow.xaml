@@ -11,6 +11,42 @@
         MinHeight="720"
         MinWidth="1100"
         Background="#0B0F14">
+    <Window.Resources>
+        <!-- 최상단 사이드탭 토글: 어두운 툴바 톤에 맞춘 사각 아이콘 버튼 -->
+        <Style x:Key="SidebarToggleButton" TargetType="Button">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#243140" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#3A4757" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2D3C4D" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#4A5A6E" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -24,6 +60,20 @@
                 BorderThickness="0,0,0,1"
                 Padding="6,4">
             <DockPanel LastChildFill="True">
+                <Button x:Name="ToggleExplorerButton"
+                        DockPanel.Dock="Left"
+                        Margin="0,0,6,0"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource SidebarToggleButton}"
+                        ToolTip="탐색 숨김"
+                        Click="ToggleExplorerButton_Click">
+                    <Image x:Name="ToggleExplorerIcon"
+                           Source="/Assets/sidebar-close.png"
+                           Width="18"
+                           Height="18"
+                           Stretch="Uniform" />
+                </Button>
+
                 <TextBlock x:Name="DiagnosticsTextBlock"
                            DockPanel.Dock="Right"
                            Foreground="#B9C2CC"
@@ -41,6 +91,9 @@
                         <MenuItem Header="업데이트 확인"
                                   Foreground="#111827"
                                   Click="CheckForUpdatesButton_Click" />
+                        <MenuItem Header="단축키"
+                                  Foreground="#111827"
+                                  Click="ShortcutSettingsButton_Click" />
                         <MenuItem Header="프리셋"
                                   Foreground="#111827">
                             <ComboBox x:Name="WorkspaceComboBox"
@@ -126,27 +179,7 @@
                     Background="#0F141B"
                     BorderBrush="#2D3642"
                     BorderThickness="0,0,1,0">
-                <Grid>
-                    <ContentControl x:Name="ExplorerHost" />
-                    <Button x:Name="ToggleExplorerButton"
-                            Height="26"
-                            Width="34"
-                            MinWidth="26"
-                            Margin="0,6,6,0"
-                            Padding="0"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Top"
-                            Panel.ZIndex="1"
-                            Background="Transparent"
-                            BorderBrush="Transparent"
-                            ToolTip="탐색 숨김"
-                            Click="ToggleExplorerButton_Click">
-                        <Image Source="Assets/explorer-toggle.png"
-                               Width="14"
-                               Height="14"
-                               Stretch="Uniform" />
-                    </Button>
-                </Grid>
+                <ContentControl x:Name="ExplorerHost" />
             </Border>
 
             <GridSplitter x:Name="ExplorerGridSplitter"
@@ -189,48 +222,5 @@
                            TextWrapping="Wrap" />
             </DockPanel>
         </Border>
-
-        <Border x:Name="AutoShowExplorerHitTarget"
-                Grid.Row="1"
-                Width="28"
-                HorizontalAlignment="Left"
-                Background="Transparent"
-                Panel.ZIndex="10"
-                Visibility="Collapsed"
-                MouseEnter="AutoShowExplorerHitTarget_MouseEnter"
-                MouseLeave="AutoShowExplorerHitTarget_MouseLeave" />
-
-        <Popup x:Name="AutoShowExplorerPopup"
-               AllowsTransparency="True"
-               Focusable="False"
-               IsOpen="False"
-               Placement="Relative"
-               PlacementTarget="{Binding ElementName=AutoShowExplorerHitTarget}"
-               PopupAnimation="None"
-               StaysOpen="True">
-            <Button x:Name="AutoShowExplorerButton"
-                    Width="24"
-                    Height="{Binding ActualHeight, ElementName=MainContentGrid}"
-                    MinHeight="1"
-                    Padding="0"
-                    Background="#223044"
-                    BorderBrush="#7FA9D8"
-                    BorderThickness="0,0,1,0"
-                    Click="AutoShowExplorerButton_Click"
-                    Focusable="False"
-                    Foreground="#F3F6FA"
-                    MouseEnter="AutoShowExplorerButton_MouseEnter"
-                    MouseLeave="AutoShowExplorerButton_MouseLeave"
-                    ToolTip="탐색 표시">
-                <TextBlock Text="탐색 표시"
-                           FontSize="12"
-                           FontWeight="SemiBold"
-                           TextAlignment="Center">
-                    <TextBlock.LayoutTransform>
-                        <RotateTransform Angle="-90" />
-                    </TextBlock.LayoutTransform>
-                </TextBlock>
-            </Button>
-        </Popup>
     </Grid>
 </Window>

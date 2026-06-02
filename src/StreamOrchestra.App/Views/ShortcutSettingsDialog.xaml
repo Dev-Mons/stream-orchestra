@@ -1,0 +1,145 @@
+<Window x:Class="StreamOrchestra.App.Views.ShortcutSettingsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="단축키 설정"
+        Height="340"
+        Width="360"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#121820"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Window.Resources>
+        <!-- 키 캡처 버튼: 어두운 다이얼로그 톤에 맞춘 사각 버튼 -->
+        <Style x:Key="KeyCaptureButton" TargetType="Button">
+            <Setter Property="Width" Value="120" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Background" Value="#1B2531" />
+            <Setter Property="BorderBrush" Value="#2D3642" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#F3F6FA" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#243140" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#3A4757" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Border Padding="16">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Grid.ColumnSpan="2"
+                       Text="키 버튼을 누른 뒤 원하는 키(ESC 제외)를 누르면 변경·저장됩니다. ESC로 취소."
+                       Foreground="#B9C2CC"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,14" />
+
+            <TextBlock Grid.Row="1"
+                       Grid.Column="0"
+                       Text="화면 제거"
+                       Foreground="#F3F6FA"
+                       VerticalAlignment="Center"
+                       Margin="0,0,0,8" />
+            <Button x:Name="RemoveKeyButton"
+                    Grid.Row="1"
+                    Grid.Column="1"
+                    Margin="0,0,0,8"
+                    Style="{StaticResource KeyCaptureButton}"
+                    Tag="Remove"
+                    Click="KeyButton_Click" />
+
+            <TextBlock Grid.Row="2"
+                       Grid.Column="0"
+                       Text="화면 교체"
+                       Foreground="#F3F6FA"
+                       VerticalAlignment="Center"
+                       Margin="0,0,0,8" />
+            <Button x:Name="SwapKeyButton"
+                    Grid.Row="2"
+                    Grid.Column="1"
+                    Margin="0,0,0,8"
+                    Style="{StaticResource KeyCaptureButton}"
+                    Tag="Swap"
+                    Click="KeyButton_Click" />
+
+            <TextBlock Grid.Row="3"
+                       Grid.Column="0"
+                       Text="레이아웃 전환"
+                       Foreground="#F3F6FA"
+                       VerticalAlignment="Center"
+                       Margin="0,0,0,8" />
+            <Button x:Name="SwitchKeyButton"
+                    Grid.Row="3"
+                    Grid.Column="1"
+                    Margin="0,0,0,8"
+                    Style="{StaticResource KeyCaptureButton}"
+                    Tag="Switch"
+                    Click="KeyButton_Click" />
+
+            <TextBlock Grid.Row="4"
+                       Grid.Column="0"
+                       Text="사이드바 열기/닫기"
+                       Foreground="#F3F6FA"
+                       VerticalAlignment="Center"
+                       Margin="0,0,0,8" />
+            <Button x:Name="SidebarKeyButton"
+                    Grid.Row="4"
+                    Grid.Column="1"
+                    Margin="0,0,0,8"
+                    Style="{StaticResource KeyCaptureButton}"
+                    Tag="ToggleExplorer"
+                    Click="KeyButton_Click" />
+
+            <TextBlock x:Name="StatusTextBlock"
+                       Grid.Row="5"
+                       Grid.ColumnSpan="2"
+                       Foreground="#788492"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="0,6,0,0" />
+
+            <StackPanel Grid.Row="6"
+                        Grid.ColumnSpan="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,12,0,0">
+                <Button Content="닫기"
+                        MinWidth="72"
+                        Height="28"
+                        Click="CloseButton_Click" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
