@@ -8,4 +8,8 @@ public sealed record ExternalBrowserWindowLayout(
     int W,
     int H,
     IReadOnlyList<double>? ColumnWeights = null,
-    IReadOnlyList<double>? RowWeights = null);
+    IReadOnlyList<double>? RowWeights = null,
+    double? LeftRatio = null,
+    double? TopRatio = null,
+    double? WidthRatio = null,
+    double? HeightRatio = null);

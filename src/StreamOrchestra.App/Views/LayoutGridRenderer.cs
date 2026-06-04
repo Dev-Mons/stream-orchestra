@@ -2,13 +2,13 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using StreamOrchestra.App.Models;
+using StreamOrchestra.App.Services;
 
 namespace StreamOrchestra.App.Views;
 
 /// <summary>
-/// 정적 <see cref="LayoutPreset"/> 템플릿을 실제 <see cref="StreamSlotView"/>를 담은 WPF 그리드로 렌더링한다.
-/// 동적 트리/스플리터 기반 렌더러(<c>LayoutTreeRenderer</c>)를 대체하며, 슬롯 비율을 실시간으로 재계산하지 않고
-/// 템플릿에 고정된 행/열 정의만 사용한다.
+/// 정적 <see cref="LayoutPreset"/> 템플릿을 실제 <see cref="StreamSlotView"/>를 담은 WPF 표면으로 렌더링한다.
+/// 슬롯별 normalized bounds가 있으면 독립 좌표로 배치하고, 기존 grid 템플릿은 bounds로 변환해 호환한다.
 /// </summary>
 public static class LayoutGridRenderer
 {
@@ -16,23 +16,14 @@ public static class LayoutGridRenderer
         LayoutPreset layout,
         IReadOnlyDictionary<int, StreamSlotView> slotsById)
     {
-        var grid = new Grid { Background = new SolidColorBrush(Color.FromRgb(5, 7, 10)) };
-
-        for (var rowIndex = 0; rowIndex < Math.Max(1, layout.GridRows); rowIndex++)
+        var canvas = new Canvas
         {
-            grid.RowDefinitions.Add(new RowDefinition
-            {
-                Height = new GridLength(GetWeight(layout.RowWeights, rowIndex), GridUnitType.Star)
-            });
-        }
-
-        for (var columnIndex = 0; columnIndex < Math.Max(1, layout.GridColumns); columnIndex++)
-        {
-            grid.ColumnDefinitions.Add(new ColumnDefinition
-            {
-                Width = new GridLength(GetWeight(layout.ColumnWeights, columnIndex), GridUnitType.Star)
-            });
-        }
+            Background = new SolidColorBrush(Color.FromRgb(5, 7, 10)),
+            ClipToBounds = true,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        var placements = new List<(FrameworkElement Child, LayoutSlotBounds Bounds)>();
 
         foreach (var slot in layout.Slots.OrderBy(slot => slot.SlotId))
         {
@@ -40,27 +31,19 @@ public static class LayoutGridRenderer
                 ? PrepareSlotView(slotView)
                 : CreateMissingSlotPlaceholder(slot.SlotId);
 
-            Grid.SetColumn(child, slot.X);
-            Grid.SetRow(child, slot.Y);
-            Grid.SetColumnSpan(child, Math.Max(1, slot.W));
-            Grid.SetRowSpan(child, Math.Max(1, slot.H));
-            grid.Children.Add(child);
+            canvas.Children.Add(child);
+            placements.Add((child, LayoutSlotBoundsCalculator.GetBounds(layout, slot)));
         }
 
-        return grid;
+        canvas.SizeChanged += (_, _) => ArrangeChildren(canvas, placements);
+        canvas.Loaded += (_, _) => ArrangeChildren(canvas, placements);
+        return canvas;
     }
 
     private static StreamSlotView PrepareSlotView(StreamSlotView slotView)
     {
         RemoveFromCurrentParent(slotView);
         return slotView;
-    }
-
-    private static double GetWeight(IReadOnlyList<double>? weights, int index)
-    {
-        return weights is not null && index >= 0 && index < weights.Count && weights[index] > 0
-            ? weights[index]
-            : 1;
     }
 
     private static Border CreateMissingSlotPlaceholder(int slotId)
@@ -79,6 +62,21 @@ public static class LayoutGridRenderer
                 VerticalAlignment = VerticalAlignment.Center
             }
         };
+    }
+
+    private static void ArrangeChildren(
+        FrameworkElement surface,
+        IReadOnlyList<(FrameworkElement Child, LayoutSlotBounds Bounds)> placements)
+    {
+        var width = Math.Max(0, surface.ActualWidth);
+        var height = Math.Max(0, surface.ActualHeight);
+        foreach (var (child, bounds) in placements)
+        {
+            Canvas.SetLeft(child, width * bounds.Left);
+            Canvas.SetTop(child, height * bounds.Top);
+            child.Width = Math.Max(1, width * bounds.Width);
+            child.Height = Math.Max(1, height * bounds.Height);
+        }
     }
 
     private static void RemoveFromCurrentParent(FrameworkElement element)

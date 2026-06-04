@@ -11,9 +11,11 @@ namespace StreamOrchestra.App.Views;
 
 public partial class LayoutEditorDialog : Window
 {
-    private const double MinWeight = 0.2;
+    private const double MinWeight = 0.001;
     private const double ZoneGap = 3;
     private const double SplitterThickness = 8;
+    private const double BoundaryHandleSize = 26;
+    private const double SnapThresholdPixels = 8;
 
     private readonly LayoutPresetService _layoutPresetService;
     private readonly List<LayoutPreset> _customLayouts;
@@ -31,7 +33,11 @@ public partial class LayoutEditorDialog : Window
     private readonly List<(FrameworkElement Container, int SlotId, TextBlock SizeTextBlock)> _editorZoneButtons = new();
     private readonly List<(Thumb Thumb, LayoutEditorSplitterSegment Segment)> _editorColumnSplitters = new();
     private readonly List<(Thumb Thumb, LayoutEditorSplitterSegment Segment)> _editorRowSplitters = new();
+    private readonly List<(Thumb Thumb, LayoutEditorBoundaryGroup Group)> _editorBoundaryGroupHandles = new();
+    private readonly List<(Thumb Thumb, LayoutEditorBoundarySegment Segment)> _editorIndividualBoundaryHandles = new();
+    private List<EditorSlotBounds> _editorSlots = [new(1, 0, 0, 1, 1)];
     private Size _editorSurfaceSize = new(760, 440);
+    private bool _isIndividualBoundaryMode;
 
     public LayoutEditorDialog(
         LayoutPresetService layoutPresetService,
@@ -43,6 +49,8 @@ public partial class LayoutEditorDialog : Window
 
         InitializeComponent();
         SplitEditorHost.SizeChanged += SplitEditorHost_SizeChanged;
+        PreviewKeyDown += LayoutEditorDialog_PreviewKeyChanged;
+        PreviewKeyUp += LayoutEditorDialog_PreviewKeyChanged;
         RefreshCustomLayoutList();
         ResetZoneEditor("Custom Layout");
 
@@ -182,14 +190,14 @@ public partial class LayoutEditorDialog : Window
         }
     }
 
-    private void VerticalSplitButton_Click(object sender, RoutedEventArgs e)
+    private void HorizontalAlignButton_Click(object sender, RoutedEventArgs e)
     {
-        SplitSelectedZone(SplitAxis.Vertical);
+        AlignSelectedLine(LayoutEditorLineAlignment.Horizontal);
     }
 
-    private void HorizontalSplitButton_Click(object sender, RoutedEventArgs e)
+    private void VerticalAlignButton_Click(object sender, RoutedEventArgs e)
     {
-        SplitSelectedZone(SplitAxis.Horizontal);
+        AlignSelectedLine(LayoutEditorLineAlignment.Vertical);
     }
 
     private void RemoveSelectedSlotButton_Click(object sender, RoutedEventArgs e)
@@ -204,34 +212,82 @@ public partial class LayoutEditorDialog : Window
 
     private void ResetZoneSizeButton_Click(object sender, RoutedEventArgs e)
     {
-        (_columnWeights, _rowWeights) = ComputeDesignBalancedWeights(_zoneCells);
+        if (!ResetEditorSlotBounds())
+        {
+            DialogStatusTextBlock.Text = "현재 슬롯 구조는 빈틈 없이 비율을 초기화할 수 없습니다.";
+            return;
+        }
+
         _hasUnsavedEdits = true;
         RefreshZoneEditorSurface();
         DialogStatusTextBlock.Text = "현재 레이아웃 디자인에 맞춰 비율을 초기화했습니다.";
     }
 
-    private void SplitSelectedZone(SplitAxis axis)
+    private void AlignSelectedLine(LayoutEditorLineAlignment alignment)
     {
-        if (!TryGetSingleSelectedZone("분할할 슬롯을 선택하세요.", out var selectedZoneId, out var selectedRect))
+        if (!TryGetSingleSelectedEditorSlot("정렬할 기준 슬롯을 선택하세요.", out var selectedSlot))
         {
             return;
         }
 
-        if (GetZoneRects().Count >= PlaybackTestPlanService.MaxSlotCount)
+        var aligned = LayoutEditorBoundaryGeometry.TryAlignSlotLine(
+            ToBoundarySlots(_editorSlots),
+            selectedSlot.SlotId,
+            alignment,
+            out var nextSlots);
+        if (!aligned)
+        {
+            DialogStatusTextBlock.Text = alignment == LayoutEditorLineAlignment.Horizontal
+                ? "선택 슬롯의 가로 라인을 균등 정렬할 수 없습니다."
+                : "선택 슬롯의 세로 라인을 균등 정렬할 수 없습니다.";
+            return;
+        }
+
+        _editorSlots = nextSlots.Select(ToEditorSlot).ToList();
+        _hasUnsavedEdits = true;
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = alignment == LayoutEditorLineAlignment.Horizontal
+            ? "선택 슬롯의 가로 라인을 균등 정렬했습니다."
+            : "선택 슬롯의 세로 라인을 균등 정렬했습니다.";
+    }
+
+    private void SplitSelectedZone(SplitAxis axis)
+    {
+        if (!TryGetSingleSelectedEditorSlot("분할할 슬롯을 선택하세요.", out var selectedSlot))
+        {
+            return;
+        }
+
+        if (_editorSlots.Count >= PlaybackTestPlanService.MaxSlotCount)
         {
             DialogStatusTextBlock.Text = $"최대 {PlaybackTestPlanService.MaxSlotCount}개 슬롯까지 만들 수 있습니다.";
             return;
         }
 
         var newZoneId = GetNextZoneId();
+        var selectedIndex = _editorSlots.FindIndex(slot => slot.SlotId == selectedSlot.SlotId);
         if (axis == SplitAxis.Vertical)
         {
-            SplitZoneVertically(selectedZoneId, selectedRect, newZoneId);
+            var leftWidth = selectedSlot.Width / 2;
+            _editorSlots[selectedIndex] = selectedSlot with { Width = leftWidth };
+            _editorSlots.Add(new EditorSlotBounds(
+                newZoneId,
+                selectedSlot.Left + leftWidth,
+                selectedSlot.Top,
+                selectedSlot.Width - leftWidth,
+                selectedSlot.Height));
             DialogStatusTextBlock.Text = "선택 슬롯을 좌/우로 세로분할했습니다.";
         }
         else
         {
-            SplitZoneHorizontally(selectedZoneId, selectedRect, newZoneId);
+            var topHeight = selectedSlot.Height / 2;
+            _editorSlots[selectedIndex] = selectedSlot with { Height = topHeight };
+            _editorSlots.Add(new EditorSlotBounds(
+                newZoneId,
+                selectedSlot.Left,
+                selectedSlot.Top + topHeight,
+                selectedSlot.Width,
+                selectedSlot.Height - topHeight));
             DialogStatusTextBlock.Text = "선택 슬롯을 상/하로 가로분할했습니다.";
         }
 
@@ -361,35 +417,23 @@ public partial class LayoutEditorDialog : Window
 
     private void RemoveSelectedZone()
     {
-        if (!TryGetSingleSelectedZone("제거할 슬롯을 선택하세요.", out var selectedZoneId, out var selectedRect))
+        if (!TryGetSingleSelectedEditorSlot("제거할 슬롯을 선택하세요.", out var selectedSlot))
         {
             return;
         }
 
-        if (GetZoneRects().Count <= 1)
+        if (_editorSlots.Count <= 1)
         {
             DialogStatusTextBlock.Text = "마지막 슬롯은 제거할 수 없습니다.";
             return;
         }
 
-        var candidates = GetAdjacentZoneCandidates(selectedRect, selectedZoneId);
-        foreach (var candidateZoneId in candidates)
-        {
-            var candidateCells = CloneCells(_zoneCells);
-            ReplaceZone(candidateCells, selectedZoneId, candidateZoneId);
-            if (TryGetZoneRects(candidateCells, out _))
-            {
-                _zoneCells = candidateCells;
-                _selectedZoneIds.Clear();
-                _selectedZoneIds.Add(candidateZoneId);
-                _hasUnsavedEdits = true;
-                RefreshZoneEditorSurface();
-                DialogStatusTextBlock.Text = "선택 슬롯을 제거하고 인접 슬롯을 확장했습니다.";
-                return;
-            }
-        }
-
-        DialogStatusTextBlock.Text = "이 슬롯은 제거 후 직사각형 zone을 유지할 인접 슬롯이 없습니다.";
+        _editorSlots.RemoveAll(slot => slot.SlotId == selectedSlot.SlotId);
+        _selectedZoneIds.Clear();
+        _selectedZoneIds.Add(_editorSlots.OrderBy(slot => slot.SlotId).First().SlotId);
+        _hasUnsavedEdits = true;
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = "선택 슬롯을 제거했습니다.";
     }
 
     private void MergeSelectedZones()
@@ -400,43 +444,22 @@ public partial class LayoutEditorDialog : Window
             return;
         }
 
-        var selectedCells = new List<CellPoint>();
+        var selectedSlots = _editorSlots
+            .Where(slot => _selectedZoneIds.Contains(slot.SlotId))
+            .ToArray();
+        if (selectedSlots.Length < 2)
+        {
+            DialogStatusTextBlock.Text = "Ctrl+클릭으로 병합할 슬롯을 둘 이상 선택하세요.";
+            return;
+        }
+
         var targetZoneId = _selectedZoneIds.Min();
-        for (var y = 0; y < _zoneCells.GetLength(0); y++)
-        {
-            for (var x = 0; x < _zoneCells.GetLength(1); x++)
-            {
-                if (_selectedZoneIds.Contains(_zoneCells[y, x]))
-                {
-                    selectedCells.Add(new CellPoint(x, y));
-                }
-            }
-        }
-
-        var minX = selectedCells.Min(cell => cell.X);
-        var maxX = selectedCells.Max(cell => cell.X);
-        var minY = selectedCells.Min(cell => cell.Y);
-        var maxY = selectedCells.Max(cell => cell.Y);
-
-        for (var y = minY; y <= maxY; y++)
-        {
-            for (var x = minX; x <= maxX; x++)
-            {
-                if (!_selectedZoneIds.Contains(_zoneCells[y, x]))
-                {
-                    DialogStatusTextBlock.Text = "선택한 슬롯들이 하나의 직사각형을 완전히 채울 때만 병합할 수 있습니다.";
-                    return;
-                }
-            }
-        }
-
-        for (var y = minY; y <= maxY; y++)
-        {
-            for (var x = minX; x <= maxX; x++)
-            {
-                _zoneCells[y, x] = targetZoneId;
-            }
-        }
+        var left = selectedSlots.Min(slot => slot.Left);
+        var top = selectedSlots.Min(slot => slot.Top);
+        var right = selectedSlots.Max(slot => slot.Left + slot.Width);
+        var bottom = selectedSlots.Max(slot => slot.Top + slot.Height);
+        _editorSlots.RemoveAll(slot => _selectedZoneIds.Contains(slot.SlotId));
+        _editorSlots.Add(new EditorSlotBounds(targetZoneId, left, top, right - left, bottom - top));
 
         _selectedZoneIds.Clear();
         _selectedZoneIds.Add(targetZoneId);
@@ -469,6 +492,26 @@ public partial class LayoutEditorDialog : Window
         return true;
     }
 
+    private bool TryGetSingleSelectedEditorSlot(string emptySelectionMessage, out EditorSlotBounds selectedSlot)
+    {
+        selectedSlot = default;
+        if (_selectedZoneIds.Count == 0)
+        {
+            DialogStatusTextBlock.Text = emptySelectionMessage;
+            return false;
+        }
+
+        if (_selectedZoneIds.Count > 1)
+        {
+            DialogStatusTextBlock.Text = "이 작업은 슬롯을 하나만 선택해야 합니다.";
+            return false;
+        }
+
+        var selectedZoneId = _selectedZoneIds.Single();
+        selectedSlot = _editorSlots.Single(slot => slot.SlotId == selectedZoneId);
+        return true;
+    }
+
     private void LoadCustomLayoutIntoZoneEditor(LayoutPreset layout)
     {
         LoadZoneEditorFromLayout(layout.Name, layout);
@@ -481,6 +524,7 @@ public partial class LayoutEditorDialog : Window
         _zoneCells = new int[1, 1] { { 1 } };
         _columnWeights = [1];
         _rowWeights = [1];
+        _editorSlots = [new EditorSlotBounds(1, 0, 0, 1, 1)];
         _selectedZoneIds.Clear();
         _selectedZoneIds.Add(1);
         _editingLayoutName = layoutName;
@@ -505,12 +549,38 @@ public partial class LayoutEditorDialog : Window
             }
         }
 
+        _editorSlots = layout.Slots
+            .OrderBy(slot => slot.SlotId)
+            .Select(slot =>
+            {
+                var bounds = LayoutSlotBoundsCalculator.GetBounds(layout, slot);
+                return new EditorSlotBounds(slot.SlotId, bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+            })
+            .ToList();
+
         _selectedZoneIds.Clear();
-        _selectedZoneIds.Add(layout.Slots.OrderBy(slot => slot.SlotId).FirstOrDefault()?.SlotId ?? 1);
+        _selectedZoneIds.Add(_editorSlots.OrderBy(slot => slot.SlotId).FirstOrDefault().SlotId);
         _editingLayoutName = layoutName;
         _hasUnsavedEdits = false;
         SetLayoutNameText(layoutName);
         RefreshZoneEditorSurface();
+    }
+
+    private bool ResetEditorSlotBounds()
+    {
+        if (_editorSlots.Count == 0)
+        {
+            _editorSlots = [new EditorSlotBounds(1, 0, 0, 1, 1)];
+            return true;
+        }
+
+        if (!LayoutEditorBoundaryGeometry.TryResetSlotBounds(ToBoundarySlots(_editorSlots), out var resetSlots))
+        {
+            return false;
+        }
+
+        _editorSlots = resetSlots.Select(ToEditorSlot).ToList();
+        return true;
     }
 
     private void SetLayoutNameText(string layoutName)
@@ -522,7 +592,6 @@ public partial class LayoutEditorDialog : Window
 
     private void RefreshZoneEditorSurface()
     {
-        CompactRedundantBoundaries();
         NormalizeZoneIdsFromVisualOrder();
         UpdateEditorChrome();
 
@@ -547,16 +616,16 @@ public partial class LayoutEditorDialog : Window
     private void UpdateEditorChrome()
     {
         // InitializeComponent 도중 TextChanged가 먼저 발생할 수 있어, 컨트롤이 준비되기 전이면 건너뛴다.
-        if (VerticalSplitButton is null)
+        if (HorizontalAlignButton is null)
         {
             return;
         }
 
         var zoneCount = GetZoneRects().Count;
-        var columns = _zoneCells.GetLength(1);
-        var rows = _zoneCells.GetLength(0);
+        var columns = Math.Max(1, _zoneCells.GetLength(1));
+        var rows = Math.Max(1, _zoneCells.GetLength(0));
 
-        LayoutSummaryTextBlock.Text = zoneCount > 0 ? $"{columns}x{rows} · 슬롯 {zoneCount}개" : "";
+        LayoutSummaryTextBlock.Text = zoneCount > 0 ? $"자유 배치 · 슬롯 {zoneCount}개" : "";
         UnsavedIndicator.Visibility = _hasUnsavedEdits ? Visibility.Visible : Visibility.Collapsed;
 
         var selectionCount = _selectedZoneIds.Count;
@@ -565,13 +634,15 @@ public partial class LayoutEditorDialog : Window
             : $"선택: 슬롯 {string.Join(", ", _selectedZoneIds.OrderBy(id => id))}";
 
         var single = selectionCount == 1;
-        var atMax = zoneCount >= PlaybackTestPlanService.MaxSlotCount;
-        var splitDisabledReason = !single
-            ? "분할하려면 슬롯을 하나만 선택하세요."
-            : atMax ? $"최대 {PlaybackTestPlanService.MaxSlotCount}개 슬롯까지 만들 수 있습니다." : null;
 
-        SetActionButton(VerticalSplitButton, splitDisabledReason, "세로 선 기준 좌/우 분할");
-        SetActionButton(HorizontalSplitButton, splitDisabledReason, "가로 선 기준 상/하 분할");
+        SetActionButton(
+            HorizontalAlignButton,
+            !single ? "정렬하려면 기준 슬롯을 하나만 선택하세요." : null,
+            "선택 슬롯과 같은 가로 라인의 X 값을 균등 정렬");
+        SetActionButton(
+            VerticalAlignButton,
+            !single ? "정렬하려면 기준 슬롯을 하나만 선택하세요." : null,
+            "선택 슬롯과 같은 세로 라인의 Y 값을 균등 정렬");
         SetActionButton(
             RemoveSelectedSlotButton,
             !single ? "제거하려면 슬롯을 하나만 선택하세요." : zoneCount <= 1 ? "마지막 한 슬롯은 제거할 수 없습니다." : null,
@@ -602,6 +673,8 @@ public partial class LayoutEditorDialog : Window
         _editorZoneButtons.Clear();
         _editorColumnSplitters.Clear();
         _editorRowSplitters.Clear();
+        _editorBoundaryGroupHandles.Clear();
+        _editorIndividualBoundaryHandles.Clear();
 
         foreach (var slot in layout.Slots.OrderBy(slot => slot.SlotId))
         {
@@ -610,28 +683,91 @@ public partial class LayoutEditorDialog : Window
             _editorZoneButtons.Add((container, slot.SlotId, sizeTextBlock));
         }
 
-        foreach (var segment in LayoutEditorGridGeometry.CreateVerticalSplitterSegments(layout))
+        RefreshBoundaryHandles();
+        RepositionSurface();
+        return canvas;
+    }
+
+    private void LayoutEditorDialog_PreviewKeyChanged(object sender, KeyEventArgs e)
+    {
+        var useIndividualHandles = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        if (useIndividualHandles == _isIndividualBoundaryMode)
         {
-            var thumb = CreateSplitter(isVertical: true);
-            thumb.Tag = segment.Boundary;
-            thumb.DragDelta += ColumnSplitter_DragDelta;
-            thumb.DragCompleted += Splitter_DragCompleted;
-            canvas.Children.Add(thumb);
-            _editorColumnSplitters.Add((thumb, segment));
+            return;
         }
 
-        foreach (var segment in LayoutEditorGridGeometry.CreateHorizontalSplitterSegments(layout))
+        RefreshBoundaryHandles(useIndividualHandles);
+    }
+
+    private void RefreshBoundaryHandles()
+    {
+        RefreshBoundaryHandles(Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+    }
+
+    private void RefreshBoundaryHandles(bool useIndividualHandles)
+    {
+        if (_editorCanvas is null)
         {
-            var thumb = CreateSplitter(isVertical: false);
-            thumb.Tag = segment.Boundary;
-            thumb.DragDelta += RowSplitter_DragDelta;
-            thumb.DragCompleted += Splitter_DragCompleted;
-            canvas.Children.Add(thumb);
-            _editorRowSplitters.Add((thumb, segment));
+            _isIndividualBoundaryMode = useIndividualHandles;
+            return;
+        }
+
+        foreach (var (thumb, _) in _editorBoundaryGroupHandles)
+        {
+            _editorCanvas.Children.Remove(thumb);
+        }
+
+        foreach (var (thumb, _) in _editorIndividualBoundaryHandles)
+        {
+            _editorCanvas.Children.Remove(thumb);
+        }
+
+        _editorBoundaryGroupHandles.Clear();
+        _editorIndividualBoundaryHandles.Clear();
+        _isIndividualBoundaryMode = useIndividualHandles;
+
+        var slots = ToBoundarySlots(_editorSlots);
+        if (useIndividualHandles)
+        {
+            foreach (var handle in LayoutEditorBoundaryGeometry.CreateIndividualHandles(slots))
+            {
+                var thumb = CreateBoundaryHandle(handle.Direction, isIndividualHandle: true);
+                thumb.DragDelta += IndividualBoundaryHandle_DragDelta;
+                thumb.DragCompleted += BoundaryHandle_DragCompleted;
+                _editorCanvas.Children.Add(thumb);
+                _editorIndividualBoundaryHandles.Add((thumb, handle));
+            }
+        }
+        else
+        {
+            foreach (var group in LayoutEditorBoundaryGeometry.CreateBoundaryGroups(slots))
+            {
+                var thumb = CreateBoundaryHandle(group.Direction, isIndividualHandle: false);
+                thumb.DragDelta += BoundaryGroupHandle_DragDelta;
+                thumb.DragCompleted += BoundaryHandle_DragCompleted;
+                _editorCanvas.Children.Add(thumb);
+                _editorBoundaryGroupHandles.Add((thumb, group));
+            }
         }
 
         RepositionSurface();
-        return canvas;
+    }
+
+    private static LayoutEditorSlotBounds[] ToBoundarySlots(IEnumerable<EditorSlotBounds> slots)
+    {
+        return slots
+            .Select(slot => new LayoutEditorSlotBounds(
+                slot.SlotId,
+                slot.Left,
+                slot.Top,
+                slot.Width,
+                slot.Height))
+            .ToArray();
+    }
+
+    private static EditorSlotBounds ToEditorSlot(LayoutEditorSlotBounds slot)
+    {
+        return new EditorSlotBounds(slot.SlotId, slot.Left, slot.Top, slot.Width, slot.Height);
     }
 
     private static StackPanel CreateZoneButtonContent(int slotId, out TextBlock sizeTextBlock)
@@ -776,6 +912,29 @@ public partial class LayoutEditorDialog : Window
         };
     }
 
+    private static Thumb CreateBoundaryHandle(LayoutEditorBoundaryDirection direction, bool isIndividualHandle)
+    {
+        var isVertical = direction == LayoutEditorBoundaryDirection.Vertical;
+        return new Thumb
+        {
+            Width = BoundaryHandleSize,
+            Height = BoundaryHandleSize,
+            Background = isIndividualHandle
+                ? new SolidColorBrush(Color.FromArgb(0xEE, 0xF2, 0xC9, 0x4C))
+                : new SolidColorBrush(Color.FromArgb(0xEE, 0x9B, 0xC2, 0xCC)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(243, 246, 250)),
+            BorderThickness = new Thickness(1),
+            Cursor = isVertical ? Cursors.SizeWE : Cursors.SizeNS,
+            Foreground = Brushes.Black,
+            FontSize = isVertical ? 10 : 15,
+            FontWeight = FontWeights.Bold,
+            ToolTip = isIndividualHandle
+                ? "Ctrl 공유 경계 조정"
+                : "공유 경계 그룹 조정",
+            Template = CreateBoundaryHandleTemplate(isVertical ? "||" : "=")
+        };
+    }
+
     private static ControlTemplate CreateSplitterTemplate()
     {
         var border = new FrameworkElementFactory(typeof(Border));
@@ -787,6 +946,69 @@ public partial class LayoutEditorDialog : Window
                     System.Windows.Data.RelativeSourceMode.TemplatedParent),
                 Path = new PropertyPath(nameof(Control.Background))
             });
+
+        return new ControlTemplate(typeof(Thumb)) { VisualTree = border };
+    }
+
+    private static ControlTemplate CreateBoundaryHandleTemplate(string glyph)
+    {
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(BoundaryHandleSize / 2));
+        border.SetBinding(
+            Border.BackgroundProperty,
+            new System.Windows.Data.Binding
+            {
+                RelativeSource = new System.Windows.Data.RelativeSource(
+                    System.Windows.Data.RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(nameof(Control.Background))
+            });
+        border.SetBinding(
+            Border.BorderBrushProperty,
+            new System.Windows.Data.Binding
+            {
+                RelativeSource = new System.Windows.Data.RelativeSource(
+                    System.Windows.Data.RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(nameof(Control.BorderBrush))
+            });
+        border.SetBinding(
+            Border.BorderThicknessProperty,
+            new System.Windows.Data.Binding
+            {
+                RelativeSource = new System.Windows.Data.RelativeSource(
+                    System.Windows.Data.RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(nameof(Control.BorderThickness))
+            });
+
+        var textBlock = new FrameworkElementFactory(typeof(TextBlock));
+        textBlock.SetValue(TextBlock.TextProperty, glyph);
+        textBlock.SetValue(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        textBlock.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+        textBlock.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Center);
+        textBlock.SetBinding(
+            TextBlock.ForegroundProperty,
+            new System.Windows.Data.Binding
+            {
+                RelativeSource = new System.Windows.Data.RelativeSource(
+                    System.Windows.Data.RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(nameof(Control.Foreground))
+            });
+        textBlock.SetBinding(
+            TextBlock.FontSizeProperty,
+            new System.Windows.Data.Binding
+            {
+                RelativeSource = new System.Windows.Data.RelativeSource(
+                    System.Windows.Data.RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(nameof(Control.FontSize))
+            });
+        textBlock.SetBinding(
+            TextBlock.FontWeightProperty,
+            new System.Windows.Data.Binding
+            {
+                RelativeSource = new System.Windows.Data.RelativeSource(
+                    System.Windows.Data.RelativeSourceMode.TemplatedParent),
+                Path = new PropertyPath(nameof(Control.FontWeight))
+            });
+        border.AppendChild(textBlock);
 
         return new ControlTemplate(typeof(Thumb)) { VisualTree = border };
     }
@@ -811,23 +1033,19 @@ public partial class LayoutEditorDialog : Window
         _editorCanvas.Width = width;
         _editorCanvas.Height = height;
 
-        var columnOffsets = CumulativeOffsets(_columnWeights, width);
-        var rowOffsets = CumulativeOffsets(_rowWeights, height);
-        var rects = GetZoneRects().ToDictionary(rect => rect.ZoneId);
+        var rects = _editorSlots.ToDictionary(slot => slot.SlotId);
 
         foreach (var (container, slotId, sizeTextBlock) in _editorZoneButtons)
         {
-            if (!rects.TryGetValue(slotId, out var rect))
+            if (!rects.TryGetValue(slotId, out var slot))
             {
                 continue;
             }
 
-            var left = columnOffsets[rect.X];
-            var right = columnOffsets[rect.X + rect.W];
-            var top = rowOffsets[rect.Y];
-            var bottom = rowOffsets[rect.Y + rect.H];
-            var slotWidth = Math.Max(0, right - left);
-            var slotHeight = Math.Max(0, bottom - top);
+            var left = width * slot.Left;
+            var top = height * slot.Top;
+            var slotWidth = width * slot.Width;
+            var slotHeight = height * slot.Height;
 
             Canvas.SetLeft(container, left + ZoneGap);
             Canvas.SetTop(container, top + ZoneGap);
@@ -836,26 +1054,48 @@ public partial class LayoutEditorDialog : Window
             sizeTextBlock.Text = FormatSlotSizeLabel(slotWidth, slotHeight);
         }
 
-        foreach (var (thumb, segment) in _editorColumnSplitters)
+        foreach (var (thumb, group) in _editorBoundaryGroupHandles)
         {
-            var top = rowOffsets[segment.Start];
-            var bottom = rowOffsets[segment.Start + segment.Span];
-
-            Canvas.SetLeft(thumb, columnOffsets[segment.Boundary] - SplitterThickness / 2);
-            Canvas.SetTop(thumb, top);
-            thumb.Width = SplitterThickness;
-            thumb.Height = Math.Max(0, bottom - top);
+            PositionBoundaryHandle(thumb, group.Direction, group.Coordinate, group.Start, group.End, width, height);
         }
 
-        foreach (var (thumb, segment) in _editorRowSplitters)
+        foreach (var (thumb, segment) in _editorIndividualBoundaryHandles)
         {
-            var left = columnOffsets[segment.Start];
-            var right = columnOffsets[segment.Start + segment.Span];
+            PositionBoundaryHandle(
+                thumb,
+                segment.Direction,
+                segment.Coordinate,
+                segment.Start,
+                segment.End,
+                width,
+                height);
+        }
+    }
 
+    private static void PositionBoundaryHandle(
+        Thumb thumb,
+        LayoutEditorBoundaryDirection direction,
+        double coordinate,
+        double start,
+        double end,
+        double width,
+        double height)
+    {
+        thumb.Width = BoundaryHandleSize;
+        thumb.Height = BoundaryHandleSize;
+        if (direction == LayoutEditorBoundaryDirection.Vertical)
+        {
+            var left = width * coordinate - BoundaryHandleSize / 2;
+            var top = height * ((start + end) / 2) - BoundaryHandleSize / 2;
             Canvas.SetLeft(thumb, left);
-            Canvas.SetTop(thumb, rowOffsets[segment.Boundary] - SplitterThickness / 2);
-            thumb.Width = Math.Max(0, right - left);
-            thumb.Height = SplitterThickness;
+            Canvas.SetTop(thumb, top);
+        }
+        else
+        {
+            var left = width * ((start + end) / 2) - BoundaryHandleSize / 2;
+            var top = height * coordinate - BoundaryHandleSize / 2;
+            Canvas.SetLeft(thumb, left);
+            Canvas.SetTop(thumb, top);
         }
     }
 
@@ -891,9 +1131,204 @@ public partial class LayoutEditorDialog : Window
         return offsets;
     }
 
+    private void BoundaryGroupHandle_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (sender is not Thumb thumb)
+        {
+            return;
+        }
+
+        var handleIndex = _editorBoundaryGroupHandles.FindIndex(item => ReferenceEquals(item.Thumb, thumb));
+        if (handleIndex < 0 ||
+            !TryResolveCurrentGroup(_editorBoundaryGroupHandles[handleIndex].Group, out var currentGroup))
+        {
+            return;
+        }
+
+        var targetCoordinate = currentGroup.Coordinate + GetNormalizedDragDelta(currentGroup.Direction, e);
+        var moved = LayoutEditorBoundaryGeometry.TryMoveBoundaryGroup(
+            ToBoundarySlots(_editorSlots),
+            currentGroup,
+            targetCoordinate,
+            GetSnapThreshold(currentGroup.Direction),
+            out var nextSlots);
+        if (!moved)
+        {
+            return;
+        }
+
+        _editorSlots = nextSlots.Select(ToEditorSlot).ToList();
+        if (TryResolveCurrentGroup(currentGroup, out var movedGroup))
+        {
+            _editorBoundaryGroupHandles[handleIndex] = (thumb, movedGroup);
+        }
+
+        _hasUnsavedEdits = true;
+        UpdateEditorChrome();
+        RepositionSurface();
+    }
+
+    private void IndividualBoundaryHandle_DragDelta(object sender, DragDeltaEventArgs e)
+    {
+        if (sender is not Thumb thumb)
+        {
+            return;
+        }
+
+        var handleIndex = _editorIndividualBoundaryHandles.FindIndex(item => ReferenceEquals(item.Thumb, thumb));
+        if (handleIndex < 0 ||
+            !TryResolveCurrentSegment(_editorIndividualBoundaryHandles[handleIndex].Segment, out var currentSegment))
+        {
+            return;
+        }
+
+        var targetCoordinate = currentSegment.Coordinate + GetNormalizedDragDelta(currentSegment.Direction, e);
+        var moved = LayoutEditorBoundaryGeometry.TryMoveIndividualHandle(
+            ToBoundarySlots(_editorSlots),
+            currentSegment,
+            targetCoordinate,
+            GetSnapThreshold(currentSegment.Direction),
+            out var nextSlots);
+        if (!moved)
+        {
+            return;
+        }
+
+        _editorSlots = nextSlots.Select(ToEditorSlot).ToList();
+        if (TryResolveCurrentSegment(currentSegment, out var movedSegment))
+        {
+            _editorIndividualBoundaryHandles[handleIndex] = (thumb, movedSegment);
+        }
+
+        _hasUnsavedEdits = true;
+        UpdateEditorChrome();
+        RepositionSurface();
+    }
+
+    private void BoundaryHandle_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        RefreshBoundaryHandles();
+        UpdateEditorChrome();
+        DialogStatusTextBlock.Text = _isIndividualBoundaryMode
+            ? "개별 공유 경계를 조정했습니다."
+            : "공유 경계 그룹을 조정했습니다.";
+    }
+
+    private bool TryResolveCurrentGroup(
+        LayoutEditorBoundaryGroup group,
+        out LayoutEditorBoundaryGroup currentGroup)
+    {
+        var currentSegments = new List<LayoutEditorBoundarySegment>();
+        foreach (var segment in group.Segments)
+        {
+            if (!TryResolveCurrentSegment(segment, out var currentSegment))
+            {
+                currentGroup = group;
+                return false;
+            }
+
+            currentSegments.Add(currentSegment);
+        }
+
+        currentGroup = group with
+        {
+            Coordinate = currentSegments.Average(segment => segment.Coordinate),
+            Start = currentSegments.Min(segment => segment.Start),
+            End = currentSegments.Max(segment => segment.End),
+            Segments = currentSegments
+        };
+        return true;
+    }
+
+    private bool TryResolveCurrentSegment(
+        LayoutEditorBoundarySegment segment,
+        out LayoutEditorBoundarySegment currentSegment)
+    {
+        var slots = ToBoundarySlots(_editorSlots).ToDictionary(slot => slot.SlotId);
+        if (!slots.TryGetValue(segment.NegativeSideSlotId, out var negativeSlot) ||
+            !slots.TryGetValue(segment.PositiveSideSlotId, out var positiveSlot))
+        {
+            currentSegment = segment;
+            return false;
+        }
+
+        if (segment.Direction == LayoutEditorBoundaryDirection.Vertical)
+        {
+            if (!AreVisuallyAligned(negativeSlot.Right, positiveSlot.Left))
+            {
+                currentSegment = segment;
+                return false;
+            }
+
+            var start = Math.Max(negativeSlot.Top, positiveSlot.Top);
+            var end = Math.Min(negativeSlot.Bottom, positiveSlot.Bottom);
+            if (end - start <= LayoutEditorBoundaryGeometry.GeometryTolerance)
+            {
+                currentSegment = segment;
+                return false;
+            }
+
+            currentSegment = segment with
+            {
+                Coordinate = (negativeSlot.Right + positiveSlot.Left) / 2,
+                Start = start,
+                End = end
+            };
+            return true;
+        }
+
+        if (!AreVisuallyAligned(negativeSlot.Bottom, positiveSlot.Top))
+        {
+            currentSegment = segment;
+            return false;
+        }
+
+        var horizontalStart = Math.Max(negativeSlot.Left, positiveSlot.Left);
+        var horizontalEnd = Math.Min(negativeSlot.Right, positiveSlot.Right);
+        if (horizontalEnd - horizontalStart <= LayoutEditorBoundaryGeometry.GeometryTolerance)
+        {
+            currentSegment = segment;
+            return false;
+        }
+
+        currentSegment = segment with
+        {
+            Coordinate = (negativeSlot.Bottom + positiveSlot.Top) / 2,
+            Start = horizontalStart,
+            End = horizontalEnd
+        };
+        return true;
+    }
+
+    private double GetNormalizedDragDelta(LayoutEditorBoundaryDirection direction, DragDeltaEventArgs e)
+    {
+        return direction == LayoutEditorBoundaryDirection.Vertical
+            ? e.HorizontalChange / Math.Max(1, _editorSurfaceSize.Width)
+            : e.VerticalChange / Math.Max(1, _editorSurfaceSize.Height);
+    }
+
+    private double GetSnapThreshold(LayoutEditorBoundaryDirection direction)
+    {
+        return direction == LayoutEditorBoundaryDirection.Vertical
+            ? SnapThresholdPixels / Math.Max(1, _editorSurfaceSize.Width)
+            : SnapThresholdPixels / Math.Max(1, _editorSurfaceSize.Height);
+    }
+
+    private static bool AreVisuallyAligned(double first, double second)
+    {
+        return Math.Abs(first - second) <= LayoutEditorBoundaryGeometry.VisualAlignmentTolerance;
+    }
+
     private void ColumnSplitter_DragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (sender is not Thumb { Tag: int boundary } thumb)
+        if (sender is not Thumb thumb)
+        {
+            return;
+        }
+
+        var draggedItem = _editorColumnSplitters
+            .FirstOrDefault(item => ReferenceEquals(item.Thumb, thumb));
+        if (!ReferenceEquals(draggedItem.Thumb, thumb))
         {
             return;
         }
@@ -905,19 +1340,15 @@ public partial class LayoutEditorDialog : Window
         }
 
         var deltaWeight = e.HorizontalChange / Math.Max(1, _editorSurfaceSize.Width) * total;
-        var draggedItem = _editorColumnSplitters
-            .FirstOrDefault(item => ReferenceEquals(item.Thumb, thumb));
-        if (!ReferenceEquals(draggedItem.Thumb, thumb)
-            || !TryGetResizeIndexGroups(
-                boundary,
-                _columnWeights.Length,
-                _editorColumnSplitters
-                    .Where(item => !ReferenceEquals(item.Thumb, thumb) && item.Segment.Boundary != boundary)
-                    .Select(item => item.Segment.Boundary),
-                out var leftColumns,
-                out var rightColumns)
-            || !TryApplyWeightDelta(_columnWeights, leftColumns, rightColumns, deltaWeight))
+        if (!TryApplyColumnResizeDelta(draggedItem.Segment, deltaWeight, out var rebuildSurface))
         {
+            return;
+        }
+
+        _hasUnsavedEdits = true;
+        if (rebuildSurface)
+        {
+            RefreshZoneEditorSurface();
             return;
         }
 
@@ -926,7 +1357,14 @@ public partial class LayoutEditorDialog : Window
 
     private void RowSplitter_DragDelta(object sender, DragDeltaEventArgs e)
     {
-        if (sender is not Thumb { Tag: int boundary } thumb)
+        if (sender is not Thumb thumb)
+        {
+            return;
+        }
+
+        var draggedItem = _editorRowSplitters
+            .FirstOrDefault(item => ReferenceEquals(item.Thumb, thumb));
+        if (!ReferenceEquals(draggedItem.Thumb, thumb))
         {
             return;
         }
@@ -938,23 +1376,303 @@ public partial class LayoutEditorDialog : Window
         }
 
         var deltaWeight = e.VerticalChange / Math.Max(1, _editorSurfaceSize.Height) * total;
-        var draggedItem = _editorRowSplitters
-            .FirstOrDefault(item => ReferenceEquals(item.Thumb, thumb));
-        if (!ReferenceEquals(draggedItem.Thumb, thumb)
-            || !TryGetResizeIndexGroups(
-                boundary,
-                _rowWeights.Length,
-                _editorRowSplitters
-                    .Where(item => !ReferenceEquals(item.Thumb, thumb) && item.Segment.Boundary != boundary)
-                    .Select(item => item.Segment.Boundary),
-                out var topRows,
-                out var bottomRows)
-            || !TryApplyWeightDelta(_rowWeights, topRows, bottomRows, deltaWeight))
+        if (!TryApplyRowResizeDelta(draggedItem.Segment, deltaWeight, out var rebuildSurface))
         {
             return;
         }
 
+        _hasUnsavedEdits = true;
+        if (rebuildSurface)
+        {
+            RefreshZoneEditorSurface();
+            return;
+        }
+
         RepositionSurface();
+    }
+
+    private bool TryApplyColumnResizeDelta(
+        LayoutEditorSplitterSegment segment,
+        double deltaWeight,
+        out bool rebuildSurface)
+    {
+        rebuildSurface = false;
+        if (HasSiblingSegmentAtBoundary(
+                _editorColumnSplitters.Select(item => item.Segment),
+                segment))
+        {
+            if (!TryApplyLocalizedColumnResize(
+                    _zoneCells,
+                    _columnWeights,
+                    segment,
+                    deltaWeight,
+                    out var nextCells,
+                    out var nextColumnWeights))
+            {
+                return false;
+            }
+
+            _zoneCells = nextCells;
+            _columnWeights = nextColumnWeights;
+            rebuildSurface = true;
+            return true;
+        }
+
+        return TryGetResizeIndexGroups(
+                   segment.Boundary,
+                   _columnWeights.Length,
+                   _editorColumnSplitters
+                       .Where(item => item.Segment.Boundary != segment.Boundary)
+                       .Select(item => item.Segment.Boundary),
+                   out var leftColumns,
+                   out var rightColumns)
+               && TryApplyWeightDelta(_columnWeights, leftColumns, rightColumns, deltaWeight);
+    }
+
+    private bool TryApplyRowResizeDelta(
+        LayoutEditorSplitterSegment segment,
+        double deltaWeight,
+        out bool rebuildSurface)
+    {
+        rebuildSurface = false;
+        if (HasSiblingSegmentAtBoundary(
+                _editorRowSplitters.Select(item => item.Segment),
+                segment))
+        {
+            if (!TryApplyLocalizedRowResize(
+                    _zoneCells,
+                    _rowWeights,
+                    segment,
+                    deltaWeight,
+                    out var nextCells,
+                    out var nextRowWeights))
+            {
+                return false;
+            }
+
+            _zoneCells = nextCells;
+            _rowWeights = nextRowWeights;
+            rebuildSurface = true;
+            return true;
+        }
+
+        return TryGetResizeIndexGroups(
+                   segment.Boundary,
+                   _rowWeights.Length,
+                   _editorRowSplitters
+                       .Where(item => item.Segment.Boundary != segment.Boundary)
+                       .Select(item => item.Segment.Boundary),
+                   out var topRows,
+                   out var bottomRows)
+               && TryApplyWeightDelta(_rowWeights, topRows, bottomRows, deltaWeight);
+    }
+
+    private static bool HasSiblingSegmentAtBoundary(
+        IEnumerable<LayoutEditorSplitterSegment> segments,
+        LayoutEditorSplitterSegment segment)
+    {
+        return segments.Any(candidate =>
+            candidate.Boundary == segment.Boundary
+            && (candidate.Start != segment.Start || candidate.Span != segment.Span));
+    }
+
+    private static bool TryApplyLocalizedColumnResize(
+        int[,] cells,
+        double[] columnWeights,
+        LayoutEditorSplitterSegment segment,
+        double deltaWeight,
+        out int[,] nextCells,
+        out double[] nextColumnWeights)
+    {
+        nextCells = cells;
+        nextColumnWeights = columnWeights;
+        if (!TryGetLocalizedResizeAmount(
+                columnWeights,
+                segment.Boundary,
+                deltaWeight,
+                out var sourceIndex,
+                out var insertedWeight))
+        {
+            return false;
+        }
+
+        var growLeadingSide = deltaWeight > 0;
+        var candidateCells = InsertLocalizedColumn(cells, segment, growLeadingSide);
+        if (!TryGetZoneRects(candidateCells, out _))
+        {
+            return false;
+        }
+
+        nextCells = candidateCells;
+        nextColumnWeights = InsertLocalizedResizeWeight(
+            columnWeights,
+            segment.Boundary,
+            sourceIndex,
+            insertedWeight);
+        return true;
+    }
+
+    private static bool TryApplyLocalizedRowResize(
+        int[,] cells,
+        double[] rowWeights,
+        LayoutEditorSplitterSegment segment,
+        double deltaWeight,
+        out int[,] nextCells,
+        out double[] nextRowWeights)
+    {
+        nextCells = cells;
+        nextRowWeights = rowWeights;
+        if (!TryGetLocalizedResizeAmount(
+                rowWeights,
+                segment.Boundary,
+                deltaWeight,
+                out var sourceIndex,
+                out var insertedWeight))
+        {
+            return false;
+        }
+
+        var growLeadingSide = deltaWeight > 0;
+        var candidateCells = InsertLocalizedRow(cells, segment, growLeadingSide);
+        if (!TryGetZoneRects(candidateCells, out _))
+        {
+            return false;
+        }
+
+        nextCells = candidateCells;
+        nextRowWeights = InsertLocalizedResizeWeight(
+            rowWeights,
+            segment.Boundary,
+            sourceIndex,
+            insertedWeight);
+        return true;
+    }
+
+    private static bool TryGetLocalizedResizeAmount(
+        double[] weights,
+        int boundary,
+        double deltaWeight,
+        out int sourceIndex,
+        out double insertedWeight)
+    {
+        sourceIndex = -1;
+        insertedWeight = 0;
+        if (boundary <= 0 || boundary >= weights.Length || Math.Abs(deltaWeight) <= double.Epsilon)
+        {
+            return false;
+        }
+
+        sourceIndex = deltaWeight > 0 ? boundary : boundary - 1;
+        var available = Math.Max(0, weights[sourceIndex] - MinWeight);
+        if (available < MinWeight)
+        {
+            return false;
+        }
+
+        insertedWeight = Math.Min(Math.Max(Math.Abs(deltaWeight), MinWeight), available);
+        return insertedWeight > 0;
+    }
+
+    private static int[,] InsertLocalizedColumn(
+        int[,] cells,
+        LayoutEditorSplitterSegment segment,
+        bool growLeadingSide)
+    {
+        var rows = cells.GetLength(0);
+        var columns = cells.GetLength(1);
+        var nextCells = new int[rows, columns + 1];
+        var boundary = segment.Boundary;
+        var segmentEnd = segment.Start + segment.Span;
+
+        for (var y = 0; y < rows; y++)
+        {
+            var isTargetSegment = y >= segment.Start && y < segmentEnd;
+            for (var x = 0; x < columns + 1; x++)
+            {
+                if (x < boundary)
+                {
+                    nextCells[y, x] = cells[y, x];
+                }
+                else if (x == boundary)
+                {
+                    nextCells[y, x] = growLeadingSide == isTargetSegment
+                        ? cells[y, boundary - 1]
+                        : cells[y, boundary];
+                }
+                else
+                {
+                    nextCells[y, x] = cells[y, x - 1];
+                }
+            }
+        }
+
+        return nextCells;
+    }
+
+    private static int[,] InsertLocalizedRow(
+        int[,] cells,
+        LayoutEditorSplitterSegment segment,
+        bool growLeadingSide)
+    {
+        var rows = cells.GetLength(0);
+        var columns = cells.GetLength(1);
+        var nextCells = new int[rows + 1, columns];
+        var boundary = segment.Boundary;
+        var segmentEnd = segment.Start + segment.Span;
+
+        for (var y = 0; y < rows + 1; y++)
+        {
+            for (var x = 0; x < columns; x++)
+            {
+                var isTargetSegment = x >= segment.Start && x < segmentEnd;
+                if (y < boundary)
+                {
+                    nextCells[y, x] = cells[y, x];
+                }
+                else if (y == boundary)
+                {
+                    nextCells[y, x] = growLeadingSide == isTargetSegment
+                        ? cells[boundary - 1, x]
+                        : cells[boundary, x];
+                }
+                else
+                {
+                    nextCells[y, x] = cells[y - 1, x];
+                }
+            }
+        }
+
+        return nextCells;
+    }
+
+    private static double[] InsertLocalizedResizeWeight(
+        double[] weights,
+        int insertIndex,
+        int sourceIndex,
+        double insertedWeight)
+    {
+        var nextWeights = new double[weights.Length + 1];
+        for (var index = 0; index < nextWeights.Length; index++)
+        {
+            if (index < insertIndex)
+            {
+                nextWeights[index] = weights[index];
+            }
+            else if (index == insertIndex)
+            {
+                nextWeights[index] = insertedWeight;
+            }
+            else
+            {
+                nextWeights[index] = weights[index - 1];
+            }
+        }
+
+        var adjustedSourceIndex = sourceIndex >= insertIndex ? sourceIndex + 1 : sourceIndex;
+        nextWeights[adjustedSourceIndex] = Math.Max(
+            MinWeight,
+            nextWeights[adjustedSourceIndex] - insertedWeight);
+        return nextWeights;
     }
 
     private static bool TryGetResizeIndexGroups(
@@ -1199,9 +1917,9 @@ public partial class LayoutEditorDialog : Window
             name = CreateCustomLayoutName();
         }
 
-        if (!TryGetZoneRects(_zoneCells, out var rects))
+        if (_editorSlots.Count == 0)
         {
-            error = "모든 zone은 하나의 직사각형이어야 합니다.";
+            error = "레이아웃에는 슬롯이 하나 이상 필요합니다.";
             return false;
         }
 
@@ -1209,19 +1927,24 @@ public partial class LayoutEditorDialog : Window
         {
             Id = layoutId,
             Name = name,
-            GridColumns = _zoneCells.GetLength(1),
-            GridRows = _zoneCells.GetLength(0),
-            ColumnWeights = NormalizeWeights(_columnWeights, _zoneCells.GetLength(1)),
-            RowWeights = NormalizeWeights(_rowWeights, _zoneCells.GetLength(0)),
-            Slots = rects
-                .OrderBy(rect => rect.ZoneId)
-                .Select(rect => new LayoutSlot
+            GridColumns = 1,
+            GridRows = 1,
+            ColumnWeights = [1],
+            RowWeights = [1],
+            Slots = _editorSlots
+                .OrderBy(slot => slot.SlotId)
+                .Select(slot => NormalizeEditorSlot(slot))
+                .Select(slot => new LayoutSlot
                 {
-                    SlotId = rect.ZoneId,
-                    X = rect.X,
-                    Y = rect.Y,
-                    W = rect.W,
-                    H = rect.H
+                    SlotId = slot.SlotId,
+                    X = 0,
+                    Y = 0,
+                    W = 1,
+                    H = 1,
+                    Left = slot.Left,
+                    Top = slot.Top,
+                    Width = slot.Width,
+                    Height = slot.Height
                 })
                 .ToArray()
         };
@@ -1237,6 +1960,22 @@ public partial class LayoutEditorDialog : Window
         }
 
         return true;
+    }
+
+    private static EditorSlotBounds NormalizeEditorSlot(EditorSlotBounds slot)
+    {
+        var minSize = LayoutSlotBoundsCalculator.MinRelativeSize;
+        var left = Math.Clamp(slot.Left, 0, 1 - minSize);
+        var top = Math.Clamp(slot.Top, 0, 1 - minSize);
+        var width = Math.Clamp(slot.Width, minSize, 1 - left);
+        var height = Math.Clamp(slot.Height, minSize, 1 - top);
+        return slot with
+        {
+            Left = left,
+            Top = top,
+            Width = width,
+            Height = height
+        };
     }
 
     // '비율 초기화': 분할 구조는 그대로 두고, 현재 레이아웃 디자인에 맞춰 균형 비율을 계산한다.
@@ -1417,33 +2156,30 @@ public partial class LayoutEditorDialog : Window
 
     private void NormalizeZoneIdsFromVisualOrder()
     {
-        if (!TryGetZoneRects(_zoneCells, out var rects))
+        if (_editorSlots.Count == 0)
         {
             return;
         }
 
         var selectedZoneIds = _selectedZoneIds.ToHashSet();
         var mappedSelection = new HashSet<int>();
-        var zoneIdMap = rects
-            .OrderBy(rect => rect.Y)
-            .ThenBy(rect => rect.X)
-            .Select((rect, index) => new { rect.ZoneId, NewZoneId = index + 1 })
+        var zoneIdMap = _editorSlots
+            .OrderBy(slot => slot.Top)
+            .ThenBy(slot => slot.Left)
+            .Select((slot, index) => new { ZoneId = slot.SlotId, NewZoneId = index + 1 })
             .ToDictionary(item => item.ZoneId, item => item.NewZoneId);
-
-        for (var y = 0; y < _zoneCells.GetLength(0); y++)
-        {
-            for (var x = 0; x < _zoneCells.GetLength(1); x++)
+        _editorSlots = _editorSlots
+            .Select(slot =>
             {
-                var oldZoneId = _zoneCells[y, x];
-                var newZoneId = zoneIdMap[oldZoneId];
-                _zoneCells[y, x] = newZoneId;
-
-                if (selectedZoneIds.Contains(oldZoneId))
+                var newZoneId = zoneIdMap[slot.SlotId];
+                if (selectedZoneIds.Contains(slot.SlotId))
                 {
                     mappedSelection.Add(newZoneId);
                 }
-            }
-        }
+
+                return slot with { SlotId = newZoneId };
+            })
+            .ToList();
 
         _selectedZoneIds.Clear();
         foreach (var zoneId in mappedSelection)
@@ -1459,7 +2195,10 @@ public partial class LayoutEditorDialog : Window
 
     private IReadOnlyList<ZoneRect> GetZoneRects()
     {
-        return TryGetZoneRects(_zoneCells, out var rects) ? rects : [];
+        return _editorSlots
+            .OrderBy(slot => slot.SlotId)
+            .Select(slot => new ZoneRect(slot.SlotId, 0, 0, 1, 1))
+            .ToArray();
     }
 
     private static bool TryGetZoneRects(int[,] cells, out IReadOnlyList<ZoneRect> rects)
@@ -1659,7 +2398,7 @@ public partial class LayoutEditorDialog : Window
 
     private int GetNextZoneId()
     {
-        return GetZoneRects().Max(rect => rect.ZoneId) + 1;
+        return _editorSlots.Count == 0 ? 1 : _editorSlots.Max(slot => slot.SlotId) + 1;
     }
 
     private static FrameworkElement BuildLayoutPreview(
@@ -1680,4 +2419,11 @@ public partial class LayoutEditorDialog : Window
     private readonly record struct CellPoint(int X, int Y);
 
     private readonly record struct ZoneRect(int ZoneId, int X, int Y, int W, int H);
+
+    private readonly record struct EditorSlotBounds(
+        int SlotId,
+        double Left,
+        double Top,
+        double Width,
+        double Height);
 }

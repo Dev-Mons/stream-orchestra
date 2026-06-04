@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using StreamOrchestra.App.Models;
+using StreamOrchestra.App.Services;
 
 namespace StreamOrchestra.App.Views;
 
@@ -29,31 +30,18 @@ public static class LayoutPreviewBuilder
 
     public static FrameworkElement Build(LayoutPreset layout, double width, double height, bool showSlotNumbers)
     {
-        var grid = new Grid
+        var surfaceWidth = Math.Max(120, layout.GridColumns * 72);
+        var surfaceHeight = Math.Max(90, layout.GridRows * 54);
+        var canvas = new Canvas
         {
-            Width = Math.Max(120, layout.GridColumns * 72),
-            Height = Math.Max(90, layout.GridRows * 54),
+            Width = surfaceWidth,
+            Height = surfaceHeight,
             Background = new SolidColorBrush(Color.FromRgb(5, 7, 10))
         };
 
-        for (var rowIndex = 0; rowIndex < layout.GridRows; rowIndex++)
-        {
-            grid.RowDefinitions.Add(new RowDefinition
-            {
-                Height = new GridLength(GetWeight(layout.RowWeights, rowIndex), GridUnitType.Star)
-            });
-        }
-
-        for (var columnIndex = 0; columnIndex < layout.GridColumns; columnIndex++)
-        {
-            grid.ColumnDefinitions.Add(new ColumnDefinition
-            {
-                Width = new GridLength(GetWeight(layout.ColumnWeights, columnIndex), GridUnitType.Star)
-            });
-        }
-
         foreach (var slot in layout.Slots.OrderBy(slot => slot.SlotId))
         {
+            var bounds = LayoutSlotBoundsCalculator.GetBounds(layout, slot);
             var border = new Border
             {
                 Margin = new Thickness(3),
@@ -74,11 +62,11 @@ public static class LayoutPreviewBuilder
                 };
             }
 
-            Grid.SetColumn(border, slot.X);
-            Grid.SetRow(border, slot.Y);
-            Grid.SetColumnSpan(border, slot.W);
-            Grid.SetRowSpan(border, slot.H);
-            grid.Children.Add(border);
+            Canvas.SetLeft(border, surfaceWidth * bounds.Left);
+            Canvas.SetTop(border, surfaceHeight * bounds.Top);
+            border.Width = Math.Max(1, surfaceWidth * bounds.Width);
+            border.Height = Math.Max(1, surfaceHeight * bounds.Height);
+            canvas.Children.Add(border);
         }
 
         return new Viewbox
@@ -86,15 +74,8 @@ public static class LayoutPreviewBuilder
             Width = width,
             Height = height,
             Stretch = Stretch.Uniform,
-            Child = grid
+            Child = canvas
         };
-    }
-
-    private static double GetWeight(IReadOnlyList<double>? weights, int index)
-    {
-        return weights is not null && index >= 0 && index < weights.Count && weights[index] > 0
-            ? weights[index]
-            : 1;
     }
 
     public static Brush GetSlotBrush(int slotId)

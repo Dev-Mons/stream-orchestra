@@ -459,6 +459,47 @@ public sealed class LayoutPresetServiceTests
         Assert.Contains("has invalid row weights", exception.Message);
     }
 
+    [Fact]
+    public void Validate_AllowsExplicitBoundsToOverlapLegacyGridCells()
+    {
+        var layout = new LayoutPreset
+        {
+            Id = "independent",
+            Name = "Independent",
+            GridColumns = 1,
+            GridRows = 1,
+            Slots =
+            [
+                new LayoutSlot
+                {
+                    SlotId = 1,
+                    X = 0,
+                    Y = 0,
+                    W = 1,
+                    H = 1,
+                    Left = 0,
+                    Top = 0,
+                    Width = 0.65,
+                    Height = 1
+                },
+                new LayoutSlot
+                {
+                    SlotId = 2,
+                    X = 0,
+                    Y = 0,
+                    W = 1,
+                    H = 1,
+                    Left = 0.55,
+                    Top = 0,
+                    Width = 0.45,
+                    Height = 1
+                }
+            ]
+        };
+
+        LayoutPresetService.Validate([layout]);
+    }
+
     private static LayoutPreset CreateLayout(string id, int visibleSlotCount)
     {
         return CreateLayout(id, Enumerable.Range(1, visibleSlotCount).ToArray());

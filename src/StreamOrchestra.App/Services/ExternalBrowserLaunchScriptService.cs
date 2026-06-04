@@ -169,6 +169,17 @@ public sealed class ExternalBrowserLaunchScriptService
 
     private static bool IsValidWindowLayout(ExternalBrowserWindowLayout? layout)
     {
+        if (HasExplicitWindowBounds(layout))
+        {
+            return layout is not null
+                   && layout.LeftRatio >= 0
+                   && layout.TopRatio >= 0
+                   && layout.WidthRatio > 0
+                   && layout.HeightRatio > 0
+                   && layout.LeftRatio + layout.WidthRatio <= 1.001
+                   && layout.TopRatio + layout.HeightRatio <= 1.001;
+        }
+
         return layout is
         {
             GridColumns: > 0,
@@ -180,6 +191,14 @@ public sealed class ExternalBrowserLaunchScriptService
         } &&
             layout.X + layout.W <= layout.GridColumns &&
             layout.Y + layout.H <= layout.GridRows;
+    }
+
+    private static bool HasExplicitWindowBounds(ExternalBrowserWindowLayout? layout)
+    {
+        return layout?.LeftRatio is >= 0
+               && layout.TopRatio is >= 0
+               && layout.WidthRatio is > 0
+               && layout.HeightRatio is > 0;
     }
 
     private static void AppendWindowLayoutHelpers(StringBuilder builder)
@@ -205,9 +224,21 @@ public sealed class ExternalBrowserLaunchScriptService
         builder.AppendLine("        [int]$CellWidth,");
         builder.AppendLine("        [int]$CellHeight,");
         builder.AppendLine("        [double[]]$ColumnWeights = @(),");
-        builder.AppendLine("        [double[]]$RowWeights = @()");
+        builder.AppendLine("        [double[]]$RowWeights = @(),");
+        builder.AppendLine("        [double]$LeftRatio = -1,");
+        builder.AppendLine("        [double]$TopRatio = -1,");
+        builder.AppendLine("        [double]$WidthRatio = -1,");
+        builder.AppendLine("        [double]$HeightRatio = -1");
         builder.AppendLine("    )");
         builder.AppendLine("    $workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea");
+        builder.AppendLine("    if ($LeftRatio -ge 0 -and $TopRatio -ge 0 -and $WidthRatio -gt 0 -and $HeightRatio -gt 0) {");
+        builder.AppendLine("        return [pscustomobject]@{");
+        builder.AppendLine("            Left = [int]($workArea.Left + ($workArea.Width * $LeftRatio))");
+        builder.AppendLine("            Top = [int]($workArea.Top + ($workArea.Height * $TopRatio))");
+        builder.AppendLine("            Width = [int]($workArea.Width * $WidthRatio)");
+        builder.AppendLine("            Height = [int]($workArea.Height * $HeightRatio)");
+        builder.AppendLine("        }");
+        builder.AppendLine("    }");
         builder.AppendLine("    $columnWeights = Get-StreamOrchestraGridWeights -Count $GridColumns -Weights $ColumnWeights");
         builder.AppendLine("    $rowWeights = Get-StreamOrchestraGridWeights -Count $GridRows -Weights $RowWeights");
         builder.AppendLine("    $columnTotal = Get-StreamOrchestraWeightSum -Weights $columnWeights -Start 0 -Length $GridColumns");
@@ -258,6 +289,19 @@ public sealed class ExternalBrowserLaunchScriptService
 
     private static void AppendWindowBoundsCommand(StringBuilder builder, ExternalBrowserWindowLayout layout)
     {
+        if (HasExplicitWindowBounds(layout))
+        {
+            builder.AppendLine(
+                "$slotWindow = Get-StreamOrchestraSlotWindowBounds " +
+                $"-GridColumns {layout.GridColumns} -GridRows {layout.GridRows} " +
+                $"-CellX {layout.X} -CellY {layout.Y} -CellWidth {layout.W} -CellHeight {layout.H} " +
+                $"-LeftRatio {ToPowerShellDouble(layout.LeftRatio!.Value)} " +
+                $"-TopRatio {ToPowerShellDouble(layout.TopRatio!.Value)} " +
+                $"-WidthRatio {ToPowerShellDouble(layout.WidthRatio!.Value)} " +
+                $"-HeightRatio {ToPowerShellDouble(layout.HeightRatio!.Value)}");
+            return;
+        }
+
         builder.AppendLine(
             $"$slotWindow = Get-StreamOrchestraSlotWindowBounds -GridColumns {layout.GridColumns} -GridRows {layout.GridRows} -CellX {layout.X} -CellY {layout.Y} -CellWidth {layout.W} -CellHeight {layout.H} -ColumnWeights {ToPowerShellDoubleArray(layout.ColumnWeights, layout.GridColumns)} -RowWeights {ToPowerShellDoubleArray(layout.RowWeights, layout.GridRows)}");
     }
@@ -270,6 +314,11 @@ public sealed class ExternalBrowserLaunchScriptService
         }
 
         return $"@({string.Join(", ", weights.Select(weight => weight.ToString("G17", System.Globalization.CultureInfo.InvariantCulture)))})";
+    }
+
+    private static string ToPowerShellDouble(double value)
+    {
+        return value.ToString("G17", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string ToBrowserCommandLineArgument(string argument)

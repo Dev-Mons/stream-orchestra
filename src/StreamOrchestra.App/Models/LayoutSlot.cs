@@ -11,4 +11,12 @@ public sealed class LayoutSlot
     public int W { get; init; }
 
     public int H { get; init; }
+
+    public double Left { get; init; }
+
+    public double Top { get; init; }
+
+    public double Width { get; init; }
+
+    public double Height { get; init; }
 }

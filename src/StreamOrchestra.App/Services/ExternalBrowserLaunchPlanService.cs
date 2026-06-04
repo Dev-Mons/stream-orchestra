@@ -167,6 +167,10 @@ public sealed class ExternalBrowserLaunchPlanService
                 group =>
                 {
                     var slot = group.Last();
+                    var hasExplicitBounds = LayoutSlotBoundsCalculator.HasExplicitBounds(slot);
+                    var bounds = hasExplicitBounds
+                        ? LayoutSlotBoundsCalculator.GetBounds(layout, slot)
+                        : null;
                     return new ExternalBrowserWindowLayout(
                         layout.GridColumns,
                         layout.GridRows,
@@ -175,19 +179,32 @@ public sealed class ExternalBrowserLaunchPlanService
                         slot.W,
                         slot.H,
                         layout.ColumnWeights,
-                        layout.RowWeights);
+                        layout.RowWeights,
+                        bounds?.Left,
+                        bounds?.Top,
+                        bounds?.Width,
+                        bounds?.Height);
                 });
     }
 
     private static bool IsValidLayoutSlot(LayoutPreset layout, LayoutSlot slot)
     {
-        return slot.SlotId is >= 1 and <= PlaybackTestPlanService.MaxSlotCount &&
-            slot.X >= 0 &&
-            slot.Y >= 0 &&
-            slot.W > 0 &&
-            slot.H > 0 &&
-            slot.X + slot.W <= layout.GridColumns &&
-            slot.Y + slot.H <= layout.GridRows;
+        if (slot.SlotId is < 1 or > PlaybackTestPlanService.MaxSlotCount)
+        {
+            return false;
+        }
+
+        if (LayoutSlotBoundsCalculator.HasExplicitBounds(slot))
+        {
+            return LayoutSlotBoundsCalculator.IsValidExplicitBounds(slot);
+        }
+
+        return slot.X >= 0
+               && slot.Y >= 0
+               && slot.W > 0
+               && slot.H > 0
+               && slot.X + slot.W <= layout.GridColumns
+               && slot.Y + slot.H <= layout.GridRows;
     }
 
     private static WorkspaceSlot? CreateLaunchableSlot(WorkspaceSlot? slot)

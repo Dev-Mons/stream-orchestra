@@ -18,17 +18,35 @@ public static class LayoutEditorGridGeometry
         for (var boundary = 1; boundary < layout.GridColumns; boundary++)
         {
             var start = -1;
+            var previousLeft = 0;
+            var previousRight = 0;
             for (var y = 0; y < layout.GridRows; y++)
             {
-                var isActive = cells[y, boundary - 1] != cells[y, boundary];
+                var left = cells[y, boundary - 1];
+                var right = cells[y, boundary];
+                var isActive = left != right;
                 if (isActive && start < 0)
                 {
                     start = y;
+                    previousLeft = left;
+                    previousRight = right;
+                }
+                else if (isActive && ShouldStartNewSegment(previousLeft, previousRight, left, right))
+                {
+                    segments.Add(new LayoutEditorSplitterSegment(boundary, start, y - start));
+                    start = y;
+                    previousLeft = left;
+                    previousRight = right;
                 }
                 else if (!isActive && start >= 0)
                 {
                     segments.Add(new LayoutEditorSplitterSegment(boundary, start, y - start));
                     start = -1;
+                }
+                else if (isActive)
+                {
+                    previousLeft = left;
+                    previousRight = right;
                 }
             }
 
@@ -53,17 +71,35 @@ public static class LayoutEditorGridGeometry
         for (var boundary = 1; boundary < layout.GridRows; boundary++)
         {
             var start = -1;
+            var previousTop = 0;
+            var previousBottom = 0;
             for (var x = 0; x < layout.GridColumns; x++)
             {
-                var isActive = cells[boundary - 1, x] != cells[boundary, x];
+                var top = cells[boundary - 1, x];
+                var bottom = cells[boundary, x];
+                var isActive = top != bottom;
                 if (isActive && start < 0)
                 {
                     start = x;
+                    previousTop = top;
+                    previousBottom = bottom;
+                }
+                else if (isActive && ShouldStartNewSegment(previousTop, previousBottom, top, bottom))
+                {
+                    segments.Add(new LayoutEditorSplitterSegment(boundary, start, x - start));
+                    start = x;
+                    previousTop = top;
+                    previousBottom = bottom;
                 }
                 else if (!isActive && start >= 0)
                 {
                     segments.Add(new LayoutEditorSplitterSegment(boundary, start, x - start));
                     start = -1;
+                }
+                else if (isActive)
+                {
+                    previousTop = top;
+                    previousBottom = bottom;
                 }
             }
 
@@ -74,6 +110,18 @@ public static class LayoutEditorGridGeometry
         }
 
         return segments;
+    }
+
+    private static bool ShouldStartNewSegment(
+        int previousLeadingZoneId,
+        int previousTrailingZoneId,
+        int leadingZoneId,
+        int trailingZoneId)
+    {
+        return previousLeadingZoneId != leadingZoneId
+               && previousLeadingZoneId != trailingZoneId
+               && previousTrailingZoneId != leadingZoneId
+               && previousTrailingZoneId != trailingZoneId;
     }
 
     private static int[,] CreateCells(LayoutPreset layout)

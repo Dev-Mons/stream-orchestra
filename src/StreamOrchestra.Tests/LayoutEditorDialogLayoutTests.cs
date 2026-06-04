@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using StreamOrchestra.App.Views;
 
 namespace StreamOrchestra.Tests;
 
@@ -35,8 +36,10 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.NotNull(FindElementByName(document, "LayoutSummaryTextBlock"));
         Assert.NotNull(FindElementByName(document, "UnsavedIndicator"));
         Assert.NotNull(FindElementByName(document, "SelectionInfoTextBlock"));
-        Assert.Equal("VerticalSplitButton_Click", GetAttribute(FindElementByName(document, "VerticalSplitButton"), "Click"));
-        Assert.Equal("HorizontalSplitButton_Click", GetAttribute(FindElementByName(document, "HorizontalSplitButton"), "Click"));
+        Assert.Null(FindElementByNameOrDefault(document, "VerticalSplitButton"));
+        Assert.Null(FindElementByNameOrDefault(document, "HorizontalSplitButton"));
+        Assert.Equal("HorizontalAlignButton_Click", GetAttribute(FindElementByName(document, "HorizontalAlignButton"), "Click"));
+        Assert.Equal("VerticalAlignButton_Click", GetAttribute(FindElementByName(document, "VerticalAlignButton"), "Click"));
         Assert.Equal("RemoveSelectedSlotButton_Click", GetAttribute(FindElementByName(document, "RemoveSelectedSlotButton"), "Click"));
         Assert.Equal("MergeSelectedZonesButton_Click", GetAttribute(FindElementByName(document, "MergeSelectedZonesButton"), "Click"));
         Assert.Equal("ResetZoneSizeButton_Click", GetAttribute(FindElementByName(document, "ResetZoneSizeButton"), "Click"));
@@ -199,6 +202,108 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.Equal(columnWeights[0], columnWeights[1], 3);
     }
 
+    [Fact]
+    public void TryApplyLocalizedColumnResize_AddsBoundaryForDraggedSegmentOnly()
+    {
+        var method = typeof(StreamOrchestra.App.Views.LayoutEditorDialog).GetMethod(
+            "TryApplyLocalizedColumnResize",
+            System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var cells = new int[2, 2] { { 1, 2 }, { 3, 4 } };
+        object?[] parameters =
+        [
+            cells,
+            new[] { 1d, 1d },
+            new LayoutEditorSplitterSegment(Boundary: 1, Start: 0, Span: 1),
+            0.4d,
+            null,
+            null
+        ];
+
+        var applied = (bool)method!.Invoke(null, parameters)!;
+        var nextCells = (int[,])parameters[4]!;
+        var nextColumnWeights = (double[])parameters[5]!;
+
+        Assert.True(applied);
+        AssertCellsEqual(new int[2, 3] { { 1, 1, 2 }, { 3, 4, 4 } }, nextCells);
+        Assert.Equal([1d, 0.4d, 0.6d], nextColumnWeights, new RoundedDoubleComparer(3));
+    }
+
+    [Fact]
+    public void TryApplyLocalizedColumnResize_UsesSmallDragDeltaWithoutMinimumJump()
+    {
+        var method = typeof(StreamOrchestra.App.Views.LayoutEditorDialog).GetMethod(
+            "TryApplyLocalizedColumnResize",
+            System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var cells = new int[2, 2] { { 1, 2 }, { 3, 4 } };
+        object?[] parameters =
+        [
+            cells,
+            new[] { 1d, 1d },
+            new LayoutEditorSplitterSegment(Boundary: 1, Start: 0, Span: 1),
+            0.05d,
+            null,
+            null
+        ];
+
+        var applied = (bool)method!.Invoke(null, parameters)!;
+        var nextColumnWeights = (double[])parameters[5]!;
+
+        Assert.True(applied);
+        Assert.Equal([1d, 0.05d, 0.95d], nextColumnWeights, new RoundedDoubleComparer(3));
+    }
+
+    [Fact]
+    public void TryApplyWeightDelta_AllowsIndependentTrackBelowLegacyMinimum()
+    {
+        var method = typeof(StreamOrchestra.App.Views.LayoutEditorDialog).GetMethod(
+            "TryApplyWeightDelta",
+            System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var weights = new[] { 1d, 0.4d, 0.6d };
+
+        var applied = (bool)method!.Invoke(null, [weights, new[] { 1 }, new[] { 2 }, -0.35d])!;
+
+        Assert.True(applied);
+        Assert.Equal([1d, 0.05d, 0.95d], weights, new RoundedDoubleComparer(3));
+    }
+
+    [Fact]
+    public void TryApplyLocalizedRowResize_AddsBoundaryForDraggedSegmentOnly()
+    {
+        var method = typeof(StreamOrchestra.App.Views.LayoutEditorDialog).GetMethod(
+            "TryApplyLocalizedRowResize",
+            System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var cells = new int[2, 2] { { 1, 2 }, { 3, 4 } };
+        object?[] parameters =
+        [
+            cells,
+            new[] { 1d, 1d },
+            new LayoutEditorSplitterSegment(Boundary: 1, Start: 0, Span: 1),
+            0.4d,
+            null,
+            null
+        ];
+
+        var applied = (bool)method!.Invoke(null, parameters)!;
+        var nextCells = (int[,])parameters[4]!;
+        var nextRowWeights = (double[])parameters[5]!;
+
+        Assert.True(applied);
+        AssertCellsEqual(new int[3, 2] { { 1, 2 }, { 1, 4 }, { 3, 4 } }, nextCells);
+        Assert.Equal([1d, 0.4d, 0.6d], nextRowWeights, new RoundedDoubleComparer(3));
+    }
+
     private static XDocument LoadLayoutEditorDialogDocument()
     {
         var path = Path.GetFullPath(Path.Combine(
@@ -256,5 +361,26 @@ public sealed class LayoutEditorDialogLayoutTests
             .Attributes()
             .FirstOrDefault(attribute => attribute.Name.LocalName == name)
             ?.Value;
+    }
+
+    private static void AssertCellsEqual(int[,] expected, int[,] actual)
+    {
+        Assert.Equal(expected.GetLength(0), actual.GetLength(0));
+        Assert.Equal(expected.GetLength(1), actual.GetLength(1));
+
+        for (var y = 0; y < expected.GetLength(0); y++)
+        {
+            for (var x = 0; x < expected.GetLength(1); x++)
+            {
+                Assert.Equal(expected[y, x], actual[y, x]);
+            }
+        }
+    }
+
+    private sealed class RoundedDoubleComparer(int digits) : IEqualityComparer<double>
+    {
+        public bool Equals(double x, double y) => Math.Round(x, digits) == Math.Round(y, digits);
+
+        public int GetHashCode(double obj) => Math.Round(obj, digits).GetHashCode();
     }
 }

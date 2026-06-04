@@ -319,6 +319,16 @@ public sealed class LayoutPresetService
             throw new InvalidOperationException($"Layout {layout.Id} contains duplicate slot {slot.SlotId}.");
         }
 
+        if (LayoutSlotBoundsCalculator.HasExplicitBounds(slot))
+        {
+            if (!LayoutSlotBoundsCalculator.IsValidExplicitBounds(slot))
+            {
+                throw new InvalidOperationException($"Layout {layout.Id} slot {slot.SlotId} has invalid bounds.");
+            }
+
+            return;
+        }
+
         if (slot.X < 0 || slot.Y < 0 || slot.W <= 0 || slot.H <= 0)
         {
             throw new InvalidOperationException($"Layout {layout.Id} slot {slot.SlotId} has invalid coordinates.");

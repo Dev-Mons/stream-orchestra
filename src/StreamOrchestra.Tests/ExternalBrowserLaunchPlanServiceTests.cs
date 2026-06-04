@@ -363,6 +363,62 @@ public sealed class ExternalBrowserLaunchPlanServiceTests
     }
 
     [Fact]
+    public void CreatePlan_IncludesExplicitNormalizedWindowLayout()
+    {
+        var service = new ExternalBrowserLaunchPlanService();
+        var workspace = new WorkspacePreset
+        {
+            Id = "workspace_independent",
+            Name = "Independent",
+            LayoutId = "layout_independent",
+            Slots =
+            [
+                new WorkspaceSlot
+                {
+                    SlotId = 2,
+                    StreamName = "Side",
+                    StreamUrl = "https://example.com/side",
+                    ProfileGroupId = "B"
+                }
+            ]
+        };
+        var layouts = new[]
+        {
+            new LayoutPreset
+            {
+                Id = "layout_independent",
+                Name = "Independent",
+                GridColumns = 1,
+                GridRows = 1,
+                Slots =
+                [
+                    new LayoutSlot
+                    {
+                        SlotId = 2,
+                        X = 0,
+                        Y = 0,
+                        W = 1,
+                        H = 1,
+                        Left = 0.42,
+                        Top = 0.16,
+                        Width = 0.33,
+                        Height = 0.71
+                    }
+                ]
+            }
+        };
+
+        var plan = service.CreatePlan(workspace, [CreateBrowser("edge", "Edge")], "C:\\Data", layouts);
+
+        var slot = Assert.Single(plan.Slots);
+        Assert.NotNull(slot.WindowLayout);
+        Assert.Equal(0.42, slot.WindowLayout.LeftRatio);
+        Assert.Equal(0.16, slot.WindowLayout.TopRatio);
+        Assert.Equal(0.33, slot.WindowLayout.WidthRatio);
+        Assert.Equal(0.71, slot.WindowLayout.HeightRatio);
+    }
+
+    [Fact]
     public void CreatePlan_ToleratesMalformedLayoutEntries()
     {
         var service = new ExternalBrowserLaunchPlanService();

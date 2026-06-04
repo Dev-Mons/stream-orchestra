@@ -120,20 +120,20 @@
                                                VerticalAlignment="Center"
                                                Margin="0,0,12,0" />
                                     <WrapPanel>
-                                        <Button x:Name="VerticalSplitButton"
-                                                Content="⬌ 세로분할"
+                                        <Button x:Name="HorizontalAlignButton"
+                                                Content="↔ 가로 정렬"
                                                 Height="28"
                                                 MinWidth="92"
                                                 Margin="0,0,8,0"
                                                 ToolTipService.ShowOnDisabled="True"
-                                                Click="VerticalSplitButton_Click" />
-                                        <Button x:Name="HorizontalSplitButton"
-                                                Content="⬍ 가로분할"
+                                                Click="HorizontalAlignButton_Click" />
+                                        <Button x:Name="VerticalAlignButton"
+                                                Content="↕ 세로 정렬"
                                                 Height="28"
                                                 MinWidth="92"
                                                 Margin="0,0,8,0"
                                                 ToolTipService.ShowOnDisabled="True"
-                                                Click="HorizontalSplitButton_Click" />
+                                                Click="VerticalAlignButton_Click" />
                                         <Button x:Name="RemoveSelectedSlotButton"
                                                 Content="✕ 슬롯 제거"
                                                 Height="28"
