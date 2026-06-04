@@ -85,6 +85,9 @@ public partial class StreamSlotView : UserControl
     /// <summary>슬롯 위의 제거 버튼이 클릭됨(화면 제거 요청).</summary>
     public event Action<StreamSlotView>? RemoveSlotRequested;
 
+    /// <summary>SOOP이 같은 프로필의 동시 재생 개수 초과 경고를 표시함.</summary>
+    public event Action<StreamSlotView>? SoopPlaybackLimitDetected;
+
     /// <summary>WebView2 콘텐츠에서 키 상태가 바뀜(가상 키 코드, 눌림 여부). 어떤 동작에 매핑됐는지는 호스트가 결정한다.</summary>
     public event Action<int, bool>? KeyStateChanged;
 
@@ -127,13 +130,19 @@ public partial class StreamSlotView : UserControl
     {
         _hasExplicitStreamName = false;
 
-        if (_isInitialized)
+        UpdateCurrentLocation("about:blank", "Empty");
+        if (!_isInitialized)
         {
-            await NavigateAsync("about:blank");
             return;
         }
 
-        UpdateCurrentLocation("about:blank", "Empty");
+        await EnsureInitializedAsync();
+        await NavigateAndWaitAsync("about:blank", TimeSpan.FromSeconds(3));
+    }
+
+    public async Task StopPlaybackForReplacementAsync()
+    {
+        await ClearAsync();
     }
 
     public async Task<StreamQualityApplyResult> ApplyQualityAsync(string qualityKey)
@@ -345,6 +354,37 @@ public partial class StreamSlotView : UserControl
         _ = ApplyVolumeToWebPageAsync();
     }
 
+    private async Task NavigateAndWaitAsync(string normalizedUrl, TimeSpan timeout)
+    {
+        if (Browser.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var navigationCompleted = new TaskCompletionSource<object?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void Handler(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            navigationCompleted.TrySetResult(null);
+        }
+
+        Browser.CoreWebView2.NavigationCompleted += Handler;
+        try
+        {
+            Browser.CoreWebView2.Navigate(normalizedUrl);
+            await navigationCompleted.Task.WaitAsync(timeout);
+        }
+        catch (TimeoutException)
+        {
+            // about:blank 전환 대기는 SOOP 세션 해제를 돕기 위한 best-effort이다.
+        }
+        finally
+        {
+            Browser.CoreWebView2.NavigationCompleted -= Handler;
+        }
+    }
+
     private void CoreWebView2_SourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
     {
         var currentSource = Browser.Source?.ToString();
@@ -438,6 +478,12 @@ public partial class StreamSlotView : UserControl
                 KeyStateChanged?.Invoke(message.KeyCode, message.Pressed);
             }
 
+            return;
+        }
+
+        if (message.Type.Equals("soop-playback-limit", StringComparison.OrdinalIgnoreCase))
+        {
+            SoopPlaybackLimitDetected?.Invoke(this);
             return;
         }
 
@@ -751,6 +797,7 @@ public partial class StreamSlotView : UserControl
   installStyle();
   window.addEventListener("DOMContentLoaded", installStyle, { once: true });
   applySoopImmersiveMode();
+  installSoopPlaybackLimitDetector();
 
   document.addEventListener("dragover", event => {
     if (!hasStreamUrlData(event.dataTransfer)) {
@@ -1130,6 +1177,61 @@ public partial class StreamSlotView : UserControl
       scheduleSoopFullscreenRetry();
     }, { once: true });
     document.addEventListener("fullscreenchange", requestSoopFullscreenViewport);
+  }
+
+  function installSoopPlaybackLimitDetector() {
+    const host = location.hostname.toLowerCase();
+    if (!isSoopHost(host)) {
+      return;
+    }
+
+    let reported = false;
+    let checkTimer = 0;
+
+    const matchesPlaybackLimitWarning = text => {
+      const compactText = String(text || "").replace(/\s+/g, "");
+      return compactText.includes("초과") && (
+        compactText.includes("방송개수") ||
+        compactText.includes("방송갯수") ||
+        compactText.includes("시청개수") ||
+        compactText.includes("시청갯수") ||
+        compactText.includes("동시시청") ||
+        compactText.includes("동시재생") ||
+        /방송.{0,30}(개수|갯수).{0,30}초과/.test(compactText) ||
+        /초과.{0,30}(방송|시청)/.test(compactText)
+      );
+    };
+
+    const reportIfDetected = () => {
+      checkTimer = 0;
+      if (reported || !document.body) {
+        return;
+      }
+
+      if (!matchesPlaybackLimitWarning(document.body.innerText || "")) {
+        return;
+      }
+
+      reported = true;
+      window.chrome?.webview?.postMessage({ type: "soop-playback-limit" });
+    };
+
+    const scheduleCheck = () => {
+      if (reported || checkTimer !== 0) {
+        return;
+      }
+
+      checkTimer = window.setTimeout(reportIfDetected, 750);
+    };
+
+    scheduleCheck();
+    window.addEventListener("DOMContentLoaded", scheduleCheck, { once: true });
+
+    const target = document.documentElement || document.body;
+    if (target) {
+      const observer = new MutationObserver(scheduleCheck);
+      observer.observe(target, { childList: true, subtree: true, characterData: true });
+    }
   }
 
   function isSoopHost(host) {
