@@ -103,6 +103,13 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.DoesNotContain("RemoveZoneFromHandle", text);
         Assert.DoesNotContain("\"이 슬롯 제거\"", text);
         Assert.Contains("MergeSelectedZones", text);
+        Assert.Contains("CreateBoundaryDeleteContextMenu", text);
+        Assert.Contains("ContextMenu", text);
+        Assert.Contains("MenuItem", text);
+        Assert.Contains("Header = \"삭제\"", text);
+        Assert.Contains("DeleteBoundaryGroupHandle", text);
+        Assert.Contains("DeleteIndividualBoundaryHandle", text);
+        Assert.Contains("TryMergeBoundarySegments", text);
         // A+B 개선: 저장 후 적용/닫기, 미저장 표시, zone 호버 핸들.
         Assert.Contains("SaveAndApplyButton_Click", text);
         Assert.Contains("CloseButton_Click", text);

@@ -702,6 +702,11 @@ public partial class LayoutEditorDialog : Window
             foreach (var handle in LayoutEditorBoundaryGeometry.CreateIndividualHandles(slots))
             {
                 var thumb = CreateBoundaryHandle(handle.Direction, isIndividualHandle: true);
+                thumb.ContextMenu = CreateBoundaryDeleteContextMenu((_, e) =>
+                {
+                    e.Handled = true;
+                    DeleteIndividualBoundaryHandle(thumb);
+                });
                 thumb.DragDelta += IndividualBoundaryHandle_DragDelta;
                 thumb.DragCompleted += BoundaryHandle_DragCompleted;
                 _editorCanvas.Children.Add(thumb);
@@ -713,6 +718,11 @@ public partial class LayoutEditorDialog : Window
             foreach (var group in LayoutEditorBoundaryGeometry.CreateBoundaryGroups(slots))
             {
                 var thumb = CreateBoundaryHandle(group.Direction, isIndividualHandle: false);
+                thumb.ContextMenu = CreateBoundaryDeleteContextMenu((_, e) =>
+                {
+                    e.Handled = true;
+                    DeleteBoundaryGroupHandle(thumb);
+                });
                 thumb.DragDelta += BoundaryGroupHandle_DragDelta;
                 thumb.DragCompleted += BoundaryHandle_DragCompleted;
                 _editorCanvas.Children.Add(thumb);
@@ -895,6 +905,18 @@ public partial class LayoutEditorDialog : Window
                 : "공유 경계 그룹 조정",
             Template = CreateBoundaryHandleTemplate(isVertical ? "||" : "=")
         };
+    }
+
+    private static ContextMenu CreateBoundaryDeleteContextMenu(RoutedEventHandler deleteHandler)
+    {
+        var menu = new ContextMenu();
+        var deleteItem = new MenuItem
+        {
+            Header = "삭제"
+        };
+        deleteItem.Click += deleteHandler;
+        menu.Items.Add(deleteItem);
+        return menu;
     }
 
     private static ControlTemplate CreateSplitterTemplate()
@@ -1174,6 +1196,59 @@ public partial class LayoutEditorDialog : Window
         DialogStatusTextBlock.Text = _isIndividualBoundaryMode
             ? "개별 공유 경계를 조정했습니다."
             : "공유 경계 그룹을 조정했습니다.";
+    }
+
+    private void DeleteBoundaryGroupHandle(Thumb thumb)
+    {
+        var handleIndex = _editorBoundaryGroupHandles.FindIndex(item => ReferenceEquals(item.Thumb, thumb));
+        if (handleIndex < 0 ||
+            !TryResolveCurrentGroup(_editorBoundaryGroupHandles[handleIndex].Group, out var currentGroup))
+        {
+            DialogStatusTextBlock.Text = "이 경계는 병합할 수 없습니다.";
+            return;
+        }
+
+        DeleteBoundarySegments(currentGroup.Segments);
+    }
+
+    private void DeleteIndividualBoundaryHandle(Thumb thumb)
+    {
+        var handleIndex = _editorIndividualBoundaryHandles.FindIndex(item => ReferenceEquals(item.Thumb, thumb));
+        if (handleIndex < 0 ||
+            !TryResolveCurrentSegment(_editorIndividualBoundaryHandles[handleIndex].Segment, out var currentSegment))
+        {
+            DialogStatusTextBlock.Text = "이 경계는 병합할 수 없습니다.";
+            return;
+        }
+
+        DeleteBoundarySegments([currentSegment]);
+    }
+
+    private void DeleteBoundarySegments(IReadOnlyList<LayoutEditorBoundarySegment> segments)
+    {
+        var merged = LayoutEditorBoundaryGeometry.TryMergeBoundarySegments(
+            ToBoundarySlots(_editorSlots),
+            segments,
+            out var nextSlots,
+            out var mergedSlotIds);
+        if (!merged)
+        {
+            DialogStatusTextBlock.Text = "이 경계는 병합할 수 없습니다.";
+            return;
+        }
+
+        _editorSlots = nextSlots.Select(ToEditorSlot).ToList();
+        _selectedZoneIds.Clear();
+        foreach (var slotId in mergedSlotIds)
+        {
+            _selectedZoneIds.Add(slotId);
+        }
+
+        _hasUnsavedEdits = true;
+        RefreshZoneEditorSurface();
+        DialogStatusTextBlock.Text = mergedSlotIds.Count == 1
+            ? "공유 경계를 삭제하고 슬롯을 병합했습니다."
+            : "공유 경계를 삭제하고 슬롯들을 병합했습니다.";
     }
 
     private bool TryResolveCurrentGroup(

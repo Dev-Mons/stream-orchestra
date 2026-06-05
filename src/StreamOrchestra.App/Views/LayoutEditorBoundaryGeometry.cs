@@ -89,6 +89,100 @@ public static class LayoutEditorBoundaryGeometry
         return true;
     }
 
+    public static bool TryMergeBoundarySegments(
+        IReadOnlyList<LayoutEditorSlotBounds> slots,
+        IReadOnlyList<LayoutEditorBoundarySegment> activeSegments,
+        out IReadOnlyList<LayoutEditorSlotBounds> nextSlots,
+        out IReadOnlyList<int> mergedSlotIds)
+    {
+        nextSlots = slots.ToArray();
+        mergedSlotIds = [];
+        if (slots.Count == 0 ||
+            activeSegments.Count == 0 ||
+            activeSegments.Any(segment => segment.Direction != activeSegments[0].Direction))
+        {
+            return false;
+        }
+
+        var slotsById = slots.ToDictionary(slot => slot.SlotId);
+        var currentSegments = CreateSharedBoundarySegments(slots);
+        var normalizedSegments = new List<LayoutEditorBoundarySegment>();
+        foreach (var segment in activeSegments)
+        {
+            if (!slotsById.ContainsKey(segment.NegativeSideSlotId) ||
+                !slotsById.ContainsKey(segment.PositiveSideSlotId) ||
+                !TryFindMatchingSegment(currentSegments, segment, out var currentSegment))
+            {
+                return false;
+            }
+
+            if (!normalizedSegments.Any(candidate => IsSameSegment(candidate, currentSegment)))
+            {
+                normalizedSegments.Add(currentSegment);
+            }
+        }
+
+        var componentSlotIds = normalizedSegments
+            .SelectMany(segment => new[] { segment.NegativeSideSlotId, segment.PositiveSideSlotId })
+            .Distinct()
+            .ToArray();
+        if (componentSlotIds.Length < 2)
+        {
+            return false;
+        }
+
+        var parents = componentSlotIds.ToDictionary(slotId => slotId);
+        foreach (var segment in normalizedSegments)
+        {
+            Union(parents, segment.NegativeSideSlotId, segment.PositiveSideSlotId);
+        }
+
+        var components = componentSlotIds
+            .GroupBy(slotId => FindParent(parents, slotId))
+            .Select(group => group.Order().ToHashSet())
+            .OrderBy(component => component.Min())
+            .ToArray();
+        if (components.Length == 0 ||
+            components.Any(component => component.Count < 2))
+        {
+            return false;
+        }
+
+        var removedSlotIds = new HashSet<int>();
+        var mergedSlots = new List<LayoutEditorSlotBounds>();
+        foreach (var component in components)
+        {
+            if (!TryCreateMergedSlot(slots, component, out var mergedSlot))
+            {
+                return false;
+            }
+
+            foreach (var slotId in component)
+            {
+                removedSlotIds.Add(slotId);
+            }
+
+            mergedSlots.Add(mergedSlot);
+        }
+
+        var candidateSlots = slots
+            .Where(slot => !removedSlotIds.Contains(slot.SlotId))
+            .Concat(mergedSlots)
+            .OrderBy(slot => slot.SlotId)
+            .ToArray();
+        if (!ValidateSlots(candidateSlots))
+        {
+            return false;
+        }
+
+        nextSlots = candidateSlots;
+        mergedSlotIds = mergedSlots
+            .Select(slot => slot.SlotId)
+            .Order()
+            .ToArray();
+        return true;
+    }
+
     public static bool TryAlignSlotLine(
         IReadOnlyList<LayoutEditorSlotBounds> slots,
         int selectedSlotId,
@@ -930,6 +1024,56 @@ public static class LayoutEditorBoundaryGeometry
         return first.Direction == second.Direction &&
                first.NegativeSideSlotId == second.NegativeSideSlotId &&
                first.PositiveSideSlotId == second.PositiveSideSlotId;
+    }
+
+    private static bool TryFindMatchingSegment(
+        IReadOnlyList<LayoutEditorBoundarySegment> candidates,
+        LayoutEditorBoundarySegment target,
+        out LayoutEditorBoundarySegment matchingSegment)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (IsSameSegment(candidate, target))
+            {
+                matchingSegment = candidate;
+                return true;
+            }
+        }
+
+        matchingSegment = default;
+        return false;
+    }
+
+    private static void Union(Dictionary<int, int> parents, int first, int second)
+    {
+        var firstParent = FindParent(parents, first);
+        var secondParent = FindParent(parents, second);
+        if (firstParent == secondParent)
+        {
+            return;
+        }
+
+        if (firstParent < secondParent)
+        {
+            parents[secondParent] = firstParent;
+        }
+        else
+        {
+            parents[firstParent] = secondParent;
+        }
+    }
+
+    private static int FindParent(Dictionary<int, int> parents, int slotId)
+    {
+        var parent = parents[slotId];
+        if (parent == slotId)
+        {
+            return parent;
+        }
+
+        var root = FindParent(parents, parent);
+        parents[slotId] = root;
+        return root;
     }
 
     private static bool SpansOverlap(double firstStart, double firstEnd, double secondStart, double secondEnd)
