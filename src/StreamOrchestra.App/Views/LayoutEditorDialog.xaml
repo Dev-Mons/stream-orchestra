@@ -134,13 +134,6 @@
                                                 Margin="0,0,8,0"
                                                 ToolTipService.ShowOnDisabled="True"
                                                 Click="VerticalAlignButton_Click" />
-                                        <Button x:Name="RemoveSelectedSlotButton"
-                                                Content="✕ 슬롯 제거"
-                                                Height="28"
-                                                MinWidth="92"
-                                                Margin="0,0,8,0"
-                                                ToolTipService.ShowOnDisabled="True"
-                                                Click="RemoveSelectedSlotButton_Click" />
                                         <Button x:Name="MergeSelectedZonesButton"
                                                 Content="⛶ 선택 병합"
                                                 Height="28"

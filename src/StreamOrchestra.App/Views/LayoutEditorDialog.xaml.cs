@@ -200,11 +200,6 @@ public partial class LayoutEditorDialog : Window
         AlignSelectedLine(LayoutEditorLineAlignment.Vertical);
     }
 
-    private void RemoveSelectedSlotButton_Click(object sender, RoutedEventArgs e)
-    {
-        RemoveSelectedZone();
-    }
-
     private void MergeSelectedZonesButton_Click(object sender, RoutedEventArgs e)
     {
         MergeSelectedZones();
@@ -415,27 +410,6 @@ public partial class LayoutEditorDialog : Window
         _rowWeights = InsertSplitWeight(_rowWeights, insertY);
     }
 
-    private void RemoveSelectedZone()
-    {
-        if (!TryGetSingleSelectedEditorSlot("제거할 슬롯을 선택하세요.", out var selectedSlot))
-        {
-            return;
-        }
-
-        if (_editorSlots.Count <= 1)
-        {
-            DialogStatusTextBlock.Text = "마지막 슬롯은 제거할 수 없습니다.";
-            return;
-        }
-
-        _editorSlots.RemoveAll(slot => slot.SlotId == selectedSlot.SlotId);
-        _selectedZoneIds.Clear();
-        _selectedZoneIds.Add(_editorSlots.OrderBy(slot => slot.SlotId).First().SlotId);
-        _hasUnsavedEdits = true;
-        RefreshZoneEditorSurface();
-        DialogStatusTextBlock.Text = "선택 슬롯을 제거했습니다.";
-    }
-
     private void MergeSelectedZones()
     {
         if (_selectedZoneIds.Count < 2)
@@ -453,16 +427,20 @@ public partial class LayoutEditorDialog : Window
             return;
         }
 
-        var targetZoneId = _selectedZoneIds.Min();
-        var left = selectedSlots.Min(slot => slot.Left);
-        var top = selectedSlots.Min(slot => slot.Top);
-        var right = selectedSlots.Max(slot => slot.Left + slot.Width);
-        var bottom = selectedSlots.Max(slot => slot.Top + slot.Height);
+        if (!LayoutEditorBoundaryGeometry.TryCreateMergedSlot(
+                ToBoundarySlots(_editorSlots),
+                _selectedZoneIds,
+                out var mergedSlot))
+        {
+            DialogStatusTextBlock.Text = "병합은 빈틈 없는 직사각형을 이루는 인접 슬롯끼리만 가능합니다.";
+            return;
+        }
+
         _editorSlots.RemoveAll(slot => _selectedZoneIds.Contains(slot.SlotId));
-        _editorSlots.Add(new EditorSlotBounds(targetZoneId, left, top, right - left, bottom - top));
+        _editorSlots.Add(ToEditorSlot(mergedSlot));
 
         _selectedZoneIds.Clear();
-        _selectedZoneIds.Add(targetZoneId);
+        _selectedZoneIds.Add(mergedSlot.SlotId);
         _hasUnsavedEdits = true;
         RefreshZoneEditorSurface();
         DialogStatusTextBlock.Text = "선택한 슬롯을 병합했습니다.";
@@ -621,11 +599,7 @@ public partial class LayoutEditorDialog : Window
             return;
         }
 
-        var zoneCount = GetZoneRects().Count;
-        var columns = Math.Max(1, _zoneCells.GetLength(1));
-        var rows = Math.Max(1, _zoneCells.GetLength(0));
-
-        LayoutSummaryTextBlock.Text = zoneCount > 0 ? $"자유 배치 · 슬롯 {zoneCount}개" : "";
+        LayoutSummaryTextBlock.Text = _editorSlots.Count > 0 ? $"자유 배치 · 슬롯 {_editorSlots.Count}개" : "";
         UnsavedIndicator.Visibility = _hasUnsavedEdits ? Visibility.Visible : Visibility.Collapsed;
 
         var selectionCount = _selectedZoneIds.Count;
@@ -643,10 +617,6 @@ public partial class LayoutEditorDialog : Window
             VerticalAlignButton,
             !single ? "정렬하려면 기준 슬롯을 하나만 선택하세요." : null,
             "선택 슬롯과 같은 세로 라인의 Y 값을 균등 정렬");
-        SetActionButton(
-            RemoveSelectedSlotButton,
-            !single ? "제거하려면 슬롯을 하나만 선택하세요." : zoneCount <= 1 ? "마지막 한 슬롯은 제거할 수 없습니다." : null,
-            "선택 슬롯을 제거하고 인접 슬롯을 확장");
         SetActionButton(
             MergeSelectedZonesButton,
             selectionCount < 2 ? "Ctrl+클릭으로 슬롯을 둘 이상 선택하세요." : null,
@@ -804,7 +774,7 @@ public partial class LayoutEditorDialog : Window
         return panel;
     }
 
-    // zone 한 칸: 선택용 본체 + 마우스를 올리면 나타나는 분할/제거 핸들.
+    // zone 한 칸: 선택용 본체 + 마우스를 올리면 나타나는 분할 핸들.
     private FrameworkElement CreateZoneElement(int slotId, out TextBlock sizeTextBlock)
     {
         var isSelected = _selectedZoneIds.Contains(slotId);
@@ -826,7 +796,7 @@ public partial class LayoutEditorDialog : Window
             Tag = slotId,
             Cursor = Cursors.Hand,
             Background = Brushes.Transparent,
-            ToolTip = "클릭: 선택 (Ctrl+클릭: 다중 선택) · 마우스를 올리면 분할/제거 핸들이 나타납니다."
+            ToolTip = "클릭: 선택 (Ctrl+클릭: 다중 선택) · 마우스를 올리면 분할 핸들이 나타납니다."
         };
         container.Children.Add(zoneBorder);
         container.Children.Add(handles);
@@ -852,8 +822,6 @@ public partial class LayoutEditorDialog : Window
             () => SplitZoneFromHandle(slotId, SplitAxis.Vertical)));
         panel.Children.Add(CreateHandleButton("⬍", "가로 선 기준 상/하 분할",
             () => SplitZoneFromHandle(slotId, SplitAxis.Horizontal)));
-        panel.Children.Add(CreateHandleButton("✕", "이 슬롯 제거",
-            () => RemoveZoneFromHandle(slotId)));
         return panel;
     }
 
@@ -887,12 +855,6 @@ public partial class LayoutEditorDialog : Window
     {
         SetSingleSelection(slotId);
         SplitSelectedZone(axis);
-    }
-
-    private void RemoveZoneFromHandle(int slotId)
-    {
-        SetSingleSelection(slotId);
-        RemoveSelectedZone();
     }
 
     private void SetSingleSelection(int zoneId)

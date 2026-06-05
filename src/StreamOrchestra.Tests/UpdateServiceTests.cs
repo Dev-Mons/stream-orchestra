@@ -40,6 +40,41 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task RunStartupCheckAsync_IgnoresThrottle()
+    {
+        var checker = new FakeUpdateChecker { NextUpdate = new AvailableUpdate("0.2.0") };
+        var now = DateTimeOffset.Parse("2026-05-28T10:00:00Z");
+        var state = new AutoUpdateState
+        {
+            Enabled = true,
+            LastCheckUtc = now.AddMinutes(-1)
+        };
+        var service = new UpdateService(checker, state, TimeSpan.FromHours(6), () => now);
+
+        var result = await service.RunStartupCheckAsync();
+
+        Assert.Equal(UpdateCheckOutcome.Available, result.Outcome);
+        Assert.Equal(1, checker.CheckCallCount);
+        Assert.Equal(now, service.CurrentState.LastCheckUtc);
+    }
+
+    [Fact]
+    public async Task RunStartupCheckAsync_ReturnsDisabled_WhenAutoUpdateOff()
+    {
+        var checker = new FakeUpdateChecker();
+        var service = new UpdateService(
+            checker,
+            new AutoUpdateState { Enabled = false },
+            UpdateService.DefaultMinimumCheckInterval,
+            () => DateTimeOffset.UtcNow);
+
+        var result = await service.RunStartupCheckAsync();
+
+        Assert.Equal(UpdateCheckOutcome.Disabled, result.Outcome);
+        Assert.Equal(0, checker.CheckCallCount);
+    }
+
+    [Fact]
     public async Task RunAutomaticCheckAsync_ReturnsAvailable_WhenUpdatePresent()
     {
         var checker = new FakeUpdateChecker { NextUpdate = new AvailableUpdate("0.2.0") };

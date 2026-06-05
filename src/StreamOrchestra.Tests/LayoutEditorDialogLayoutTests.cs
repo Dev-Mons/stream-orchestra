@@ -40,7 +40,8 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.Null(FindElementByNameOrDefault(document, "HorizontalSplitButton"));
         Assert.Equal("HorizontalAlignButton_Click", GetAttribute(FindElementByName(document, "HorizontalAlignButton"), "Click"));
         Assert.Equal("VerticalAlignButton_Click", GetAttribute(FindElementByName(document, "VerticalAlignButton"), "Click"));
-        Assert.Equal("RemoveSelectedSlotButton_Click", GetAttribute(FindElementByName(document, "RemoveSelectedSlotButton"), "Click"));
+        Assert.Null(FindElementByNameOrDefault(document, "RemoveSelectedSlotButton"));
+        Assert.Null(FindButtonOrDefault(document, "✕ 슬롯 제거"));
         Assert.Equal("MergeSelectedZonesButton_Click", GetAttribute(FindElementByName(document, "MergeSelectedZonesButton"), "Click"));
         Assert.Equal("ResetZoneSizeButton_Click", GetAttribute(FindElementByName(document, "ResetZoneSizeButton"), "Click"));
         Assert.Null(FindElementByNameOrDefault(document, "DecreaseWidthButton"));
@@ -97,7 +98,10 @@ public sealed class LayoutEditorDialogLayoutTests
         Assert.DoesNotContain("TemplatePreviewHost", text);
         Assert.DoesNotContain("EditorPreviewHost", text);
         Assert.DoesNotContain("CustomLayoutListBox", text);
-        Assert.Contains("RemoveSelectedZone", text);
+        Assert.DoesNotContain("RemoveSelectedZone", text);
+        Assert.DoesNotContain("RemoveSelectedSlotButton_Click", text);
+        Assert.DoesNotContain("RemoveZoneFromHandle", text);
+        Assert.DoesNotContain("\"이 슬롯 제거\"", text);
         Assert.Contains("MergeSelectedZones", text);
         // A+B 개선: 저장 후 적용/닫기, 미저장 표시, zone 호버 핸들.
         Assert.Contains("SaveAndApplyButton_Click", text);

@@ -57,6 +57,16 @@ public sealed class UpdateService
         return await CheckCoreAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public Task<UpdateCheckResult> RunStartupCheckAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_state.Enabled)
+        {
+            return Task.FromResult(new UpdateCheckResult(UpdateCheckOutcome.Disabled, null));
+        }
+
+        return CheckCoreAsync(cancellationToken);
+    }
+
     public Task<UpdateCheckResult> RunManualCheckAsync(CancellationToken cancellationToken = default)
     {
         return CheckCoreAsync(cancellationToken);

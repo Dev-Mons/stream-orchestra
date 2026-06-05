@@ -5,6 +5,88 @@ namespace StreamOrchestra.Tests;
 public sealed class LayoutEditorBoundaryGeometryTests
 {
     [Fact]
+    public void TryCreateMergedSlot_RejectsDiagonalSelection()
+    {
+        var slots = CreateTwoByTwoSlots();
+
+        var merged = LayoutEditorBoundaryGeometry.TryCreateMergedSlot(
+            slots,
+            new HashSet<int> { 1, 4 },
+            out _);
+
+        Assert.False(merged);
+    }
+
+    [Fact]
+    public void TryCreateMergedSlot_AllowsAdjacentSlotsThatFillRectangle()
+    {
+        var slots = CreateTwoByTwoSlots();
+
+        var merged = LayoutEditorBoundaryGeometry.TryCreateMergedSlot(
+            slots,
+            new HashSet<int> { 1, 2 },
+            out var mergedSlot);
+
+        Assert.True(merged);
+        Assert.Equal(1, mergedSlot.SlotId);
+        Assert.Equal(0, mergedSlot.Left, 6);
+        Assert.Equal(0, mergedSlot.Top, 6);
+        Assert.Equal(1, mergedSlot.Width, 6);
+        Assert.Equal(0.5, mergedSlot.Height, 6);
+    }
+
+    [Fact]
+    public void TryCreateMergedSlot_RejectsLShapeSelection()
+    {
+        var slots = CreateTwoByTwoSlots();
+
+        var merged = LayoutEditorBoundaryGeometry.TryCreateMergedSlot(
+            slots,
+            new HashSet<int> { 1, 2, 3 },
+            out _);
+
+        Assert.False(merged);
+    }
+
+    [Fact]
+    public void TryCreateMergedSlot_RejectsAdjacentSlotsWithDifferentHeights()
+    {
+        var slots = new[]
+        {
+            Slot(1, 0, 0, 0.5, 0.6),
+            Slot(2, 0.5, 0, 0.5, 0.4),
+            Slot(3, 0.5, 0.4, 0.5, 0.6),
+            Slot(4, 0, 0.6, 0.5, 0.4)
+        };
+
+        var merged = LayoutEditorBoundaryGeometry.TryCreateMergedSlot(
+            slots,
+            new HashSet<int> { 1, 2 },
+            out _);
+
+        Assert.False(merged);
+    }
+
+    [Fact]
+    public void TryCreateMergedSlot_RejectsAdjacentSlotsWithDifferentWidths()
+    {
+        var slots = new[]
+        {
+            Slot(1, 0, 0, 0.6, 0.5),
+            Slot(2, 0.6, 0, 0.4, 0.5),
+            Slot(3, 0, 0.5, 0.4, 0.5),
+            Slot(4, 0.4, 0.5, 0.6, 0.5)
+        };
+
+        var merged = LayoutEditorBoundaryGeometry.TryCreateMergedSlot(
+            slots,
+            new HashSet<int> { 1, 3 },
+            out _);
+
+        Assert.False(merged);
+    }
+
+    [Fact]
     public void CreateSharedBoundarySegments_ExtractsVerticalAndHorizontalBoundaries()
     {
         var slots = new[]
@@ -359,6 +441,17 @@ public sealed class LayoutEditorBoundaryGeometryTests
             Slot(4, 0, 0.5, column, 0.5),
             Slot(5, column, 0.5, column, 0.5),
             Slot(6, 2 * column, 0.5, column, 0.5)
+        ];
+    }
+
+    private static LayoutEditorSlotBounds[] CreateTwoByTwoSlots()
+    {
+        return
+        [
+            Slot(1, 0, 0, 0.5, 0.5),
+            Slot(2, 0.5, 0, 0.5, 0.5),
+            Slot(3, 0, 0.5, 0.5, 0.5),
+            Slot(4, 0.5, 0.5, 0.5, 0.5)
         ];
     }
 

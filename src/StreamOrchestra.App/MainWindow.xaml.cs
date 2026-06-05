@@ -515,7 +515,7 @@ public partial class MainWindow : Window
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(3));
-            var result = await _updateService.RunAutomaticCheckAsync();
+            var result = await _updateService.RunStartupCheckAsync();
             if (result.Outcome == UpdateCheckOutcome.Available && result.Update is not null)
             {
                 await PromptForUpdateAsync(result.Update);

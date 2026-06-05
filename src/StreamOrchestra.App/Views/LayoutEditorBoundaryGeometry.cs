@@ -46,6 +46,49 @@ public static class LayoutEditorBoundaryGeometry
     public const double GeometryTolerance = 0.000001;
     public const double VisualAlignmentTolerance = 0.003;
 
+    public static bool TryCreateMergedSlot(
+        IReadOnlyList<LayoutEditorSlotBounds> slots,
+        IReadOnlySet<int> selectedSlotIds,
+        out LayoutEditorSlotBounds mergedSlot)
+    {
+        mergedSlot = default;
+        var selectedSlots = slots
+            .Where(slot => selectedSlotIds.Contains(slot.SlotId))
+            .ToArray();
+        if (selectedSlots.Length < 2)
+        {
+            return false;
+        }
+
+        var left = selectedSlots.Min(slot => slot.Left);
+        var top = selectedSlots.Min(slot => slot.Top);
+        var right = selectedSlots.Max(slot => slot.Right);
+        var bottom = selectedSlots.Max(slot => slot.Bottom);
+        var mergedArea = (right - left) * (bottom - top);
+        var selectedArea = selectedSlots.Sum(slot => slot.Width * slot.Height);
+
+        if (Math.Abs(mergedArea - selectedArea) > GeometryTolerance)
+        {
+            return false;
+        }
+
+        foreach (var slot in slots.Where(slot => !selectedSlotIds.Contains(slot.SlotId)))
+        {
+            if (RectanglesOverlap(left, top, right, bottom, slot))
+            {
+                return false;
+            }
+        }
+
+        mergedSlot = new LayoutEditorSlotBounds(
+            selectedSlotIds.Min(),
+            left,
+            top,
+            right - left,
+            bottom - top);
+        return true;
+    }
+
     public static bool TryAlignSlotLine(
         IReadOnlyList<LayoutEditorSlotBounds> slots,
         int selectedSlotId,
@@ -118,6 +161,19 @@ public static class LayoutEditorBoundaryGeometry
 
         nextSlots = candidateSlots;
         return true;
+    }
+
+    private static bool RectanglesOverlap(
+        double left,
+        double top,
+        double right,
+        double bottom,
+        LayoutEditorSlotBounds slot)
+    {
+        return left < slot.Right - GeometryTolerance &&
+               right > slot.Left + GeometryTolerance &&
+               top < slot.Bottom - GeometryTolerance &&
+               bottom > slot.Top + GeometryTolerance;
     }
 
     public static bool TryResetSlotBounds(
