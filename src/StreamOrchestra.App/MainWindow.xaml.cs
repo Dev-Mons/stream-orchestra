@@ -18,6 +18,10 @@ namespace StreamOrchestra.App;
 public partial class MainWindow : Window
 {
     private const int KeyPressedMask = 0x8000;
+    private static readonly TimeSpan SoopSlotReplacementReleaseDelay = TimeSpan.FromMilliseconds(900);
+    private static readonly TimeSpan SoopGroupRecoveryReleaseDelay = TimeSpan.FromMilliseconds(1500);
+    private static readonly TimeSpan SoopGroupRecoveryStepDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan SoopGroupRecoveryCooldown = TimeSpan.FromSeconds(30);
 
     // 사이드탭 토글 버튼 아이콘: 열린 상태에선 닫기(close), 닫힌 상태에선 열기(open) 아이콘을 표시한다.
     private static readonly ImageSource SidebarCloseIcon =
@@ -53,6 +57,8 @@ public partial class MainWindow : Window
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
     private readonly LayoutCardPresenter _layoutCardPresenter = new();
+    private readonly Dictionary<string, DateTimeOffset> _lastSoopLimitRecoveryByGroup = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _recoveringSoopLimitGroups = new(StringComparer.OrdinalIgnoreCase);
     private LayoutCardMode _layoutCardMode = LayoutCardMode.Add;
     private bool _isExplorerPanelVisible = true;
     private GridLength _lastExplorerColumnWidth = new(360);
@@ -233,6 +239,7 @@ public partial class MainWindow : Window
             slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
             slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
             slotView.RemoveSlotRequested += SlotView_RemoveSlotRequested;
+            slotView.SoopPlaybackLimitDetected += SlotView_SoopPlaybackLimitDetected;
             slotView.KeyStateChanged += OnSlotKeyStateChanged;
             slotView.SwapDragCompleted += ReconcileSwapModeWithKeyboardState;
             _slots.Add(slotView);
@@ -634,6 +641,11 @@ public partial class MainWindow : Window
     private void SlotView_RemoveSlotRequested(StreamSlotView slot)
     {
         ToggleRemoveScreen(slot);
+    }
+
+    private void SlotView_SoopPlaybackLimitDetected(StreamSlotView slot)
+    {
+        _ = RecoverSoopProfileGroupAsync(slot);
     }
 
     private void ToggleRemoveScreen(StreamSlotView slot)
@@ -1594,9 +1606,115 @@ public partial class MainWindow : Window
 
     private async Task NavigateSlotAsync(StreamSlotView slot, string url, string? streamName = null)
     {
+        var normalizedUrl = _streamNavigationService.NormalizeUrl(url);
+        if (normalizedUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            await slot.ClearAsync();
+            return;
+        }
+
+        if (ShouldReleaseSlotBeforeNavigation(slot, normalizedUrl))
+        {
+            await slot.StopPlaybackForReplacementAsync();
+            await Task.Delay(SoopSlotReplacementReleaseDelay);
+        }
+
         await ApplyQualityPolicyToSlotAsync(slot);
 
-        await slot.NavigateAsync(url, streamName);
+        await slot.NavigateAsync(normalizedUrl, streamName);
+    }
+
+    private static bool ShouldReleaseSlotBeforeNavigation(StreamSlotView slot, string normalizedUrl)
+    {
+        return !slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase) &&
+               !normalizedUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase) &&
+               (IsSoopUrl(slot.CurrentUrl) || IsSoopUrl(normalizedUrl));
+    }
+
+    private async Task RecoverSoopProfileGroupAsync(StreamSlotView triggeringSlot)
+    {
+        var groupId = triggeringSlot.ProfileGroupId;
+        if (!_recoveringSoopLimitGroups.Add(groupId))
+        {
+            return;
+        }
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (_lastSoopLimitRecoveryByGroup.TryGetValue(groupId, out var lastRecoveryAt) &&
+                now - lastRecoveryAt < SoopGroupRecoveryCooldown)
+            {
+                StatusTextBlock.Text = $"SOOP 방송 개수 경고 감지: Group {groupId} 복구 쿨다운 중입니다.";
+                return;
+            }
+
+            _lastSoopLimitRecoveryByGroup[groupId] = now;
+
+            var visibleSlotIds = _selectedLayout is { } layout
+                ? layout.Slots.Select(slot => slot.SlotId).ToHashSet()
+                : _slots.Select(slot => slot.SlotId).ToHashSet();
+            var groupSlots = _slots
+                .Where(slot => slot.ProfileGroupId.Equals(groupId, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(slot => slot.SlotId)
+                .ToArray();
+            var slotsToRestore = groupSlots
+                .Where(slot => visibleSlotIds.Contains(slot.SlotId))
+                .Where(slot => IsSoopUrl(slot.CurrentUrl))
+                .Select(slot => (Slot: slot, Url: slot.CurrentUrl, Name: slot.CurrentStreamName))
+                .ToArray();
+            var slotsToClear = groupSlots
+                .Where(slot => !slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+                .Where(slot => IsSoopUrl(slot.CurrentUrl))
+                .ToArray();
+
+            if (slotsToClear.Length == 0)
+            {
+                return;
+            }
+
+            StatusTextBlock.Text =
+                $"SOOP 방송 개수 경고 감지: Group {groupId} {slotsToRestore.Length}개 화면을 재동기화합니다.";
+
+            foreach (var slot in slotsToClear)
+            {
+                await slot.StopPlaybackForReplacementAsync();
+            }
+
+            await Task.Delay(SoopGroupRecoveryReleaseDelay);
+
+            foreach (var (slot, url, streamName) in slotsToRestore)
+            {
+                await NavigateSlotAsync(slot, url, streamName);
+                await Task.Delay(SoopGroupRecoveryStepDelay);
+            }
+
+            StatusTextBlock.Text =
+                $"SOOP Group {groupId} 재동기화 완료: {slotsToRestore.Length}개 화면을 다시 로드했습니다.";
+            UpdateDiagnostics();
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"SOOP Group {groupId} 재동기화 실패: {ex.Message}";
+        }
+        finally
+        {
+            _recoveringSoopLimitGroups.Remove(groupId);
+        }
+    }
+
+    private static bool IsSoopUrl(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        var host = uri.Host.ToLowerInvariant();
+        return host == "sooplive.co.kr" ||
+               host.EndsWith(".sooplive.co.kr", StringComparison.OrdinalIgnoreCase) ||
+               host == "sooplive.com" ||
+               host.EndsWith(".sooplive.com", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ClearSlotsAsync(IEnumerable<StreamSlotView> slots, string statusPrefix)

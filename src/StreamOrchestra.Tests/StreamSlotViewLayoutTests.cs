@@ -291,6 +291,21 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("isSoopPlaybackModeActive", text);
     }
 
+    [Fact]
+    public void CodeBehind_ReportsSoopPlaybackLimitWarningsToHost()
+    {
+        var path = GetAppViewPath("StreamSlotView.xaml.cs");
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("SoopPlaybackLimitDetected", text);
+        Assert.Contains("installSoopPlaybackLimitDetector", text);
+        Assert.Contains("soop-playback-limit", text);
+        Assert.Contains("방송개수", text);
+        Assert.Contains("동시시청", text);
+        Assert.Contains("StopPlaybackForReplacementAsync", text);
+        Assert.Contains("NavigateAndWaitAsync(\"about:blank\"", text);
+    }
+
     private static XDocument LoadStreamSlotViewDocument()
     {
         return XDocument.Load(GetAppViewPath("StreamSlotView.xaml"));

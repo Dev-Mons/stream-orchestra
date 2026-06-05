@@ -270,6 +270,21 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("_shortcutSettings = _loadedAppState?.Shortcuts", codeBehind);
     }
 
+    [Fact]
+    public void CodeBehind_RecoversEntireSoopProfileGroupAfterPlaybackLimitWarning()
+    {
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+
+        Assert.Contains("SoopPlaybackLimitDetected += SlotView_SoopPlaybackLimitDetected", codeBehind);
+        Assert.Contains("RecoverSoopProfileGroupAsync", codeBehind);
+        Assert.Contains("SoopGroupRecoveryCooldown", codeBehind);
+        Assert.Contains("_recoveringSoopLimitGroups", codeBehind);
+        Assert.Contains("StopPlaybackForReplacementAsync", codeBehind);
+        Assert.Contains("SoopSlotReplacementReleaseDelay", codeBehind);
+        Assert.Contains("ShouldReleaseSlotBeforeNavigation", codeBehind);
+        Assert.Contains("IsSoopUrl", codeBehind);
+    }
+
     private static string GetMainWindowCodeBehindPath()
     {
         return Path.GetFullPath(Path.Combine(
