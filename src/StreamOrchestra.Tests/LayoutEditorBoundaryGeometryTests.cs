@@ -87,6 +87,177 @@ public sealed class LayoutEditorBoundaryGeometryTests
     }
 
     [Fact]
+    public void TryMergeBoundarySegments_HorizontalIndividualHandleMergesAboveAndBelowSlots()
+    {
+        var slots = CreateTwoByTwoSlots();
+        var handle = LayoutEditorBoundaryGeometry
+            .CreateIndividualHandles(slots)
+            .Single(segment =>
+                segment.Direction == LayoutEditorBoundaryDirection.Horizontal &&
+                segment.NegativeSideSlotId == 1 &&
+                segment.PositiveSideSlotId == 3);
+
+        var merged = LayoutEditorBoundaryGeometry.TryMergeBoundarySegments(
+            slots,
+            [handle],
+            out var nextSlots,
+            out var mergedSlotIds);
+
+        Assert.True(merged);
+        Assert.Equal(new[] { 1 }, mergedSlotIds);
+        Assert.Equal(3, nextSlots.Count);
+        Assert.Equal(0, Find(nextSlots, 1).Left, 6);
+        Assert.Equal(0, Find(nextSlots, 1).Top, 6);
+        Assert.Equal(0.5, Find(nextSlots, 1).Width, 6);
+        Assert.Equal(1, Find(nextSlots, 1).Height, 6);
+        Assert.DoesNotContain(nextSlots, slot => slot.SlotId == 3);
+    }
+
+    [Fact]
+    public void TryMergeBoundarySegments_VerticalIndividualHandleMergesLeftAndRightSlots()
+    {
+        var slots = CreateTwoByTwoSlots();
+        var handle = LayoutEditorBoundaryGeometry
+            .CreateIndividualHandles(slots)
+            .Single(segment =>
+                segment.Direction == LayoutEditorBoundaryDirection.Vertical &&
+                segment.NegativeSideSlotId == 1 &&
+                segment.PositiveSideSlotId == 2);
+
+        var merged = LayoutEditorBoundaryGeometry.TryMergeBoundarySegments(
+            slots,
+            [handle],
+            out var nextSlots,
+            out var mergedSlotIds);
+
+        Assert.True(merged);
+        Assert.Equal(new[] { 1 }, mergedSlotIds);
+        Assert.Equal(3, nextSlots.Count);
+        Assert.Equal(0, Find(nextSlots, 1).Left, 6);
+        Assert.Equal(0, Find(nextSlots, 1).Top, 6);
+        Assert.Equal(1, Find(nextSlots, 1).Width, 6);
+        Assert.Equal(0.5, Find(nextSlots, 1).Height, 6);
+        Assert.DoesNotContain(nextSlots, slot => slot.SlotId == 2);
+    }
+
+    [Fact]
+    public void TryMergeBoundarySegments_HorizontalGroupMergesEachBoundaryPair()
+    {
+        var slots = CreateTwoByTwoSlots();
+        var group = LayoutEditorBoundaryGeometry
+            .CreateBoundaryGroups(slots)
+            .Single(item =>
+                item.Direction == LayoutEditorBoundaryDirection.Horizontal &&
+                NearlyEqual(item.Coordinate, 0.5));
+
+        var merged = LayoutEditorBoundaryGeometry.TryMergeBoundarySegments(
+            slots,
+            group.Segments,
+            out var nextSlots,
+            out var mergedSlotIds);
+
+        Assert.True(merged);
+        Assert.Equal(new[] { 1, 2 }, mergedSlotIds);
+        Assert.Equal(2, nextSlots.Count);
+        Assert.Equal(0, Find(nextSlots, 1).Left, 6);
+        Assert.Equal(0, Find(nextSlots, 1).Top, 6);
+        Assert.Equal(0.5, Find(nextSlots, 1).Width, 6);
+        Assert.Equal(1, Find(nextSlots, 1).Height, 6);
+        Assert.Equal(0.5, Find(nextSlots, 2).Left, 6);
+        Assert.Equal(0, Find(nextSlots, 2).Top, 6);
+        Assert.Equal(0.5, Find(nextSlots, 2).Width, 6);
+        Assert.Equal(1, Find(nextSlots, 2).Height, 6);
+    }
+
+    [Fact]
+    public void TryMergeBoundarySegments_VerticalGroupMergesEachBoundaryPair()
+    {
+        var slots = CreateTwoByTwoSlots();
+        var group = LayoutEditorBoundaryGeometry
+            .CreateBoundaryGroups(slots)
+            .Single(item =>
+                item.Direction == LayoutEditorBoundaryDirection.Vertical &&
+                NearlyEqual(item.Coordinate, 0.5));
+
+        var merged = LayoutEditorBoundaryGeometry.TryMergeBoundarySegments(
+            slots,
+            group.Segments,
+            out var nextSlots,
+            out var mergedSlotIds);
+
+        Assert.True(merged);
+        Assert.Equal(new[] { 1, 3 }, mergedSlotIds);
+        Assert.Equal(2, nextSlots.Count);
+        Assert.Equal(0, Find(nextSlots, 1).Left, 6);
+        Assert.Equal(0, Find(nextSlots, 1).Top, 6);
+        Assert.Equal(1, Find(nextSlots, 1).Width, 6);
+        Assert.Equal(0.5, Find(nextSlots, 1).Height, 6);
+        Assert.Equal(0, Find(nextSlots, 3).Left, 6);
+        Assert.Equal(0.5, Find(nextSlots, 3).Top, 6);
+        Assert.Equal(1, Find(nextSlots, 3).Width, 6);
+        Assert.Equal(0.5, Find(nextSlots, 3).Height, 6);
+    }
+
+    [Fact]
+    public void TryMergeBoundarySegments_AllowsConnectedComponentThatFillsRectangle()
+    {
+        var slots = new[]
+        {
+            Slot(1, 0, 0, 1, 0.5),
+            Slot(2, 0, 0.5, 0.5, 0.5),
+            Slot(3, 0.5, 0.5, 0.5, 0.5)
+        };
+        var group = LayoutEditorBoundaryGeometry
+            .CreateBoundaryGroups(slots)
+            .Single(item =>
+                item.Direction == LayoutEditorBoundaryDirection.Horizontal &&
+                NearlyEqual(item.Coordinate, 0.5));
+
+        var merged = LayoutEditorBoundaryGeometry.TryMergeBoundarySegments(
+            slots,
+            group.Segments,
+            out var nextSlots,
+            out var mergedSlotIds);
+
+        Assert.True(merged);
+        Assert.Equal(new[] { 1 }, mergedSlotIds);
+        var mergedSlot = Assert.Single(nextSlots);
+        Assert.Equal(1, mergedSlot.SlotId);
+        Assert.Equal(0, mergedSlot.Left, 6);
+        Assert.Equal(0, mergedSlot.Top, 6);
+        Assert.Equal(1, mergedSlot.Width, 6);
+        Assert.Equal(1, mergedSlot.Height, 6);
+    }
+
+    [Fact]
+    public void TryMergeBoundarySegments_RejectsConnectedComponentThatDoesNotFillRectangle()
+    {
+        var slots = new[]
+        {
+            Slot(1, 0, 0, 0.75, 0.5),
+            Slot(2, 0, 0.5, 0.5, 0.5),
+            Slot(3, 0.5, 0.5, 0.25, 0.25),
+            Slot(4, 0.5, 0.75, 0.25, 0.25),
+            Slot(5, 0.75, 0, 0.25, 1)
+        };
+        var group = LayoutEditorBoundaryGeometry
+            .CreateBoundaryGroups(slots)
+            .Single(item =>
+                item.Direction == LayoutEditorBoundaryDirection.Horizontal &&
+                NearlyEqual(item.Coordinate, 0.5));
+
+        var merged = LayoutEditorBoundaryGeometry.TryMergeBoundarySegments(
+            slots,
+            group.Segments,
+            out var nextSlots,
+            out var mergedSlotIds);
+
+        Assert.False(merged);
+        Assert.Equal(slots, nextSlots);
+        Assert.Empty(mergedSlotIds);
+    }
+
+    [Fact]
     public void CreateSharedBoundarySegments_ExtractsVerticalAndHorizontalBoundaries()
     {
         var slots = new[]
