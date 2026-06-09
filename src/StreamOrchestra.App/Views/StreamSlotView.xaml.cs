@@ -1,9 +1,12 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Text.Json;
 using System.Windows.Threading;
+using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
@@ -20,6 +23,9 @@ public partial class StreamSlotView : UserControl
     private static readonly Brush RemoveButtonBorder = new SolidColorBrush(Color.FromRgb(243, 246, 250));
     private static readonly Brush SelectedRemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 185, 28, 28));
     private static readonly Brush SelectedRemoveButtonBorder = new SolidColorBrush(Color.FromRgb(252, 165, 165));
+    private const uint SetWindowPosNoSize = 0x0001;
+    private const uint SetWindowPosNoZOrder = 0x0004;
+    private const uint SetWindowPosNoActivate = 0x0010;
 
     // 웹페이지마다 휠 한 칸에 wheel 이벤트를 1~3개씩 발생시켜, 한 번 스크롤에 볼륨이
     // 20~30%씩 바뀌는 버그가 있었다. 한 번의 물리적 스크롤에서 연달아 들어오는 이벤트
@@ -42,6 +48,9 @@ public partial class StreamSlotView : UserControl
     private Point? _slotDragStartPoint;
     private Point? _swapDragStartPoint;
     private long _lastWheelStepTimestamp;
+    private Point? _lastRemovePopupAnchor;
+    private Point? _lastSwapPopupAnchor;
+    private Point? _lastVolumePopupAnchor;
 
     public StreamSlotView(
         SlotConfiguration configuration,
@@ -60,12 +69,15 @@ public partial class StreamSlotView : UserControl
         _volumeOverlayTimer.Tick += (_, _) =>
         {
             VolumeIndicatorPopup.IsOpen = false;
+            _lastVolumePopupAnchor = null;
             _volumeOverlayTimer.Stop();
         };
 
         ProfilePathTextBlock.Text = Configuration.ProfileGroup.UserDataFolder;
 
         Loaded += StreamSlotView_Loaded;
+        SlotBorder.SizeChanged += (_, _) => RefreshOpenOverlayPlacement(force: false);
+        SlotBorder.LayoutUpdated += (_, _) => RefreshOpenOverlayPlacement(force: false);
     }
 
     public event Action<StreamSlotView>? SlotSelected;
@@ -186,22 +198,36 @@ public partial class StreamSlotView : UserControl
     /// <summary>제거 모드(Ctrl 홀드)일 때 이 슬롯 위에 제거 버튼을 표시/숨김.</summary>
     public void SetRemoveModeActive(bool isActive, bool isSelectedForRemoval = false)
     {
+        RemoveSlotPopup.IsOpen = isActive;
         if (isActive)
         {
-            PositionRemoveButtonAtBottomRight();
+            PositionRemoveButtonAtBottomRight(forceRefresh: true);
+            QueueRefreshOpenOverlayPlacement();
         }
 
-        RemoveSlotPopup.IsOpen = isActive;
+        if (!isActive)
+        {
+            _lastRemovePopupAnchor = null;
+        }
+
         SetRemoveButtonSelected(isSelectedForRemoval);
     }
 
     // 제거 버튼 Popup을 슬롯 영역의 오른쪽 하단 모서리에 배치한다(Relative 배치 기준 오프셋).
-    private void PositionRemoveButtonAtBottomRight()
+    private void PositionRemoveButtonAtBottomRight(bool forceRefresh = false)
     {
         RemoveSlotPopup.HorizontalOffset =
             Math.Max(0, SlotBorder.ActualWidth - RemoveSlotButton.Width - RemoveButtonMargin);
         RemoveSlotPopup.VerticalOffset =
             Math.Max(0, SlotBorder.ActualHeight - RemoveSlotButton.Height - RemoveButtonMargin);
+
+        var anchor = GetSlotScreenPoint(RemoveSlotPopup.HorizontalOffset, RemoveSlotPopup.VerticalOffset);
+        if (forceRefresh || HasPointChanged(_lastRemovePopupAnchor, anchor))
+        {
+            _lastRemovePopupAnchor = anchor;
+            NudgePopupPlacement(RemoveSlotPopup);
+            SetPopupScreenPosition(RemoveSlotPopup, anchor);
+        }
     }
 
     private void RemoveSlotButton_Click(object sender, RoutedEventArgs e)
@@ -234,9 +260,15 @@ public partial class StreamSlotView : UserControl
         if (!isActive)
         {
             ResetSwapOverlayHighlight();
+            _lastSwapPopupAnchor = null;
         }
 
         SwapModePopup.IsOpen = isActive;
+        if (isActive)
+        {
+            RefreshCenteredPopupPlacement(SwapModePopup, ref _lastSwapPopupAnchor, forceRefresh: true);
+            QueueRefreshOpenOverlayPlacement();
+        }
     }
 
     // 교체 오버레이에서 드래그 시작 준비(빈 슬롯은 이후 MouseMove에서 드래그를 시작하지 않는다).
@@ -596,9 +628,131 @@ public partial class StreamSlotView : UserControl
     {
         VolumeIndicatorTextBlock.Text = $"볼륨 {volumePercent}%";
         VolumeIndicatorPopup.IsOpen = true;
+        RefreshCenteredPopupPlacement(VolumeIndicatorPopup, ref _lastVolumePopupAnchor, forceRefresh: true);
+        QueueRefreshOpenOverlayPlacement();
         _volumeOverlayTimer.Stop();
         _volumeOverlayTimer.Start();
     }
+
+    public void RefreshOverlayPlacement()
+    {
+        RefreshOpenOverlayPlacement(force: true);
+    }
+
+    private void RefreshOpenOverlayPlacement(bool force)
+    {
+        if (RemoveSlotPopup.IsOpen)
+        {
+            PositionRemoveButtonAtBottomRight(force);
+        }
+
+        if (SwapModePopup.IsOpen)
+        {
+            RefreshCenteredPopupPlacement(SwapModePopup, ref _lastSwapPopupAnchor, force);
+        }
+
+        if (VolumeIndicatorPopup.IsOpen)
+        {
+            RefreshCenteredPopupPlacement(VolumeIndicatorPopup, ref _lastVolumePopupAnchor, force);
+        }
+    }
+
+    private void QueueRefreshOpenOverlayPlacement()
+    {
+        Dispatcher.BeginInvoke(
+            (Action)(() => RefreshOpenOverlayPlacement(force: true)),
+            DispatcherPriority.Render);
+    }
+
+    private void RefreshCenteredPopupPlacement(Popup popup, ref Point? lastAnchor, bool forceRefresh)
+    {
+        var anchor = GetSlotScreenPoint(SlotBorder.ActualWidth / 2, SlotBorder.ActualHeight / 2);
+        if (!forceRefresh && !HasPointChanged(lastAnchor, anchor))
+        {
+            return;
+        }
+
+        lastAnchor = anchor;
+        NudgePopupPlacement(popup);
+        SetPopupScreenPosition(popup, GetCenteredPopupTopLeft(popup, anchor));
+    }
+
+    private Point GetSlotScreenPoint(double x, double y)
+    {
+        return SlotBorder.PointToScreen(new Point(x, y));
+    }
+
+    private static bool HasPointChanged(Point? previous, Point current)
+    {
+        return previous is null ||
+               Math.Abs(previous.Value.X - current.X) > 0.5 ||
+               Math.Abs(previous.Value.Y - current.Y) > 0.5;
+    }
+
+    private static void NudgePopupPlacement(Popup popup)
+    {
+        var offset = popup.HorizontalOffset;
+        popup.HorizontalOffset = offset + 0.01;
+        popup.HorizontalOffset = offset;
+    }
+
+    private Point GetCenteredPopupTopLeft(Popup popup, Point centerScreenPoint)
+    {
+        if (popup.Child is not FrameworkElement child ||
+            child.ActualWidth <= 0 ||
+            child.ActualHeight <= 0)
+        {
+            QueueRefreshOpenOverlayPlacement();
+            return centerScreenPoint;
+        }
+
+        var pixelSize = GetElementPixelSize(child);
+        return new Point(
+            centerScreenPoint.X - pixelSize.Width / 2,
+            centerScreenPoint.Y - pixelSize.Height / 2);
+    }
+
+    private static Size GetElementPixelSize(FrameworkElement element)
+    {
+        var size = new Size(element.ActualWidth, element.ActualHeight);
+        if (PresentationSource.FromVisual(element) is not HwndSource source ||
+            source.CompositionTarget is null)
+        {
+            return size;
+        }
+
+        var transform = source.CompositionTarget.TransformToDevice;
+        return new Size(size.Width * transform.M11, size.Height * transform.M22);
+    }
+
+    private static void SetPopupScreenPosition(Popup popup, Point screenPoint)
+    {
+        if (popup.Child is not { } child ||
+            PresentationSource.FromVisual(child) is not HwndSource source ||
+            source.Handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        SetWindowPos(
+            source.Handle,
+            IntPtr.Zero,
+            (int)Math.Round(screenPoint.X),
+            (int)Math.Round(screenPoint.Y),
+            0,
+            0,
+            SetWindowPosNoSize | SetWindowPosNoZOrder | SetWindowPosNoActivate);
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr hWndInsertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint uFlags);
 
     private async Task ApplyVolumeToWebPageAsync()
     {

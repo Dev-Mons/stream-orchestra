@@ -1,7 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
+using System.Runtime.InteropServices;
 using StreamOrchestra.App.Models;
 
 namespace StreamOrchestra.App.Views;
@@ -34,12 +37,17 @@ public sealed class LayoutCardPresenter
     private static readonly Brush CardBorderHighlight = new SolidColorBrush(Color.FromRgb(243, 246, 250));
     private static readonly Brush PrimaryText = Brushes.White;
     private static readonly Brush SecondaryText = new SolidColorBrush(Color.FromRgb(185, 194, 204));
+    private const uint SetWindowPosNoSize = 0x0001;
+    private const uint SetWindowPosNoZOrder = 0x0004;
+    private const uint SetWindowPosNoActivate = 0x0010;
 
     private readonly Popup _popup;
     private readonly Border _root;
     private readonly StackPanel _cardPanel;
     private readonly TextBlock _title;
     private readonly TextBlock _emptyMessage;
+    private FrameworkElement? _placementTarget;
+    private Rect _lastPlacementBounds = Rect.Empty;
 
     public LayoutCardPresenter()
     {
@@ -128,11 +136,12 @@ public sealed class LayoutCardPresenter
             _cardPanel.Children.Add(CreateCard(template));
         }
 
-        _root.Width = Math.Max(1, placementTarget.ActualWidth);
-        _popup.PlacementTarget = placementTarget;
+        SetPlacementTarget(placementTarget);
         _popup.HorizontalOffset = 0;
         _popup.VerticalOffset = 0;
         _popup.IsOpen = true;
+        RefreshPlacement(force: true);
+        QueueRefreshPlacement();
 
         // 전환(Switch)은 왼쪽 Alt 홀드로 동작하므로 팝업에 포커스를 주면
         // 메인 윈도우가 Alt 키 해제 이벤트를 받지 못한다. 이 모드에서는 포커스를 옮기지 않는다.
@@ -147,6 +156,12 @@ public sealed class LayoutCardPresenter
     {
         _popup.IsOpen = false;
         _cardPanel.Children.Clear();
+        SetPlacementTarget(null);
+    }
+
+    public void RefreshPlacement()
+    {
+        RefreshPlacement(force: true);
     }
 
     private Button CreateCancelCard()
@@ -260,4 +275,121 @@ public sealed class LayoutCardPresenter
         e.Effects = DragDropEffects.Copy;
         e.Handled = true;
     }
+
+    private void SetPlacementTarget(FrameworkElement? placementTarget)
+    {
+        if (ReferenceEquals(_placementTarget, placementTarget))
+        {
+            return;
+        }
+
+        if (_placementTarget is not null)
+        {
+            _placementTarget.SizeChanged -= PlacementTarget_Changed;
+            _placementTarget.LayoutUpdated -= PlacementTarget_LayoutUpdated;
+        }
+
+        _placementTarget = placementTarget;
+        _lastPlacementBounds = Rect.Empty;
+        _popup.PlacementTarget = placementTarget;
+
+        if (_placementTarget is not null)
+        {
+            _placementTarget.SizeChanged += PlacementTarget_Changed;
+            _placementTarget.LayoutUpdated += PlacementTarget_LayoutUpdated;
+        }
+    }
+
+    private void PlacementTarget_Changed(object sender, SizeChangedEventArgs e)
+    {
+        RefreshPlacement(force: false);
+    }
+
+    private void PlacementTarget_LayoutUpdated(object? sender, EventArgs e)
+    {
+        RefreshPlacement(force: false);
+    }
+
+    private void QueueRefreshPlacement()
+    {
+        _placementTarget?.Dispatcher.BeginInvoke(
+            () => RefreshPlacement(force: true),
+            DispatcherPriority.Render);
+    }
+
+    private void RefreshPlacement(bool force)
+    {
+        if (!_popup.IsOpen || _placementTarget is null)
+        {
+            return;
+        }
+
+        _root.Width = Math.Max(1, _placementTarget.ActualWidth);
+
+        var bounds = GetScreenBounds(_placementTarget);
+        if (!force && !HasBoundsChanged(_lastPlacementBounds, bounds))
+        {
+            return;
+        }
+
+        _lastPlacementBounds = bounds;
+        NudgePopupPlacement(_popup);
+        SetPopupScreenPosition(_popup, bounds.TopLeft);
+    }
+
+    private static Rect GetScreenBounds(FrameworkElement element)
+    {
+        if (!element.IsVisible)
+        {
+            return Rect.Empty;
+        }
+
+        var topLeft = element.PointToScreen(new Point(0, 0));
+        return new Rect(topLeft.X, topLeft.Y, element.ActualWidth, element.ActualHeight);
+    }
+
+    private static bool HasBoundsChanged(Rect previous, Rect current)
+    {
+        return previous.IsEmpty ||
+               Math.Abs(previous.X - current.X) > 0.5 ||
+               Math.Abs(previous.Y - current.Y) > 0.5 ||
+               Math.Abs(previous.Width - current.Width) > 0.5 ||
+               Math.Abs(previous.Height - current.Height) > 0.5;
+    }
+
+    private static void NudgePopupPlacement(Popup popup)
+    {
+        var offset = popup.HorizontalOffset;
+        popup.HorizontalOffset = offset + 0.01;
+        popup.HorizontalOffset = offset;
+    }
+
+    private static void SetPopupScreenPosition(Popup popup, Point screenPoint)
+    {
+        if (popup.Child is not { } child ||
+            PresentationSource.FromVisual(child) is not HwndSource source ||
+            source.Handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        SetWindowPos(
+            source.Handle,
+            IntPtr.Zero,
+            (int)Math.Round(screenPoint.X),
+            (int)Math.Round(screenPoint.Y),
+            0,
+            0,
+            SetWindowPosNoSize | SetWindowPosNoZOrder | SetWindowPosNoActivate);
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr hWndInsertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint uFlags);
 }

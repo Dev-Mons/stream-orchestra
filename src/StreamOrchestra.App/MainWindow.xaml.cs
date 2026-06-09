@@ -99,6 +99,8 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         PreviewKeyUp += MainWindow_PreviewKeyUp;
+        SizeChanged += (_, _) => QueueRefreshOverlayPlacements();
+        LocationChanged += (_, _) => RefreshOverlayPlacements();
         Deactivated += (_, _) =>
         {
             SetRemoveModeActive(false);
@@ -1542,6 +1544,24 @@ public partial class MainWindow : Window
         ExplorerSplitterColumn.Width = isVisible ? new GridLength(6) : new GridLength(0);
         ToggleExplorerIcon.Source = isVisible ? SidebarCloseIcon : SidebarOpenIcon;
         UpdateExplorerToggleTooltip();
+        QueueRefreshOverlayPlacements();
+    }
+
+    private void QueueRefreshOverlayPlacements()
+    {
+        Dispatcher.BeginInvoke(
+            (Action)RefreshOverlayPlacements,
+            DispatcherPriority.Render);
+    }
+
+    private void RefreshOverlayPlacements()
+    {
+        _layoutCardPresenter.RefreshPlacement();
+
+        foreach (var slot in _slots)
+        {
+            slot.RefreshOverlayPlacement();
+        }
     }
 
     // 사이드바 토글 버튼 툴팁에 현재 상태와 단축키를 함께 표시한다.
@@ -1899,6 +1919,7 @@ public partial class MainWindow : Window
     {
         base.OnStateChanged(e);
         UpdateMaximizeRestoreGlyph();
+        QueueRefreshOverlayPlacements();
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
