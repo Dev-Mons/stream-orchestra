@@ -14,11 +14,11 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
     }
 
     [Theory]
-    [InlineData(4, "isolated_group_a", "A")]
-    [InlineData(4, "manual_group_d", "D")]
-    [InlineData(8, "groups_a_b_8_slots", "A/B")]
+    [InlineData(3, "isolated_group_a", "A")]
+    [InlineData(3, "manual_group_d", "D")]
+    [InlineData(8, "groups_a_b_8_slots", "A/B/C")]
     [InlineData(9, "groups_a_b_c_9_slot_threshold", "A/B/C")]
-    [InlineData(16, "groups_a_b_c_d_16_slots", "A/B/C/D")]
+    [InlineData(16, "groups_a_b_c_d_16_slots", "A/B/C/D/E")]
     public void GetScenarioProfileGroups_MapsKnownScenariosToAllowedGroups(
         int playbackCount,
         string scenarioId,
@@ -33,7 +33,7 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
     public void ValidateScenarioConsistency_RejectsProfileGroupsOutsideScenario()
     {
         var error = FeasibilityProfileGroupEvidenceService.ValidateScenarioConsistency(
-            playbackCount: 4,
+            playbackCount: 3,
             scenarioId: "isolated_group_a",
             profileGroups: ["D"]);
 
@@ -45,7 +45,7 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
     {
         var result = new FeasibilityTestResult
         {
-            PlaybackCount = 4,
+            PlaybackCount = 3,
             ScenarioId = "isolated_group_a",
             VerifiedProfileGroups = ["A", "D", null!]
         };
@@ -276,6 +276,6 @@ public sealed class FeasibilityProfileGroupEvidenceServiceTests
         string outcome = "partial",
         string accountLabel = "")
     {
-        return CreateResult(capturedAt, scenarioId, 4, groups, sameAccount, outcome, accountLabel);
+        return CreateResult(capturedAt, scenarioId, 3, groups, sameAccount, outcome, accountLabel);
     }
 }

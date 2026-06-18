@@ -4,7 +4,7 @@ namespace StreamOrchestra.App.Services;
 
 public sealed class FeasibilityDecisionService
 {
-    private static readonly string[] PlanRequiredProfileGroups = ["A", "B", "C", "D"];
+    private static readonly string[] PlanRequiredProfileGroups = SlotProfileGroupMapping.GroupIds.ToArray();
 
     public FeasibilityDecision Decide(IReadOnlyList<FeasibilityTestResult> results)
     {

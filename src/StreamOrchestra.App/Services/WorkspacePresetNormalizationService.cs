@@ -75,13 +75,6 @@ public sealed class WorkspacePresetNormalizationService
 
     private static string GetProfileGroupIdForSlot(int slotId)
     {
-        return slotId switch
-        {
-            >= 1 and <= 4 => "A",
-            >= 5 and <= 8 => "B",
-            >= 9 and <= 12 => "C",
-            >= 13 and <= 16 => "D",
-            _ => throw new ArgumentOutOfRangeException(nameof(slotId), slotId, "Slot id must be between 1 and 16.")
-        };
+        return SlotProfileGroupMapping.GetGroupIdForSlot(slotId);
     }
 }

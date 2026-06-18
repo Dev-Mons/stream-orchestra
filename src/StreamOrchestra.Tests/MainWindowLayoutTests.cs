@@ -55,6 +55,41 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
+    public void TopToolbar_ProvidesRefreshButtonLeftOfMuteAllButton()
+    {
+        var document = LoadMainWindowDocument();
+        var refreshButton = FindElementByName(document, "RefreshPlayingScreensButton");
+        var refreshIcon = FindElementByName(document, "RefreshPlayingScreensIcon");
+        var muteAllButton = FindElementByName(document, "MuteAllButton");
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+        var slotCodeBehind = File.ReadAllText(Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "Views",
+            "StreamSlotView.xaml.cs")));
+
+        Assert.Equal("RefreshPlayingScreensButton_Click", GetAttribute(refreshButton, "Click"));
+        Assert.Equal("Right", GetAttribute(refreshButton, "DockPanel.Dock"));
+        Assert.Equal("SidebarToggleButton", GetAttribute(refreshButton, "Style")?.Trim('{', '}').Replace("StaticResource ", ""));
+        Assert.Equal("현재 재생 중인 화면 전체 새로고침", GetAttribute(refreshButton, "ToolTip"));
+        Assert.Equal("/Assets/refresh.png", GetAttribute(refreshIcon, "Source"));
+
+        var toolbar = refreshButton.Ancestors().First(ancestor => ancestor.Name.LocalName == "DockPanel");
+        var toolbarChildren = toolbar.Elements().ToList();
+        Assert.True(toolbarChildren.IndexOf(refreshButton) > toolbarChildren.IndexOf(muteAllButton));
+
+        Assert.Contains("ReloadPlayingScreensAsync", codeBehind);
+        Assert.Contains("GetVisibleNonBlankSlots()", codeBehind);
+        Assert.Contains("await slot.ReloadAsync();", codeBehind);
+        Assert.Contains("public async Task ReloadAsync()", slotCodeBehind);
+        Assert.Contains("Browser.CoreWebView2.Reload();", slotCodeBehind);
+    }
+
+    [Fact]
     public void HiddenExplorer_RemovesLegacyEdgeToggleAndDrivesToolbarIcon()
     {
         var document = LoadMainWindowDocument();

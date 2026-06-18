@@ -53,7 +53,8 @@ public sealed class WorkspacePresetNormalizationServiceTests
         Assert.Equal(16, normalized.Slots.Count);
         Assert.Contains(normalized.Slots, slot => slot.SlotId == 2 && slot.StreamName == "Saved Stream" && slot.StreamUrl == "https://example.com/stream" && slot.Muted && slot.ProfileGroupId == "A");
         Assert.Contains(normalized.Slots, slot => slot.SlotId == 9 && slot.StreamName == "Empty" && slot.StreamUrl == "about:blank" && !slot.Muted && slot.ProfileGroupId == "C");
-        Assert.Contains(normalized.Slots, slot => slot.SlotId == 16 && slot.ProfileGroupId == "D");
+        Assert.Contains(normalized.Slots, slot => slot.SlotId == 10 && slot.ProfileGroupId == "D");
+        Assert.Contains(normalized.Slots, slot => slot.SlotId == 16 && slot.ProfileGroupId == "E");
     }
 
     [Fact]
@@ -244,7 +245,7 @@ public sealed class WorkspacePresetNormalizationServiceTests
         Assert.Contains(normalized.Slots, slot =>
             slot.SlotId == 13 &&
             slot.StreamName == "Empty" &&
-            slot.ProfileGroupId == "D");
+            slot.ProfileGroupId == "E");
     }
 
     [Fact]

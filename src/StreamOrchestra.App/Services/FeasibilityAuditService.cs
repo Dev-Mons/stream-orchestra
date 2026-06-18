@@ -4,8 +4,8 @@ namespace StreamOrchestra.App.Services;
 
 public sealed class FeasibilityAuditService
 {
-    private static readonly string[] PlanRequiredProfileGroups = ["A", "B", "C", "D"];
-    private const int GroupAPlanPlaybackCount = 4;
+    private static readonly string[] PlanRequiredProfileGroups = SlotProfileGroupMapping.GroupIds.ToArray();
+    private const int GroupAPlanPlaybackCount = SlotProfileGroupMapping.SlotsPerProfileGroup;
 
     public string CreateAuditText(
         IReadOnlyList<FeasibilityTestResult> results,
@@ -194,7 +194,7 @@ public sealed class FeasibilityAuditService
 
         return new FeasibilityAuditItem(
             "group_a_playback",
-            "Group A 4-slot single-profile playback tested",
+            "Group A 3-slot single-profile playback tested",
             latestGroupAResult is null
                 ? "pending"
                 : consistencyError is not null
@@ -205,7 +205,7 @@ public sealed class FeasibilityAuditService
                             ? "fail"
                             : "pending",
             latestGroupAResult is null
-                ? "No 4-slot Group A only or isolated Group A result is recorded."
+                ? "No 3-slot Group A only or isolated Group A result is recorded."
                 : consistencyError is not null
                     ? consistencyError
                     : IsFailure(latestGroupAResult)
@@ -218,7 +218,7 @@ public sealed class FeasibilityAuditService
         FeasibilityTestResult? latestNinePlusResult)
     {
         const string id = "same_account_session";
-        const string title = "Same SOOP account session persists across A-D";
+        const string title = "Same SOOP account session persists across A-E";
 
         if (latestNinePlusResult is not null &&
             FeasibilityOutcomeService.IsKnown(latestNinePlusResult) &&
@@ -517,7 +517,7 @@ public sealed class FeasibilityAuditService
             ],
             "eight_plus_playback" =>
             [
-                "record --count 8 --outcome partial --account --profile-groups A,B --account-label <label> --notes \"8-slot SOOP playback\""
+                CreatePartialRecordShape(8, "8-slot SOOP playback")
             ],
             "nine_plus_playback" =>
             [
@@ -526,19 +526,16 @@ public sealed class FeasibilityAuditService
             ],
             "twelve_slot_playback" =>
             [
-                "record --count 12 --outcome partial --account --profile-groups A,B,C --account-label <label> --notes \"12-slot SOOP playback\""
+                CreatePartialRecordShape(12, "12-slot SOOP playback")
             ],
             "sixteen_slot_playback" =>
             [
-                "record --count 16 --outcome partial --account --profile-groups A,B,C,D --account-label <label> --notes \"16-slot SOOP playback\""
+                CreatePartialRecordShape(16, "16-slot SOOP playback")
             ],
             "same_account_session" =>
-            [
-                "record --group A --outcome partial --account --profile-groups A --account-label <label> --notes \"Group A same-account check\"",
-                "record --group B --outcome partial --account --profile-groups B --account-label <label> --notes \"Group B same-account check\"",
-                "record --group C --outcome partial --account --profile-groups C --account-label <label> --notes \"Group C same-account check\"",
-                "record --group D --outcome partial --account --profile-groups D --account-label <label> --notes \"Group D same-account check\""
-            ],
+                PlanRequiredProfileGroups
+                    .Select(group => $"record --group {group} --outcome partial --account --profile-groups {group} --account-label <label> --notes \"Group {group} same-account check\"")
+                    .ToArray(),
             "restart_session" or "resource_acceptability" or "resource_observations" or "phase0_success_gate" =>
             [
                 CreateNineSlotSuccessRecordShape()
@@ -555,6 +552,15 @@ public sealed class FeasibilityAuditService
     private static string CreateNineSlotPartialRecordShape()
     {
         return "record --count 9 --outcome partial --account --profile-groups A,B,C --account-label <label> --notes \"9-slot SOOP threshold playback\"";
+    }
+
+    private static string CreatePartialRecordShape(int playbackCount, string notes)
+    {
+        var requiredGroups = string.Join(
+            ",",
+            FeasibilityProfileGroupEvidenceService.GetRequiredGroupsForPlaybackCount(playbackCount));
+
+        return $"record --count {playbackCount} --outcome partial --account --profile-groups {requiredGroups} --account-label <label> --notes \"{notes}\"";
     }
 
     private static bool IsNineSlotSuccessRecordShape(string suggestion)

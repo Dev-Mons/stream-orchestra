@@ -131,6 +131,17 @@ public partial class StreamSlotView : UserControl
         Browser.CoreWebView2.Navigate(normalizedUrl);
     }
 
+    public async Task ReloadAsync()
+    {
+        if (CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await EnsureInitializedAsync();
+        Browser.CoreWebView2.Reload();
+    }
+
     /// <summary>세션 복원·전체 볼륨 변경 등 외부 요청으로 볼륨을 오버레이 없이 적용한다.</summary>
     public void SetVolumePercentSilently(int volumePercent)
     {

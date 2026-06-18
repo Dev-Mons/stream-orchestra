@@ -42,16 +42,24 @@ public sealed class FeasibilityAuditServiceTests
             resources: true,
             scenarioId: "groups_a_b_c_9_slot_threshold");
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
             resources: false,
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"]);
-        var decision = new FeasibilityDecisionService().Decide([result, groupD]);
+        var groupE = CreateResult(
+            playbackCount: 3,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_e",
+            verifiedProfileGroups: ["E"]);
+        var decision = new FeasibilityDecisionService().Decide([result, groupD, groupE]);
 
-        var auditItems = new FeasibilityAuditService().CreateAudit([result, groupD], decision);
+        var auditItems = new FeasibilityAuditService().CreateAudit([result, groupD, groupE], decision);
 
         Assert.Equal("pass", Find(auditItems, "same_account_session").Status);
         Assert.Equal("pass", Find(auditItems, "phase0_success_gate").Status);
@@ -166,7 +174,7 @@ public sealed class FeasibilityAuditServiceTests
     public void CreateAudit_WithOnlyLowSlotCriteria_DoesNotPassNinePlusPlanGates()
     {
         var result = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: true,
@@ -263,14 +271,14 @@ public sealed class FeasibilityAuditServiceTests
 
         var groupAGate = Find(auditItems, "group_a_playback");
         Assert.Equal("pending", groupAGate.Status);
-        Assert.Equal("No 4-slot Group A only or isolated Group A result is recorded.", groupAGate.Evidence);
+        Assert.Equal("No 3-slot Group A only or isolated Group A result is recorded.", groupAGate.Evidence);
     }
 
     [Fact]
     public void CreateAudit_WithNullScenarioId_DoesNotCrashGroupAPlaybackCheck()
     {
         var result = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -283,7 +291,7 @@ public sealed class FeasibilityAuditServiceTests
 
         var groupAGate = Find(auditItems, "group_a_playback");
         Assert.Equal("pending", groupAGate.Status);
-        Assert.Equal("No 4-slot Group A only or isolated Group A result is recorded.", groupAGate.Evidence);
+        Assert.Equal("No 3-slot Group A only or isolated Group A result is recorded.", groupAGate.Evidence);
     }
 
     [Fact]
@@ -348,7 +356,7 @@ public sealed class FeasibilityAuditServiceTests
     public void CreateAudit_IgnoresProfileGroupEvidenceThatContradictsScenario()
     {
         var groupAWithContradictoryGroup = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -361,7 +369,7 @@ public sealed class FeasibilityAuditServiceTests
 
         var sameAccountGate = Find(auditItems, "same_account_session");
         Assert.Equal("pending", sameAccountGate.Status);
-        Assert.Contains("Missing same-account profile-group evidence for group(s): A, B, C, D", sameAccountGate.Evidence);
+        Assert.Contains("Missing same-account profile-group evidence for group(s): A, B, C, D, E", sameAccountGate.Evidence);
         Assert.Contains("Covered: n/a", sameAccountGate.Evidence);
     }
 
@@ -382,7 +390,7 @@ public sealed class FeasibilityAuditServiceTests
 
         var sixteenSlotGate = Find(auditItems, "sixteen_slot_playback");
         Assert.Equal("fail", sixteenSlotGate.Status);
-        Assert.Equal("Scenario manual_group_a requires 1-4 slot(s).", sixteenSlotGate.Evidence);
+        Assert.Equal("Scenario manual_group_a requires 1-3 slot(s).", sixteenSlotGate.Evidence);
         Assert.Equal("pending", Find(auditItems, "phase0_success_gate").Status);
     }
 
@@ -416,16 +424,24 @@ public sealed class FeasibilityAuditServiceTests
             resources: true,
             scenarioId: "custom_9_slot_note");
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
             resources: false,
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"]);
-        var decision = new FeasibilityDecisionService().Decide([customNineSlotSuccess, groupD]);
+        var groupE = CreateResult(
+            playbackCount: 3,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_e",
+            verifiedProfileGroups: ["E"]);
+        var decision = new FeasibilityDecisionService().Decide([customNineSlotSuccess, groupD, groupE]);
 
-        var auditItems = new FeasibilityAuditService().CreateAudit([customNineSlotSuccess, groupD], decision);
+        var auditItems = new FeasibilityAuditService().CreateAudit([customNineSlotSuccess, groupD, groupE], decision);
 
         Assert.Equal("continue_webview2_experiments", decision.Code);
         Assert.Equal("fail", Find(auditItems, "nine_plus_playback").Status);
@@ -463,7 +479,7 @@ public sealed class FeasibilityAuditServiceTests
     public void CreateAudit_AggregatesSameAccountEvidenceAcrossProfileGroupResults()
     {
         var groupA = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -472,7 +488,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["A"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero));
         var groupB = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -481,7 +497,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["B"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero));
         var groupC = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -490,7 +506,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["C"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero));
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -498,20 +514,29 @@ public sealed class FeasibilityAuditServiceTests
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 45, 0, TimeSpan.Zero));
-        var decision = new FeasibilityDecisionService().Decide([groupA, groupB, groupC, groupD]);
+        var groupE = CreateResult(
+            playbackCount: 3,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_e",
+            verifiedProfileGroups: ["E"],
+            capturedAt: new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero));
+        var decision = new FeasibilityDecisionService().Decide([groupA, groupB, groupC, groupD, groupE]);
 
-        var auditItems = new FeasibilityAuditService().CreateAudit([groupA, groupB, groupC, groupD], decision);
+        var auditItems = new FeasibilityAuditService().CreateAudit([groupA, groupB, groupC, groupD, groupE], decision);
 
         var sameAccountGate = Find(auditItems, "same_account_session");
         Assert.Equal("pass", sameAccountGate.Status);
-        Assert.Contains("groups A/B/C/D", sameAccountGate.Evidence);
+        Assert.Contains("groups A/B/C/D/E", sameAccountGate.Evidence);
     }
 
     [Fact]
     public void CreateAudit_KeepsSameAccountGatePassedWhenLatestNinePlusPartialHasNoAccountEvidence()
     {
         var groupA = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -520,7 +545,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["A"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero));
         var groupB = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -529,7 +554,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["B"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero));
         var groupC = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -538,7 +563,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["C"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero));
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -546,6 +571,15 @@ public sealed class FeasibilityAuditServiceTests
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 45, 0, TimeSpan.Zero));
+        var groupE = CreateResult(
+            playbackCount: 3,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_e",
+            verifiedProfileGroups: ["E"],
+            capturedAt: new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero));
         var playbackOnlyPartial = CreateResult(
             playbackCount: 16,
             outcome: "partial",
@@ -553,15 +587,15 @@ public sealed class FeasibilityAuditServiceTests
             restart: false,
             resources: false,
             scenarioId: "groups_a_b_c_d_16_slots",
-            capturedAt: new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero));
-        var results = new[] { groupA, groupB, groupC, groupD, playbackOnlyPartial };
+            capturedAt: new DateTimeOffset(2026, 5, 26, 13, 15, 0, TimeSpan.Zero));
+        var results = new[] { groupA, groupB, groupC, groupD, groupE, playbackOnlyPartial };
         var decision = new FeasibilityDecisionService().Decide(results);
 
         var auditItems = new FeasibilityAuditService().CreateAudit(results, decision);
 
         var sameAccountGate = Find(auditItems, "same_account_session");
         Assert.Equal("pass", sameAccountGate.Status);
-        Assert.Contains("groups A/B/C/D", sameAccountGate.Evidence);
+        Assert.Contains("groups A/B/C/D/E", sameAccountGate.Evidence);
     }
 
     [Fact]
@@ -576,7 +610,7 @@ public sealed class FeasibilityAuditServiceTests
             scenarioId: "groups_a_b_c_9_slot_threshold",
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero));
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -584,6 +618,15 @@ public sealed class FeasibilityAuditServiceTests
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero));
+        var groupE = CreateResult(
+            playbackCount: 3,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_e",
+            verifiedProfileGroups: ["E"],
+            capturedAt: new DateTimeOffset(2026, 5, 26, 12, 20, 0, TimeSpan.Zero));
         var playbackOnlyPartial = CreateResult(
             playbackCount: 16,
             outcome: "partial",
@@ -593,10 +636,10 @@ public sealed class FeasibilityAuditServiceTests
             scenarioId: "groups_a_b_c_d_16_slots",
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero));
         var decision = new FeasibilityDecisionService().Decide(
-            [thresholdSuccess, groupD, playbackOnlyPartial]);
+            [thresholdSuccess, groupD, groupE, playbackOnlyPartial]);
 
         var auditItems = new FeasibilityAuditService().CreateAudit(
-            [thresholdSuccess, groupD, playbackOnlyPartial],
+            [thresholdSuccess, groupD, groupE, playbackOnlyPartial],
             decision);
 
         Assert.Equal("pass", Find(auditItems, "same_account_session").Status);
@@ -619,7 +662,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["A", "B", "C"],
             accountLabel: "main_soop");
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -650,7 +693,7 @@ public sealed class FeasibilityAuditServiceTests
             scenarioId: "groups_a_b_c_9_slot_threshold",
             verifiedProfileGroups: ["A", "B", "C"]);
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -658,9 +701,17 @@ public sealed class FeasibilityAuditServiceTests
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"],
             accountLabel: "");
-        var decision = new FeasibilityDecisionService().Decide([thresholdSuccess, groupD]);
+        var groupE = CreateResult(
+            playbackCount: 3,
+            outcome: "partial",
+            account: true,
+            restart: false,
+            resources: false,
+            scenarioId: "isolated_group_e",
+            verifiedProfileGroups: ["E"]);
+        var decision = new FeasibilityDecisionService().Decide([thresholdSuccess, groupD, groupE]);
 
-        var auditItems = new FeasibilityAuditService().CreateAudit([thresholdSuccess, groupD], decision);
+        var auditItems = new FeasibilityAuditService().CreateAudit([thresholdSuccess, groupD, groupE], decision);
 
         var sameAccountGate = Find(auditItems, "same_account_session");
         Assert.Equal("continue_webview2_experiments", decision.Code);
@@ -673,7 +724,7 @@ public sealed class FeasibilityAuditServiceTests
     public void CreateAudit_UsesLatestSameAccountEvidencePerProfileGroup()
     {
         var groupA = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -682,7 +733,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["A"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero));
         var groupB = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -691,7 +742,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["B"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero));
         var groupC = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -700,7 +751,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["C"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero));
         var olderGroupDPass = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -709,7 +760,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["D"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 45, 0, TimeSpan.Zero));
         var newerGroupDFailure = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "failure",
             account: false,
             restart: false,
@@ -726,7 +777,7 @@ public sealed class FeasibilityAuditServiceTests
 
         var sameAccountGate = Find(auditItems, "same_account_session");
         Assert.Equal("pending", sameAccountGate.Status);
-        Assert.Contains("Missing same-account profile-group evidence for group(s): D", sameAccountGate.Evidence);
+        Assert.Contains("Missing same-account profile-group evidence for group(s): D, E", sameAccountGate.Evidence);
         Assert.Contains("Covered: A/B/C", sameAccountGate.Evidence);
     }
 
@@ -734,7 +785,7 @@ public sealed class FeasibilityAuditServiceTests
     public void CreateAudit_UsesScenarioGroupForLatestSameAccountFailureWithoutCheckedGroups()
     {
         var olderGroupDPass = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: false,
@@ -743,7 +794,7 @@ public sealed class FeasibilityAuditServiceTests
             verifiedProfileGroups: ["D"],
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero));
         var newerGroupDFailureWithoutCheckedGroups = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "failure",
             account: false,
             restart: false,
@@ -760,7 +811,7 @@ public sealed class FeasibilityAuditServiceTests
 
         var sameAccountGate = Find(auditItems, "same_account_session");
         Assert.Equal("pending", sameAccountGate.Status);
-        Assert.Contains("Missing same-account profile-group evidence for group(s): A, B, C, D", sameAccountGate.Evidence);
+        Assert.Contains("Missing same-account profile-group evidence for group(s): A, B, C, D, E", sameAccountGate.Evidence);
         Assert.Contains("Covered: n/a", sameAccountGate.Evidence);
     }
 
@@ -827,7 +878,7 @@ public sealed class FeasibilityAuditServiceTests
     public void CreateAudit_WithCompletePlanCoverage_MarksAllPlanGatesPassed()
     {
         var groupA = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             account: true,
             restart: true,

@@ -1207,6 +1207,11 @@ public partial class MainWindow : Window
         MuteAllSlots();
     }
 
+    private async void RefreshPlayingScreensButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ReloadPlayingScreensAsync();
+    }
+
     // 단발성 동작: 모든 슬롯 볼륨을 0%로 내린다(복원 없음). 버튼과 단축키가 함께 호출한다.
     private void MuteAllSlots()
     {
@@ -1217,6 +1222,38 @@ public partial class MainWindow : Window
 
         ShowCenterVolumeIndicator("볼륨 0%");
         StatusTextBlock.Text = "전체 볼륨을 0%로 변경했습니다.";
+    }
+
+    private async Task ReloadPlayingScreensAsync()
+    {
+        var targetSlots = GetVisibleNonBlankSlots();
+        if (targetSlots.Length == 0)
+        {
+            StatusTextBlock.Text = "새로고침할 재생 중인 화면이 없습니다.";
+            return;
+        }
+
+        var reloadedCount = 0;
+        StatusTextBlock.Text = $"재생 중인 화면 {targetSlots.Length}개를 새로고침합니다.";
+
+        foreach (var slot in targetSlots)
+        {
+            try
+            {
+                await slot.ReloadAsync();
+                reloadedCount++;
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text =
+                    $"재생 화면 새로고침 일부 실패: {reloadedCount}/{targetSlots.Length}. " +
+                    $"Slot {slot.SlotId}: {ex.Message}";
+                return;
+            }
+        }
+
+        StatusTextBlock.Text = $"재생 중인 화면 {reloadedCount}개 새로고침을 요청했습니다.";
+        UpdateDiagnostics();
     }
 
     // 앱 정중앙에 큰 볼륨 표시를 잠깐(1초) 띄웠다 사라지게 한다(Popup 페이드는 PopupAnimation이 처리).
