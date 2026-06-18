@@ -20,13 +20,9 @@ public sealed class WebViewProfileService
         Directory.CreateDirectory(BaseProfileFolder);
         ExplorerGroup = CreateGroup("Explorer");
 
-        _groups = new[]
-        {
-            CreateGroup("A"),
-            CreateGroup("B"),
-            CreateGroup("C"),
-            CreateGroup("D")
-        }.ToDictionary(group => group.Id, StringComparer.OrdinalIgnoreCase);
+        _groups = SlotProfileGroupMapping.GroupIds
+            .Select(CreateGroup)
+            .ToDictionary(group => group.Id, StringComparer.OrdinalIgnoreCase);
     }
 
     public string BaseProfileFolder { get; }
@@ -37,15 +33,7 @@ public sealed class WebViewProfileService
 
     public ProfileGroup GetGroupForSlot(int slotId)
     {
-        var groupId = slotId switch
-        {
-            >= 1 and <= 4 => "A",
-            >= 5 and <= 8 => "B",
-            >= 9 and <= 12 => "C",
-            >= 13 and <= 16 => "D",
-            _ => throw new ArgumentOutOfRangeException(nameof(slotId), slotId, "Slot id must be between 1 and 16.")
-        };
-
+        var groupId = SlotProfileGroupMapping.GetGroupIdForSlot(slotId);
         return _groups[groupId];
     }
 

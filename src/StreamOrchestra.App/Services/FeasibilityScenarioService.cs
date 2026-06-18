@@ -4,17 +4,19 @@ namespace StreamOrchestra.App.Services;
 
 public sealed class FeasibilityScenarioService
 {
-    private static readonly string[] GroupIds = ["a", "b", "c", "d"];
+    private static readonly string[] GroupIds = SlotProfileGroupMapping.GroupIds
+        .Select(group => group.ToLowerInvariant())
+        .ToArray();
 
     public FeasibilityScenario CreateFirstSlotsScenario(PlaybackTestPlan plan)
     {
         return plan.TargetPlaybackCount switch
         {
-            <= 4 => new FeasibilityScenario("group_a_first_slots", $"Group A only ({plan.TargetPlaybackCount} slot(s))"),
-            8 => new FeasibilityScenario("groups_a_b_8_slots", "Groups A/B split, 8 slots"),
+            <= 3 => new FeasibilityScenario("group_a_first_slots", $"Group A only ({plan.TargetPlaybackCount} slot(s))"),
+            8 => new FeasibilityScenario("groups_a_b_8_slots", "Groups A/B/C split, 8 slots"),
             9 => new FeasibilityScenario("groups_a_b_c_9_slot_threshold", "Groups A/B/C, 9-slot success threshold"),
-            12 => new FeasibilityScenario("groups_a_b_c_12_slots", "Groups A/B/C, 12 slots"),
-            16 => new FeasibilityScenario("groups_a_b_c_d_16_slots", "Groups A/B/C/D, 16 slots"),
+            12 => new FeasibilityScenario("groups_a_b_c_12_slots", "Groups A/B/C/D, 12 slots"),
+            16 => new FeasibilityScenario("groups_a_b_c_d_16_slots", "Groups A/B/C/D/E, 16 slots"),
             _ => new FeasibilityScenario("first_slots_custom", $"First {plan.TargetPlaybackCount} slots")
         };
     }
@@ -75,10 +77,10 @@ public sealed class FeasibilityScenarioService
         }
 
         var normalizedScenarioId = scenarioId?.Trim().ToLowerInvariant() ?? "";
-        if (playbackCount == 4 &&
+        if (playbackCount == SlotProfileGroupMapping.SlotsPerProfileGroup &&
             normalizedScenarioId is "group_a_first_slots" or "isolated_group_a" or "manual_group_a")
         {
-            return "This result can satisfy the plan's Group A 4-slot playback gate.";
+            return "This result can satisfy the plan's Group A 3-slot playback gate.";
         }
 
         var planGateHint = (playbackCount, normalizedScenarioId) switch
@@ -101,7 +103,7 @@ public sealed class FeasibilityScenarioService
 
         if (IsSingleProfileGroupScenario(normalizedScenarioId))
         {
-            return "Manual group loads can support same-account evidence; only Group A 4-slot evidence satisfies a playback gate.";
+            return "Manual group loads can support same-account evidence; only Group A 3-slot evidence satisfies a playback gate.";
         }
 
         return "Custom/manual scenarios may be useful notes, but plan playback gates require named playback-test scenarios.";
@@ -142,7 +144,7 @@ public sealed class FeasibilityScenarioService
             IsSingleProfileGroupScenario(normalizedScenarioId))
         {
             minimumCount = 1;
-            maximumCount = 4;
+            maximumCount = SlotProfileGroupMapping.SlotsPerProfileGroup;
             return true;
         }
 

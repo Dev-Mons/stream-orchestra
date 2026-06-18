@@ -200,12 +200,12 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("groups_a_b_c_9_slot_threshold", text);
         Assert.Contains("groups_a_b_c_d_16_slots", text);
         Assert.Contains("isolated_group_a", text);
-        Assert.Contains("record --count 4 --outcome <partial|failure> --account --profile-groups A", text);
-        Assert.Contains("record --count 8 --outcome <partial|failure> --account --profile-groups A,B", text);
+        Assert.Contains("record --count 3 --outcome <partial|failure> --account --profile-groups A", text);
+        Assert.Contains("record --count 8 --outcome <partial|failure> --account --profile-groups A,B,C", text);
         Assert.Contains("record --count 9 --outcome <partial|failure> --account --profile-groups A,B,C", text);
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value>", text);
         Assert.Contains("--account-label <label>", text);
-        Assert.Contains("record --count 16 --outcome success --account --profile-groups A,B,C,D --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value>", text);
+        Assert.Contains("record --count 16 --outcome success --account --profile-groups A,B,C,D,E --restart --resources --cpu-percent <0-100> --gpu-percent <0-100> --memory-mb <value>", text);
         Assert.Contains("record --group A --outcome <partial|failure> --account --profile-groups A", text);
         Assert.DoesNotContain("record --count 8 --outcome <success|partial|failure>", text);
         Assert.DoesNotContain("record --count 9 --outcome <success|partial|failure>", text);
@@ -239,7 +239,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pending] Manual feasibility result recorded", text);
         Assert.Contains("do not bypass DRM, authentication, or security behavior", text);
         Assert.Contains("Run `preflight`", text);
-        Assert.Contains("same SOOP account in profile groups A, B, C, and D", text);
+        Assert.Contains("same SOOP account in profile groups A, B, C, D, and E", text);
         Assert.Contains("Restart the app", text);
         Assert.Contains("isolated Group A test", text);
         Assert.Contains("8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests", text);
@@ -584,7 +584,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-handoff-manifest.json results file belongs to data folder.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json artifactFiles standard order.", text);
         Assert.Contains("- [pass] phase0-handoff-manifest.json artifactDetails standard order.", text);
-        Assert.Contains("- [pass] phase0-handoff-manifest.json profile groups: A, B, C, D", text);
+        Assert.Contains("- [pass] phase0-handoff-manifest.json profile groups: A, B, C, D, E", text);
         Assert.Contains("- [pass] handoff folder contains only standard artifacts.", text);
         Assert.Contains("- [pass] phase0-results.json:", text);
         Assert.Contains("- [pass] phase0-preflight.txt data folder:", text);
@@ -594,7 +594,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] phase0-preflight.txt WebView2 runtime:", text);
         Assert.Contains("- [pass] phase0-preflight.txt layouts:", text);
         Assert.Contains("- [pass] phase0-preflight.txt readiness:", text);
-        Assert.Contains("- [pass] phase0-preflight.txt profile groups: 4", text);
+        Assert.Contains("- [pass] phase0-preflight.txt profile groups: 5", text);
         Assert.Contains("- [pass] phase0-preflight.txt content matches manifest and results snapshot.", text);
         Assert.Contains("- [pass] phase0-results.json normalized snapshot content.", text);
         Assert.Contains("- [pass] phase0-results.json result count: 0", text);
@@ -611,7 +611,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pass] diagnostic report data files standard entries.", text);
         Assert.Contains("- [pass] diagnostic report results file:", text);
         Assert.Contains("- [pass] diagnostic report profile root:", text);
-        Assert.Contains("- [pass] diagnostic report profile groups: 4", text);
+        Assert.Contains("- [pass] diagnostic report profile groups: 5", text);
         Assert.Contains("- [pass] diagnostic report workspace diagnostics:", text);
         Assert.Contains("- [pass] diagnostic report external browser fallback plan:", text);
         Assert.Contains("- [pass] diagnostic report external browsers:", text);
@@ -1829,7 +1829,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("- [pending] Manual feasibility result recorded", text);
         Assert.Contains("- [pending] SOOP 8-slot split-profile playback", text);
         Assert.Contains("- [pending] Phase 0 WebView2 success gate", text);
-        Assert.Contains("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account-label", text);
+        Assert.Contains("Required evidence: record live SOOP 3-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-E account-label", text);
         Assert.Contains("Suggested record shapes:", text);
         Assert.Contains("record --group A --outcome partial --account --profile-groups A", text);
         Assert.Contains("record --count 8 --outcome partial --account --profile-groups A,B", text);
@@ -1866,7 +1866,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Verification: not complete", fileText);
         Assert.Contains("Outstanding gates:", fileText);
         Assert.Contains("- [pending] Manual feasibility result recorded", fileText);
-        Assert.Contains("Required evidence: record live SOOP 4-slot Group A", fileText);
+        Assert.Contains("Required evidence: record live SOOP 3-slot Group A", fileText);
         Assert.Contains("Suggested record shapes:", fileText);
         Assert.Contains("record --count 9 --outcome partial --account --profile-groups A,B,C", fileText);
         Assert.Contains("record --count 9 --outcome success --account --profile-groups A,B,C", fileText);
@@ -1884,7 +1884,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
               {
                 "id": "result_group_a",
                 "capturedAt": "2026-05-26T12:00:00+00:00",
-                "playbackCount": 4,
+                "playbackCount": 3,
                 "scenarioId": "isolated_group_a",
                 "scenarioName": "Isolated Group A",
                 "outcome": "partial",
@@ -2158,7 +2158,7 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Contains("Plan verification: [pending]", text);
         Assert.Contains("Success gate: [pending]", text);
         Assert.Contains("[pass] SOOP 9-slot threshold playback", text);
-        Assert.Contains("[pending] Same SOOP account session persists across A-D", text);
+        Assert.Contains("[pending] Same SOOP account session persists across A-E", text);
         Assert.Contains("[pass] App restart keeps login session", text);
         Assert.Contains("[pass] CPU/GPU/memory acceptable", text);
         Assert.Contains("[pass] Structured resource observations captured", text);
@@ -2599,14 +2599,14 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         var text = output.ToString();
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(4, result.PlaybackCount);
+        Assert.Equal(3, result.PlaybackCount);
         Assert.Equal("isolated_group_d", result.ScenarioId);
-        Assert.Equal("Isolated Group D test (4 slot(s))", result.ScenarioName);
+        Assert.Equal("Isolated Group D test (3 slot(s))", result.ScenarioName);
         Assert.Equal("partial", result.Outcome);
         Assert.True(result.IsSameAccountSessionMaintained);
         Assert.Equal("main_soop", result.AccountLabel);
         Assert.Equal(["D"], result.VerifiedProfileGroups);
-        Assert.Contains("Scenario: Isolated Group D test (4 slot(s)) (isolated_group_d)", text);
+        Assert.Contains("Scenario: Isolated Group D test (3 slot(s)) (isolated_group_d)", text);
         Assert.Contains("Account label: main_soop", text);
         Assert.Contains("Profile groups: D", text);
         Assert.Equal("", error.ToString());
@@ -2638,8 +2638,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         Assert.Equal(0, exitCode);
         Assert.Equal(12, result.PlaybackCount);
         Assert.Equal("groups_a_b_c_12_slots", result.ScenarioId);
-        Assert.Equal("Groups A/B/C, 12 slots", result.ScenarioName);
-        Assert.Contains("Scenario: Groups A/B/C, 12 slots (groups_a_b_c_12_slots)", text);
+        Assert.Equal("Groups A/B/C/D, 12 slots", result.ScenarioName);
+        Assert.Contains("Scenario: Groups A/B/C/D, 12 slots (groups_a_b_c_12_slots)", text);
         Assert.Equal("", error.ToString());
     }
 
@@ -2687,8 +2687,8 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     [InlineData("record --count 9 --outcome failure --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000", "Failure records cannot include resource OK evidence.")]
     [InlineData("record --count 9 --outcome success --account --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000", "Success requires same-account profile group evidence for groups A, B, C.")]
     [InlineData("record --count 9 --outcome success --account --account-label main_soop --profile-groups A,B,C --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000 --scenario custom_9_slot_note", "Success requires a matching 9/12/16 plan playback scenario.")]
-    [InlineData("record --count 16 --outcome success --account --account-label main_soop --profile-groups A,B,C,D --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000 --scenario manual_all_groups", "Success requires a matching 9/12/16 plan playback scenario.")]
-    [InlineData("record --count 9 --outcome partial --profile-groups A,Z", "Profile groups must be A, B, C, and/or D.")]
+    [InlineData("record --count 16 --outcome success --account --account-label main_soop --profile-groups A,B,C,D,E --restart --resources --cpu-percent 45 --gpu-percent 60 --memory-mb 12000 --scenario manual_all_groups", "Success requires a matching 9/12/16 plan playback scenario.")]
+    [InlineData("record --count 9 --outcome partial --profile-groups A,Z", "Profile groups must be A, B, C, D, and/or E.")]
     [InlineData("record --count 17 --outcome success", "--count must be between 1 and 16.")]
     [InlineData("record --count 9 --outcome unknown", "--outcome must be success, partial, or failure.")]
     [InlineData("record --count 9 --outcome partial --cpu-percent 101", "--cpu-percent must be between 0 and 100.")]
@@ -2700,11 +2700,11 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
     [InlineData("record --count 9 --outcome partial --restart", "Restart evidence requires same-account evidence.")]
     [InlineData("record --count 9 --outcome partial --account --account-label main_soop", "Same-account evidence requires at least one verified profile group.")]
     [InlineData("record --group D --outcome partial --account --profile-groups D", "Same-account evidence requires an account label.")]
-    [InlineData("record --group Z --outcome partial", "--group must be A, B, C, or D.")]
-    [InlineData("record --group A --count 5 --outcome partial", "--group can only be used with --count 1-4.")]
+    [InlineData("record --group Z --outcome partial", "--group must be A, B, C, D, or E.")]
+    [InlineData("record --group A --count 5 --outcome partial", "--group can only be used with --count 1-3.")]
     [InlineData("record --group A --outcome partial --scenario manual_group_a", "--group cannot be combined with --scenario or --scenario-name.")]
     [InlineData("record --group A --outcome partial --profile-groups D", "Profile groups must match scenario groups: A.")]
-    [InlineData("record --count 16 --outcome partial --scenario manual_group_a --profile-groups A", "Scenario manual_group_a requires 1-4 slot(s).")]
+    [InlineData("record --count 16 --outcome partial --scenario manual_group_a --profile-groups A", "Scenario manual_group_a requires 1-3 slot(s).")]
     [InlineData("record --count 12 --outcome partial --scenario groups_a_b_8_slots --profile-groups A,B", "Scenario groups_a_b_8_slots requires 8 slot(s).")]
     [InlineData("record --count 9 --outcome partial --scenario groups_a_b_c_9_slot_threshold --profile-groups D", "Profile groups must match scenario groups: A, B, C.")]
     [InlineData("record --count 9 --outcome partial --profile-folder C:\\Temp", "Unknown option: --profile-folder")]
@@ -2916,15 +2916,15 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         [
             CreatePassingScenarioResult(
                 "result_group_a",
-                4,
+                3,
                 "group_a_first_slots",
-                "Group A only (4 slot(s))",
+                "Group A only (3 slot(s))",
                 new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero)),
             CreatePassingScenarioResult(
                 "result_8",
                 8,
                 "groups_a_b_8_slots",
-                "Groups A/B split, 8 slots",
+                "Groups A/B/C split, 8 slots",
                 new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero)),
             CreatePassingScenarioResult(
                 "result_9",
@@ -2936,13 +2936,13 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
                 "result_12",
                 12,
                 "groups_a_b_c_12_slots",
-                "Groups A/B/C, 12 slots",
+                "Groups A/B/C/D, 12 slots",
                 new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero)),
             CreatePassingScenarioResult(
                 "result_16",
                 16,
                 "groups_a_b_c_d_16_slots",
-                "Groups A/B/C/D, 16 slots",
+                "Groups A/B/C/D/E, 16 slots",
                 new DateTimeOffset(2026, 5, 26, 13, 30, 0, TimeSpan.Zero))
         ];
     }
@@ -2953,28 +2953,28 @@ public sealed class FeasibilityStatusCommandTests : IDisposable
         [
             CreatePassingScenarioResult(
                 "result_group_a",
-                4,
+                3,
                 "group_a_first_slots",
-                "Group A only (4 slot(s))",
+                "Group A only (3 slot(s))",
                 new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero)),
             CreatePassingScenarioResult(
                 "result_8",
                 8,
                 "groups_a_b_8_slots",
-                "Groups A/B split, 8 slots",
+                "Groups A/B/C split, 8 slots",
                 new DateTimeOffset(2026, 5, 26, 12, 15, 0, TimeSpan.Zero)),
             CreatePassingScenarioResult(
                 "result_12",
                 12,
                 "groups_a_b_c_12_slots",
-                "Groups A/B/C, 12 slots",
+                "Groups A/B/C/D, 12 slots",
                 new DateTimeOffset(2026, 5, 26, 12, 30, 0, TimeSpan.Zero),
                 "partial"),
             CreatePassingScenarioResult(
                 "result_16",
                 16,
                 "groups_a_b_c_d_16_slots",
-                "Groups A/B/C/D, 16 slots",
+                "Groups A/B/C/D/E, 16 slots",
                 new DateTimeOffset(2026, 5, 26, 12, 45, 0, TimeSpan.Zero),
                 "partial"),
             CreatePassingScenarioResult(

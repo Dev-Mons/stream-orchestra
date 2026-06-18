@@ -109,7 +109,7 @@ public sealed class DiagnosticReportServiceTests : IDisposable
         var decision = new FeasibilityDecision(
             "continue_webview2_experiments",
             "WebView2 추가 실험",
-            "9개 재생은 가능하지만 A-D 계정 증거가 아직 완성되지 않았습니다.");
+            "9개 재생은 가능하지만 A-E 계정 증거가 아직 완성되지 않았습니다.");
         var service = new DiagnosticReportService(new ExternalBrowserDiscoveryService(
         [
             new ExternalBrowserCandidate("edge", "Microsoft Edge", [browserPath])
@@ -242,7 +242,7 @@ public sealed class DiagnosticReportServiceTests : IDisposable
             CreateAccountResult(
                 "result_d",
                 capturedAt.AddMinutes(15),
-                playbackCount: 4,
+                playbackCount: 3,
                 scenarioId: "isolated_group_d",
                 profileGroups: ["D"],
                 accountLabel: "alt_soop")

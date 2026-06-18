@@ -36,7 +36,7 @@ public static class FeasibilityStatusCommand
         HandoffResultsFileName
     ];
 
-    private static readonly string[] RequiredHandoffProfileGroupIds = ["A", "B", "C", "D"];
+    private static readonly string[] RequiredHandoffProfileGroupIds = SlotProfileGroupMapping.GroupIds.ToArray();
 
     public static int Execute(string[] args, TextWriter output, TextWriter error)
     {
@@ -1623,13 +1623,13 @@ public static class FeasibilityStatusCommand
         }
 
         lines.Add("Safety: use normal SOOP login/player behavior only; do not bypass DRM, authentication, or security behavior.");
-        lines.Add("1. Run `preflight` and confirm WebView2 Runtime, A-D profile folders, and 4/8/9/12/16 layout coverage are ready.");
-        lines.Add("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, and D.");
+        lines.Add("1. Run `preflight` and confirm WebView2 Runtime, A-E profile folders, and 3/8/9/12/16 layout coverage are ready.");
+        lines.Add("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, D, and E.");
         lines.Add("3. Restart the app and confirm the SOOP login session persists in the required profile groups.");
-        lines.Add("4. Run the isolated Group A test and record whether slots 1-4 visibly play.");
+        lines.Add("4. Run the isolated Group A test and record whether slots 1-3 visibly play.");
         lines.Add("5. Run the 8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests and record each visible playback result.");
         lines.Add("6. After playback stabilizes, record Task Manager CPU %, GPU %, and memory MB, plus whether resource usage is acceptable.");
-        lines.Add("7. Use one shared non-sensitive account label for every same-account evidence record across A-D.");
+        lines.Add("7. Use one shared non-sensitive account label for every same-account evidence record across A-E.");
         lines.Add("8. Record lower-count playback evidence as `partial` when the requested slots visibly play but success-only evidence is incomplete, or `failure` when they do not work.");
         lines.Add("9. Run each intended `record` command with `--dry-run` first to preview validation, decision, and audit output without saving.");
         lines.Add("10. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
@@ -1776,7 +1776,7 @@ public static class FeasibilityStatusCommand
             lines.AddRange(outstandingItems.Select(item => $"- [{item.Status}] {item.Title}: {item.Evidence}"));
         }
 
-        lines.Add("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account-label, restart, resource, CPU, GPU, and memory evidence.");
+        lines.Add("Required evidence: record live SOOP 3-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-E account-label, restart, resource, CPU, GPU, and memory evidence.");
         var suggestions = new FeasibilityAuditService().CreateSuggestedRecordShapes(summary.AuditItems);
         if (suggestions.Count > 0)
         {
@@ -2884,13 +2884,13 @@ public static class FeasibilityStatusCommand
         }
 
         lines.Add("Safety: use normal SOOP login/player behavior only; do not bypass DRM, authentication, or security behavior.");
-        lines.Add("1. Run `preflight` and confirm WebView2 Runtime, A-D profile folders, and 4/8/9/12/16 layout coverage are ready.");
-        lines.Add("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, and D.");
+        lines.Add("1. Run `preflight` and confirm WebView2 Runtime, A-E profile folders, and 3/8/9/12/16 layout coverage are ready.");
+        lines.Add("2. Open the WPF app, load SOOP, and sign into the same SOOP account in profile groups A, B, C, D, and E.");
         lines.Add("3. Restart the app and confirm the SOOP login session persists in the required profile groups.");
-        lines.Add("4. Run the isolated Group A test and record whether slots 1-4 visibly play.");
+        lines.Add("4. Run the isolated Group A test and record whether slots 1-3 visibly play.");
         lines.Add("5. Run the 8-slot, 9-slot threshold, 12-slot, and 16-slot playback tests and record each visible playback result.");
         lines.Add("6. After playback stabilizes, record Task Manager CPU %, GPU %, and memory MB, plus whether resource usage is acceptable.");
-        lines.Add("7. Use one shared non-sensitive account label for every same-account evidence record across A-D.");
+        lines.Add("7. Use one shared non-sensitive account label for every same-account evidence record across A-E.");
         lines.Add("8. Record lower-count playback evidence as `partial` when the requested slots visibly play but success-only evidence is incomplete, or `failure` when they do not work.");
         lines.Add("9. Run each intended `record` command with `--dry-run` first to preview validation, decision, and audit output without saving.");
         lines.Add("10. Record the final 9+ `success` evidence last, only when playback, account, restart, resource, CPU, GPU, and memory evidence is complete.");
@@ -2911,7 +2911,7 @@ public static class FeasibilityStatusCommand
     private static int PrintScenarios(TextWriter output)
     {
         var scenarioService = new FeasibilityScenarioService();
-        var playbackTestCounts = new[] { 4, 8, 9, 12, 16 };
+        var playbackTestCounts = new[] { 3, 8, 9, 12, 16 };
 
         output.WriteLine("Stream Orchestra Feasibility Scenarios");
         output.WriteLine("Playback test scenarios:");
@@ -3114,7 +3114,7 @@ public static class FeasibilityStatusCommand
                 .ToArray();
 
             var layoutCoverage = string.Join(", ", playableCounts.Distinct(StringComparer.OrdinalIgnoreCase));
-            return $"[ready] {layouts.Count} layout(s), playback test counts 4/8/9/12/16 are visible via {layoutCoverage}.";
+            return $"[ready] {layouts.Count} layout(s), playback test counts 3/8/9/12/16 are visible via {layoutCoverage}.";
         }
         catch (Exception ex)
         {
@@ -3208,7 +3208,7 @@ public static class FeasibilityStatusCommand
             lines.AddRange(outstandingItems.Select(item => $"- [{item.Status}] {item.Title}: {item.Evidence}"));
         }
 
-        lines.Add("Required evidence: record live SOOP 4-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-D account-label, restart, resource, CPU, GPU, and memory evidence.");
+        lines.Add("Required evidence: record live SOOP 3-slot Group A, 8-slot, 9-slot threshold, 12-slot, and 16-slot playback evidence plus A-E account-label, restart, resource, CPU, GPU, and memory evidence.");
         var suggestions = auditService.CreateSuggestedRecordShapes(auditItems);
         if (suggestions.Count > 0)
         {
@@ -3625,7 +3625,7 @@ public static class FeasibilityStatusCommand
                 if (normalizedGroup.Count != 1 ||
                     FeasibilityProfileGroupEvidenceService.ValidateValues(normalizedGroup) is not null)
                 {
-                    return ParseResult.Invalid("--group must be A, B, C, or D.");
+                    return ParseResult.Invalid("--group must be A, B, C, D, or E.");
                 }
 
                 isolatedGroupId = normalizedGroup[0];
@@ -3721,7 +3721,7 @@ public static class FeasibilityStatusCommand
 
         if (playbackCount is null && isolatedGroupId is not null)
         {
-            playbackCount = 4;
+            playbackCount = SlotProfileGroupMapping.SlotsPerProfileGroup;
         }
 
         if (playbackCount is null)
@@ -3729,9 +3729,9 @@ public static class FeasibilityStatusCommand
             return ParseResult.Invalid("record requires --count.");
         }
 
-        if (isolatedGroupId is not null && playbackCount is > 4)
+        if (isolatedGroupId is not null && playbackCount is > SlotProfileGroupMapping.SlotsPerProfileGroup)
         {
-            return ParseResult.Invalid("--group can only be used with --count 1-4.");
+            return ParseResult.Invalid("--group can only be used with --count 1-3.");
         }
 
         if (string.IsNullOrWhiteSpace(outcome))
@@ -4004,7 +4004,7 @@ public static class FeasibilityStatusCommand
         writer.WriteLine("  StreamOrchestra.Tools handoff [--data-folder <path>] [--profile-folder <path>] [--output-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools history [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools preflight [--data-folder <path>] [--profile-folder <path>] [--output <path>]");
-        writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-D>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--dry-run] [--data-folder <path>]");
+        writer.WriteLine("  StreamOrchestra.Tools record [--count <1-16>] [--group <A-E>] --outcome <success|partial|failure> [--account] [--account-label <text>] [--profile-groups <A,B,C,D,E>] [--restart] [--resources] [--cpu-percent <0-100>] [--gpu-percent <0-100>] [--memory-mb <value>] [--scenario <id>] [--scenario-name <text>] [--notes <text>] [--dry-run] [--data-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools report [--data-folder <path>] [--profile-folder <path>]");
         writer.WriteLine("  StreamOrchestra.Tools scenarios");
         writer.WriteLine("  StreamOrchestra.Tools validate-handoff --input-folder <path> [--output <path>]");

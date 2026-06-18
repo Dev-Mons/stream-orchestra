@@ -27,15 +27,23 @@ public sealed class FeasibilityDecisionServiceTests
             restartSession: true,
             resources: true);
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             sameAccountSession: true,
             restartSession: false,
             resources: false,
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"]);
+        var groupE = CreateResult(
+            playbackCount: 3,
+            outcome: "partial",
+            sameAccountSession: true,
+            restartSession: false,
+            resources: false,
+            scenarioId: "isolated_group_e",
+            verifiedProfileGroups: ["E"]);
 
-        var decision = service.Decide([result, groupD]);
+        var decision = service.Decide([result, groupD, groupE]);
 
         Assert.Equal("continue_webview2_mvp", decision.Code);
         Assert.Contains("WebView2 MVP", decision.NextAction);
@@ -53,7 +61,7 @@ public sealed class FeasibilityDecisionServiceTests
             resources: true,
             scenarioId: "custom_9_slot_note");
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             sameAccountSession: true,
             restartSession: false,
@@ -95,7 +103,7 @@ public sealed class FeasibilityDecisionServiceTests
             resources: true,
             accountLabel: "main_soop");
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             sameAccountSession: true,
             restartSession: false,
@@ -122,7 +130,7 @@ public sealed class FeasibilityDecisionServiceTests
             resources: true,
             accountLabel: "");
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             sameAccountSession: true,
             restartSession: false,
@@ -148,7 +156,7 @@ public sealed class FeasibilityDecisionServiceTests
             resources: true,
             capturedAt: new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero));
         var olderGroupDPass = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             sameAccountSession: true,
             restartSession: false,
@@ -157,7 +165,7 @@ public sealed class FeasibilityDecisionServiceTests
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"]);
         var newerGroupDFailure = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "failure",
             sameAccountSession: false,
             restartSession: false,
@@ -314,7 +322,7 @@ public sealed class FeasibilityDecisionServiceTests
     {
         var service = new FeasibilityDecisionService();
         var result = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "",
             sameAccountSession: false,
             restartSession: false,
@@ -394,15 +402,23 @@ public sealed class FeasibilityDecisionServiceTests
             resources: true,
             capturedAt: new DateTimeOffset(2026, 5, 26, 13, 0, 0, TimeSpan.Zero));
         var groupD = CreateResult(
-            playbackCount: 4,
+            playbackCount: 3,
             outcome: "partial",
             sameAccountSession: true,
             restartSession: false,
             resources: false,
             scenarioId: "isolated_group_d",
             verifiedProfileGroups: ["D"]);
+        var groupE = CreateResult(
+            playbackCount: 3,
+            outcome: "partial",
+            sameAccountSession: true,
+            restartSession: false,
+            resources: false,
+            scenarioId: "isolated_group_e",
+            verifiedProfileGroups: ["E"]);
 
-        var decision = service.Decide([olderFailure, newerSuccess, groupD]);
+        var decision = service.Decide([olderFailure, newerSuccess, groupD, groupE]);
 
         Assert.Equal("continue_webview2_mvp", decision.Code);
     }
@@ -459,7 +475,7 @@ public sealed class FeasibilityDecisionServiceTests
         capturedAt ??= new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
         scenarioId ??= playbackCount switch
         {
-            <= 4 => "group_a_first_slots",
+            <= 3 => "group_a_first_slots",
             8 => "groups_a_b_8_slots",
             9 => "groups_a_b_c_9_slot_threshold",
             12 => "groups_a_b_c_12_slots",

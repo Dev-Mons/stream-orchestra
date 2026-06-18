@@ -6,7 +6,7 @@ namespace StreamOrchestra.Tests;
 public sealed class FeasibilityScenarioServiceTests
 {
     [Theory]
-    [InlineData(4, "group_a_first_slots")]
+    [InlineData(3, "group_a_first_slots")]
     [InlineData(8, "groups_a_b_8_slots")]
     [InlineData(9, "groups_a_b_c_9_slot_threshold")]
     [InlineData(12, "groups_a_b_c_12_slots")]
@@ -23,7 +23,7 @@ public sealed class FeasibilityScenarioServiceTests
 
     [Theory]
     [InlineData("All", 16, "manual_all_groups")]
-    [InlineData("A", 4, "manual_group_a")]
+    [InlineData("A", 3, "manual_group_a")]
     public void CreateScopeLoadScenario_MapsGroupLoadsToNamedScenarios(
         string groupId,
         int targetSlotCount,
@@ -41,15 +41,16 @@ public sealed class FeasibilityScenarioServiceTests
     {
         var scenarioService = new FeasibilityScenarioService();
 
-        var scenario = scenarioService.CreateIsolatedGroupScenario("A", 4);
+        var scenario = scenarioService.CreateIsolatedGroupScenario("A", 3);
 
         Assert.Equal("isolated_group_a", scenario.Id);
-        Assert.Equal("Isolated Group A test (4 slot(s))", scenario.Name);
+        Assert.Equal("Isolated Group A test (3 slot(s))", scenario.Name);
     }
 
     [Theory]
-    [InlineData(4, "isolated_group_a", null)]
-    [InlineData(16, "isolated_group_a", "Scenario isolated_group_a requires 1-4 slot(s).")]
+    [InlineData(3, "isolated_group_a", null)]
+    [InlineData(4, "isolated_group_a", "Scenario isolated_group_a requires 1-3 slot(s).")]
+    [InlineData(16, "isolated_group_a", "Scenario isolated_group_a requires 1-3 slot(s).")]
     [InlineData(8, "groups_a_b_8_slots", null)]
     [InlineData(12, "groups_a_b_8_slots", "Scenario groups_a_b_8_slots requires 8 slot(s).")]
     [InlineData(9, "groups_a_b_c_9_slot_threshold", null)]
@@ -93,8 +94,8 @@ public sealed class FeasibilityScenarioServiceTests
     public void CreatePlanGateHint_ExplainsWhetherScenarioMatchesPlanGate()
     {
         Assert.Contains(
-            "Group A 4-slot playback gate",
-            FeasibilityScenarioService.CreatePlanGateHint(4, "isolated_group_a"));
+            "Group A 3-slot playback gate",
+            FeasibilityScenarioService.CreatePlanGateHint(3, "isolated_group_a"));
         Assert.Contains(
             "9-slot threshold playback gate",
             FeasibilityScenarioService.CreatePlanGateHint(9, "groups_a_b_c_9_slot_threshold"));
@@ -103,7 +104,7 @@ public sealed class FeasibilityScenarioServiceTests
             FeasibilityScenarioService.CreatePlanGateHint(16, "manual_all_groups"));
         Assert.Contains(
             "same-account evidence",
-            FeasibilityScenarioService.CreatePlanGateHint(4, "manual_group_d"));
+            FeasibilityScenarioService.CreatePlanGateHint(3, "manual_group_d"));
         Assert.Contains(
             "named playback-test scenarios",
             FeasibilityScenarioService.CreatePlanGateHint(9, "custom_manual_note"));

@@ -4,7 +4,7 @@ namespace StreamOrchestra.App.Services;
 
 public static class FeasibilityProfileGroupEvidenceService
 {
-    private static readonly string[] GroupOrder = ["A", "B", "C", "D"];
+    private static readonly string[] GroupOrder = SlotProfileGroupMapping.GroupIds.ToArray();
 
     public static IReadOnlyList<string> Normalize(IReadOnlyList<string>? profileGroups)
     {
@@ -29,18 +29,21 @@ public static class FeasibilityProfileGroupEvidenceService
 
         return invalidGroup is null
             ? null
-            : "Profile groups must be A, B, C, and/or D.";
+            : $"Profile groups must be {FormatAllowedGroupsForValidation()}.";
     }
 
     public static IReadOnlyList<string> GetRequiredGroupsForPlaybackCount(int playbackCount)
     {
-        return playbackCount switch
+        if (playbackCount <= 0)
         {
-            <= 4 => ["A"],
-            <= 8 => ["A", "B"],
-            <= 12 => ["A", "B", "C"],
-            _ => ["A", "B", "C", "D"]
-        };
+            return [];
+        }
+
+        return Enumerable
+            .Range(1, Math.Min(playbackCount, SlotProfileGroupMapping.MaxSlotCount))
+            .Select(SlotProfileGroupMapping.GetGroupIdForSlot)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     public static bool HasRequiredGroups(int playbackCount, IReadOnlyList<string>? profileGroups)
@@ -69,10 +72,10 @@ public static class FeasibilityProfileGroupEvidenceService
             return normalizedScenarioId switch
             {
                 "group_a_first_slots" => ["A"],
-                "groups_a_b_8_slots" => ["A", "B"],
+                "groups_a_b_8_slots" => GetRequiredGroupsForPlaybackCount(8),
                 "groups_a_b_c_9_slot_threshold" => ["A", "B", "C"],
-                "groups_a_b_c_12_slots" => ["A", "B", "C"],
-                "groups_a_b_c_d_16_slots" => ["A", "B", "C", "D"],
+                "groups_a_b_c_12_slots" => GetRequiredGroupsForPlaybackCount(12),
+                "groups_a_b_c_d_16_slots" => GetRequiredGroupsForPlaybackCount(16),
                 _ => GetRequiredGroupsForPlaybackCount(playbackCount)
             };
         }
@@ -254,11 +257,22 @@ public static class FeasibilityProfileGroupEvidenceService
         return normalizedScenarioId switch
         {
             "group_a_first_slots" => ["A"],
-            "groups_a_b_8_slots" => ["A", "B"],
+            "groups_a_b_8_slots" => GetRequiredGroupsForPlaybackCount(8),
             "groups_a_b_c_9_slot_threshold" => ["A", "B", "C"],
-            "groups_a_b_c_12_slots" => ["A", "B", "C"],
-            "groups_a_b_c_d_16_slots" => ["A", "B", "C", "D"],
+            "groups_a_b_c_12_slots" => GetRequiredGroupsForPlaybackCount(12),
+            "groups_a_b_c_d_16_slots" => GetRequiredGroupsForPlaybackCount(16),
             _ => []
+        };
+    }
+
+    private static string FormatAllowedGroupsForValidation()
+    {
+        return GroupOrder.Length switch
+        {
+            0 => "",
+            1 => GroupOrder[0],
+            2 => $"{GroupOrder[0]} and/or {GroupOrder[1]}",
+            _ => $"{string.Join(", ", GroupOrder.Take(GroupOrder.Length - 1))}, and/or {GroupOrder[^1]}"
         };
     }
 }

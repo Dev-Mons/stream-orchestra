@@ -50,7 +50,7 @@ public sealed class FeasibilityResultValidationServiceTests
             observedCpuPercent: 45,
             observedGpuPercent: 60,
             observedMemoryMegabytes: 12000,
-            verifiedProfileGroups: ["A", "B", "C", "D"],
+            verifiedProfileGroups: ["A", "B", "C", "D", "E"],
             accountLabel: "main_soop",
             scenarioId: "manual_all_groups");
 
@@ -290,7 +290,7 @@ public sealed class FeasibilityResultValidationServiceTests
             observedMemoryMegabytes: 12000,
             verifiedProfileGroups: ["A", "B"]);
 
-        Assert.Equal("Success requires same-account profile group evidence for groups A, B, C.", error);
+        Assert.Equal("Success requires same-account profile group evidence for groups A, B, C, D.", error);
     }
 
     [Fact]
@@ -306,7 +306,7 @@ public sealed class FeasibilityResultValidationServiceTests
             resourceUsageAcceptable: true,
             verifiedProfileGroups: ["A", "Z"]);
 
-        Assert.Equal("Profile groups must be A, B, C, and/or D.", error);
+        Assert.Equal("Profile groups must be A, B, C, D, and/or E.", error);
     }
 
     [Theory]

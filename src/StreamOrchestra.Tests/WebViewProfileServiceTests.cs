@@ -13,13 +13,15 @@ public sealed class WebViewProfileServiceTests : IDisposable
 
     [Theory]
     [InlineData(1, "A")]
-    [InlineData(4, "A")]
-    [InlineData(5, "B")]
-    [InlineData(8, "B")]
+    [InlineData(3, "A")]
+    [InlineData(4, "B")]
+    [InlineData(6, "B")]
+    [InlineData(7, "C")]
     [InlineData(9, "C")]
-    [InlineData(12, "C")]
-    [InlineData(13, "D")]
-    [InlineData(16, "D")]
+    [InlineData(10, "D")]
+    [InlineData(12, "D")]
+    [InlineData(13, "E")]
+    [InlineData(16, "E")]
     public void GetGroupForSlot_MapsSlotsToExpectedProfileGroups(int slotId, string expectedGroupId)
     {
         var service = new WebViewProfileService(_profileRoot);
@@ -48,7 +50,7 @@ public sealed class WebViewProfileServiceTests : IDisposable
 
         var groups = service.Groups.OrderBy(group => group.Id).ToArray();
 
-        Assert.Equal(["A", "B", "C", "D"], groups.Select(group => group.Id));
+        Assert.Equal(["A", "B", "C", "D", "E"], groups.Select(group => group.Id));
         Assert.DoesNotContain(groups, group => group.Id == service.ExplorerGroup.Id);
         Assert.Equal(
             groups.Length,

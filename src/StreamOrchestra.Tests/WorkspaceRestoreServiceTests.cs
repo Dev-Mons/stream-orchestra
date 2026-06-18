@@ -38,7 +38,7 @@ public sealed class WorkspaceRestoreServiceTests
             slot.StreamName == "Empty" &&
             slot.StreamUrl == "about:blank" &&
             slot.Muted &&
-            slot.ProfileGroupId == "C");
+            slot.ProfileGroupId == "D");
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class WorkspaceRestoreServiceTests
             slot.SlotId == 16 &&
             slot.StreamName == "Sixteen" &&
             slot.StreamUrl == "https://example.com/16" &&
-            slot.ProfileGroupId == "D");
+            slot.ProfileGroupId == "E");
     }
 
     [Fact]

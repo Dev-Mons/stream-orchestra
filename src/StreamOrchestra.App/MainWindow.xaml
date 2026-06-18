@@ -186,6 +186,21 @@
                         ToolTip="모든 화면의 볼륨을 0%로 변경"
                         Click="MuteAllButton_Click" />
 
+                <Button x:Name="RefreshPlayingScreensButton"
+                        DockPanel.Dock="Right"
+                        Margin="0"
+                        VerticalAlignment="Center"
+                        WindowChrome.IsHitTestVisibleInChrome="True"
+                        Style="{StaticResource SidebarToggleButton}"
+                        ToolTip="현재 재생 중인 화면 전체 새로고침"
+                        Click="RefreshPlayingScreensButton_Click">
+                    <Image x:Name="RefreshPlayingScreensIcon"
+                           Source="/Assets/refresh.png"
+                           Width="18"
+                           Height="18"
+                           Stretch="Uniform" />
+                </Button>
+
                 <TextBlock x:Name="DiagnosticsTextBlock"
                            DockPanel.Dock="Right"
                            Margin="0,0,8,0"
