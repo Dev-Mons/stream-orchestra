@@ -14,6 +14,7 @@ public partial class ExplorerPanel : UserControl
     private bool _isInitialized;
     private Point? _dragStartPoint;
     private string? _linkDragScriptId;
+    private string? _soopSidebarSortScriptId;
 
     public ExplorerPanel(WebViewProfileService profileService, StreamNavigationService navigationService)
     {
@@ -72,6 +73,7 @@ public partial class ExplorerPanel : UserControl
         var environment = await _profileService.GetEnvironmentAsync(_profileService.ExplorerGroup);
         await Browser.EnsureCoreWebView2Async(environment);
         await InstallLinkDragScriptAsync();
+        await InstallSoopSidebarSortScriptAsync();
 
         Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
         Browser.CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
@@ -90,6 +92,17 @@ public partial class ExplorerPanel : UserControl
 
         _linkDragScriptId = await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
             CreateLinkDragScript());
+    }
+
+    private async Task InstallSoopSidebarSortScriptAsync()
+    {
+        if (_soopSidebarSortScriptId is not null || Browser.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        _soopSidebarSortScriptId = await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+            SoopSidebarSortScriptService.CreateScript());
     }
 
     private static string CreateLinkDragScript()
