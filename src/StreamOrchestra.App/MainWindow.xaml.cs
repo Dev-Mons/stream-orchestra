@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     private IReadOnlyList<LayoutPreset> _layouts = [];
     private List<WorkspacePreset> _workspaces = [];
     private AppState? _loadedAppState;
+    private bool _restoreMaximizedAfterBoundsApplied;
     private readonly DispatcherTimer _diagnosticsTimer;
     private readonly DispatcherTimer _swapModeKeyboardPollTimer;
     private DispatcherTimer? _statusToastTimer;
@@ -97,6 +98,7 @@ public partial class MainWindow : Window
 
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
+        SourceInitialized += MainWindow_SourceInitialized;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         PreviewKeyUp += MainWindow_PreviewKeyUp;
         SizeChanged += (_, _) => QueueRefreshOverlayPlacements();
@@ -1534,22 +1536,36 @@ public partial class MainWindow : Window
 
     private void RestoreWindowPlacement(AppWindowState? windowState)
     {
-        var normalizedWindowState = _appWindowPlacementService.NormalizeForRestore(
+        _restoreMaximizedAfterBoundsApplied = false;
+
+        var restorePlan = _appWindowPlacementService.CreateRestorePlan(
             windowState,
             SystemParameters.VirtualScreenLeft,
             SystemParameters.VirtualScreenTop,
             SystemParameters.VirtualScreenWidth,
             SystemParameters.VirtualScreenHeight);
-        if (normalizedWindowState is null)
+        if (restorePlan is null)
         {
             return;
         }
 
-        Left = normalizedWindowState.X;
-        Top = normalizedWindowState.Y;
-        Width = normalizedWindowState.Width;
-        Height = normalizedWindowState.Height;
-        WindowState = normalizedWindowState.IsMaximized ? WindowState.Maximized : WindowState.Normal;
+        Left = restorePlan.Bounds.X;
+        Top = restorePlan.Bounds.Y;
+        Width = restorePlan.Bounds.Width;
+        Height = restorePlan.Bounds.Height;
+        WindowState = WindowState.Normal;
+        _restoreMaximizedAfterBoundsApplied = restorePlan.RestoreMaximizedAfterBoundsApplied;
+    }
+
+    private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+    {
+        if (!_restoreMaximizedAfterBoundsApplied)
+        {
+            return;
+        }
+
+        _restoreMaximizedAfterBoundsApplied = false;
+        WindowState = WindowState.Maximized;
     }
 
     private void ApplyViewState(AppState? appState)

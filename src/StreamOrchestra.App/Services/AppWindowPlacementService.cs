@@ -7,6 +7,38 @@ public sealed class AppWindowPlacementService
     public const double MinimumRestoreWidth = 640;
     public const double MinimumRestoreHeight = 360;
 
+    public AppWindowRestorePlan? CreateRestorePlan(
+        AppWindowState? windowState,
+        double virtualScreenLeft,
+        double virtualScreenTop,
+        double virtualScreenWidth,
+        double virtualScreenHeight)
+    {
+        var normalizedWindowState = NormalizeForRestore(
+            windowState,
+            virtualScreenLeft,
+            virtualScreenTop,
+            virtualScreenWidth,
+            virtualScreenHeight);
+        if (normalizedWindowState is null)
+        {
+            return null;
+        }
+
+        return new AppWindowRestorePlan
+        {
+            Bounds = new AppWindowState
+            {
+                X = normalizedWindowState.X,
+                Y = normalizedWindowState.Y,
+                Width = normalizedWindowState.Width,
+                Height = normalizedWindowState.Height,
+                IsMaximized = false
+            },
+            RestoreMaximizedAfterBoundsApplied = normalizedWindowState.IsMaximized
+        };
+    }
+
     public AppWindowState? NormalizeForRestore(
         AppWindowState? windowState,
         double virtualScreenLeft,

@@ -60,6 +60,30 @@ public sealed class AppWindowPlacementServiceTests
         Assert.Equal(1080, normalized.Height);
     }
 
+    [Fact]
+    public void CreateRestorePlan_DefersMaximizedRestoreUntilAfterBoundsAreApplied()
+    {
+        var service = new AppWindowPlacementService();
+        var windowState = new AppWindowState
+        {
+            X = -1797,
+            Y = 57,
+            Width = 1629,
+            Height = 937,
+            IsMaximized = true
+        };
+
+        var plan = service.CreateRestorePlan(windowState, -1920, 0, 3840, 1080);
+
+        Assert.NotNull(plan);
+        Assert.Equal(-1797, plan.Bounds.X);
+        Assert.Equal(57, plan.Bounds.Y);
+        Assert.Equal(1629, plan.Bounds.Width);
+        Assert.Equal(937, plan.Bounds.Height);
+        Assert.False(plan.Bounds.IsMaximized);
+        Assert.True(plan.RestoreMaximizedAfterBoundsApplied);
+    }
+
     public static IEnumerable<object[]> InvalidWindowStates()
     {
         yield return [new AppWindowState { X = double.NaN, Y = 0, Width = 1280, Height = 720 }];
