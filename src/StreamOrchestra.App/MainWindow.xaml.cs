@@ -43,6 +43,7 @@ public partial class MainWindow : Window
     private readonly WorkspacePresetNormalizationService _workspacePresetNormalizationService;
     private readonly WorkspaceRestoreService _workspaceRestoreService;
     private readonly UpdateService? _updateService;
+    private readonly CancellationTokenSource _updateCancellationTokenSource = new();
     private readonly List<StreamSlotView> _slots = [];
     private IReadOnlyList<LayoutPreset> _builtInLayouts = [];
     private List<LayoutPreset> _customLayouts = [];
@@ -62,6 +63,7 @@ public partial class MainWindow : Window
     private readonly HashSet<string> _recoveringSoopLimitGroups = new(StringComparer.OrdinalIgnoreCase);
     private LayoutCardMode _layoutCardMode = LayoutCardMode.Add;
     private bool _isExplorerPanelVisible = true;
+    private bool _isUpdateOperationInProgress;
     private GridLength _lastExplorerColumnWidth = new(360);
     private LayoutPreset? _selectedLayout;
     private ShortcutSettings _shortcutSettings = new();
@@ -523,18 +525,39 @@ public partial class MainWindow : Window
             return;
         }
 
+        var ownsUpdateOperation = false;
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(3));
-            var result = await _updateService.RunStartupCheckAsync();
+            var cancellationToken = _updateCancellationTokenSource.Token;
+            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+
+            if (_isUpdateOperationInProgress)
+            {
+                return;
+            }
+
+            _isUpdateOperationInProgress = true;
+            ownsUpdateOperation = true;
+            var result = await _updateService.RunAutomaticCheckAsync(cancellationToken);
             if (result.Outcome == UpdateCheckOutcome.Available && result.Update is not null)
             {
                 await PromptForUpdateAsync(result.Update);
             }
         }
+        catch (OperationCanceledException) when (_updateCancellationTokenSource.IsCancellationRequested)
+        {
+            // 창이 닫히는 동안 진행 중인 검사는 조용히 취소한다.
+        }
         catch
         {
             // 자동 업데이트 실패는 사용자 흐름을 방해하지 않음
+        }
+        finally
+        {
+            if (ownsUpdateOperation)
+            {
+                _isUpdateOperationInProgress = false;
+            }
         }
     }
 
@@ -562,6 +585,7 @@ public partial class MainWindow : Window
         if (choice == MessageBoxResult.Cancel)
         {
             _updateService.SkipVersion(update.Version);
+            _presetStorageService.SaveAppState(CaptureAppState());
             StatusTextBlock.Text = $"버전 {update.Version} 건너뜀.";
             return;
         }
@@ -574,7 +598,7 @@ public partial class MainWindow : Window
         try
         {
             StatusTextBlock.Text = $"업데이트 {update.Version} 다운로드 중...";
-            await _updateService.DownloadAndApplyAsync();
+            await _updateService.DownloadAndApplyAsync(_updateCancellationTokenSource.Token);
         }
         catch
         {
@@ -590,10 +614,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_isUpdateOperationInProgress)
+        {
+            StatusTextBlock.Text = "업데이트 확인 또는 다운로드가 이미 진행 중입니다.";
+            return;
+        }
+
+        _isUpdateOperationInProgress = true;
         StatusTextBlock.Text = "업데이트 확인 중...";
         try
         {
-            var result = await _updateService.RunManualCheckAsync();
+            var result = await _updateService.RunManualCheckAsync(_updateCancellationTokenSource.Token);
             switch (result.Outcome)
             {
                 case UpdateCheckOutcome.Available when result.Update is not null:
@@ -616,6 +647,10 @@ public partial class MainWindow : Window
         catch
         {
             StatusTextBlock.Text = "업데이트 확인 중 오류가 발생했습니다.";
+        }
+        finally
+        {
+            _isUpdateOperationInProgress = false;
         }
     }
 
@@ -1634,6 +1669,7 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        _updateCancellationTokenSource.Cancel();
         _presetStorageService.SaveAppState(CaptureAppState());
     }
 

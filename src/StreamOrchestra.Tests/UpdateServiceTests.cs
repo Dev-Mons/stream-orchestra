@@ -151,6 +151,32 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task RunAutomaticCheckAsync_IsThrottled_AfterManualCheck()
+    {
+        var checker = new FakeUpdateChecker();
+        var now = DateTimeOffset.Parse("2026-05-28T10:00:00Z");
+        var service = new UpdateService(checker, new AutoUpdateState { Enabled = true }, TimeSpan.FromHours(6), () => now);
+
+        await service.RunManualCheckAsync();
+        var result = await service.RunAutomaticCheckAsync();
+
+        Assert.Equal(UpdateCheckOutcome.Throttled, result.Outcome);
+        Assert.Equal(1, checker.CheckCallCount);
+    }
+
+    [Fact]
+    public async Task DownloadAndApplyAsync_ForwardsCancellationToken()
+    {
+        var checker = new FakeUpdateChecker();
+        var service = new UpdateService(checker, new AutoUpdateState());
+        using var cancellationTokenSource = new CancellationTokenSource();
+
+        await service.DownloadAndApplyAsync(cancellationTokenSource.Token);
+
+        Assert.Equal(cancellationTokenSource.Token, checker.ApplyCancellationToken);
+    }
+
+    [Fact]
     public void SkipVersion_UpdatesState()
     {
         var service = new UpdateService(new FakeUpdateChecker(), new AutoUpdateState { Enabled = true });
@@ -180,6 +206,8 @@ public sealed class UpdateServiceTests
 
         public int ApplyCallCount { get; private set; }
 
+        public CancellationToken ApplyCancellationToken { get; private set; }
+
         public Task<AvailableUpdate?> CheckForUpdateAsync(CancellationToken cancellationToken = default)
         {
             CheckCallCount++;
@@ -194,6 +222,7 @@ public sealed class UpdateServiceTests
         public Task DownloadAndApplyAsync(CancellationToken cancellationToken = default)
         {
             ApplyCallCount++;
+            ApplyCancellationToken = cancellationToken;
             return Task.CompletedTask;
         }
     }

@@ -42,7 +42,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        await _manager.DownloadUpdatesAsync(info).ConfigureAwait(false);
+        await _manager.DownloadUpdatesAsync(info, null, cancellationToken).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
         _manager.ApplyUpdatesAndRestart(info);
