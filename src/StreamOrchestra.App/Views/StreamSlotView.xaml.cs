@@ -18,7 +18,7 @@ public partial class StreamSlotView : UserControl
     private const int MinVolumePercent = 0;
     private const int MaxVolumePercent = 100;
     private const int InitialVolumePercent = 100;
-    private const int VolumeStepPercent = 10;
+    private const int VolumeStepPercent = 5;
     private static readonly Brush RemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 31, 41, 55));
     private static readonly Brush RemoveButtonBorder = new SolidColorBrush(Color.FromRgb(243, 246, 250));
     private static readonly Brush SelectedRemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 185, 28, 28));
@@ -29,7 +29,7 @@ public partial class StreamSlotView : UserControl
 
     // 웹페이지마다 휠 한 칸에 wheel 이벤트를 1~3개씩 발생시켜, 한 번 스크롤에 볼륨이
     // 20~30%씩 바뀌는 버그가 있었다. 한 번의 물리적 스크롤에서 연달아 들어오는 이벤트
-    // 묶음을 이 시간 창 안에서 한 번의 스텝으로 합쳐 항상 10%씩만 변경되도록 한다.
+    // 묶음을 이 시간 창 안에서 한 번의 스텝으로 합쳐 항상 5%씩만 변경되도록 한다.
     private const long WheelStepThrottleMilliseconds = 50;
 
     private static readonly Brush SwapBorderBrush = new SolidColorBrush(Color.FromArgb(0x80, 0x15, 0xA3, 0xFF));
@@ -605,7 +605,7 @@ public partial class StreamSlotView : UserControl
         SlotSelected?.Invoke(this);
 
         // 한 번의 물리적 스크롤이 발생시킨 연속된 휠 이벤트 묶음은 첫 이벤트만 반영하고
-        // 나머지는 무시해 항상 10%씩만 변경되도록 한다.
+        // 나머지는 무시해 항상 5%씩만 변경되도록 한다.
         var now = Environment.TickCount64;
         if (now - _lastWheelStepTimestamp < WheelStepThrottleMilliseconds)
         {

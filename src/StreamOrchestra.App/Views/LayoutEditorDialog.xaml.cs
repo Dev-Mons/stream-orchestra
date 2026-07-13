@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -1904,6 +1906,33 @@ public partial class LayoutEditorDialog : Window
 
         AppliedLayoutId = savedLayout.Id;
         Close();
+    }
+
+    private void OpenLayoutFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        var layoutFilePath = _layoutPresetService.CustomLayoutFilePath;
+        var layoutFolderPath = layoutFilePath is null
+            ? null
+            : Path.GetDirectoryName(layoutFilePath);
+        if (string.IsNullOrWhiteSpace(layoutFolderPath))
+        {
+            DialogStatusTextBlock.Text = "레이아웃 저장 폴더를 찾을 수 없습니다.";
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(layoutFolderPath);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = layoutFolderPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            DialogStatusTextBlock.Text = $"레이아웃 저장 폴더를 열지 못했습니다: {ex.Message}";
+        }
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)

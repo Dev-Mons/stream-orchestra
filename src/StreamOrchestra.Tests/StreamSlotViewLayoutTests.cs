@@ -185,11 +185,11 @@ public sealed class StreamSlotViewLayoutTests
 
     [Theory]
     [InlineData(100, -120, 100)]
-    [InlineData(100, 120, 90)]
-    [InlineData(50, -120, 60)]
-    [InlineData(50, 120, 40)]
+    [InlineData(100, 120, 95)]
+    [InlineData(50, -120, 55)]
+    [InlineData(50, 120, 45)]
     [InlineData(0, 120, 0)]
-    public void CodeBehind_CalculatesWheelVolumeInTenPercentSteps(
+    public void CodeBehind_CalculatesWheelVolumeInFivePercentSteps(
         int currentVolumePercent,
         double deltaY,
         int expectedVolumePercent)
