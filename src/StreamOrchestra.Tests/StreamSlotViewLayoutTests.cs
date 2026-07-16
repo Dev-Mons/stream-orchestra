@@ -184,14 +184,17 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Theory]
-    [InlineData(100, -120, 100)]
-    [InlineData(100, 120, 95)]
-    [InlineData(50, -120, 55)]
-    [InlineData(50, 120, 45)]
-    [InlineData(0, 120, 0)]
-    public void CodeBehind_CalculatesWheelVolumeInFivePercentSteps(
+    [InlineData(100, -120, false, 100)]
+    [InlineData(100, 120, false, 90)]
+    [InlineData(50, -120, false, 60)]
+    [InlineData(50, 120, false, 40)]
+    [InlineData(0, 120, false, 0)]
+    [InlineData(50, -120, true, 55)]
+    [InlineData(50, 120, true, 45)]
+    public void CodeBehind_CalculatesWheelVolumeInNormalAndFineSteps(
         int currentVolumePercent,
         double deltaY,
+        bool ctrlKey,
         int expectedVolumePercent)
     {
         var method = typeof(StreamOrchestra.App.Views.StreamSlotView).GetMethod(
@@ -199,7 +202,7 @@ public sealed class StreamSlotViewLayoutTests
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
 
         Assert.NotNull(method);
-        Assert.Equal(expectedVolumePercent, method!.Invoke(null, [currentVolumePercent, deltaY]));
+        Assert.Equal(expectedVolumePercent, method!.Invoke(null, [currentVolumePercent, deltaY, ctrlKey]));
     }
 
     [Fact]
@@ -212,6 +215,17 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("private const int InitialVolumePercent = 100;", codeBehind);
         Assert.Contains("_volumePercent = InitialVolumePercent", codeBehind);
         Assert.Contains("window.__streamOrchestraVolumePercent = 100;", codeBehind);
+    }
+
+    [Fact]
+    public void CodeBehind_NotifiesHostWhenPlaybackOrVolumeStateChanges()
+    {
+        var codeBehind = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+
+        Assert.Contains("public event Action<StreamSlotView>? PlaybackStateChanged;", codeBehind);
+        Assert.Contains("public event Action<StreamSlotView>? VolumeChanged;", codeBehind);
+        Assert.Contains("PlaybackStateChanged?.Invoke(this);", codeBehind);
+        Assert.Contains("VolumeChanged?.Invoke(this);", codeBehind);
     }
 
     [Fact]

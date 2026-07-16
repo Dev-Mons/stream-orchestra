@@ -18,7 +18,8 @@ public partial class StreamSlotView : UserControl
     private const int MinVolumePercent = 0;
     private const int MaxVolumePercent = 100;
     private const int InitialVolumePercent = 100;
-    private const int VolumeStepPercent = 5;
+    private const int VolumeStepPercent = 10;
+    private const int FineVolumeStepPercent = 5;
     private static readonly Brush RemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 31, 41, 55));
     private static readonly Brush RemoveButtonBorder = new SolidColorBrush(Color.FromRgb(243, 246, 250));
     private static readonly Brush SelectedRemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 185, 28, 28));
@@ -29,7 +30,7 @@ public partial class StreamSlotView : UserControl
 
     // 웹페이지마다 휠 한 칸에 wheel 이벤트를 1~3개씩 발생시켜, 한 번 스크롤에 볼륨이
     // 20~30%씩 바뀌는 버그가 있었다. 한 번의 물리적 스크롤에서 연달아 들어오는 이벤트
-    // 묶음을 이 시간 창 안에서 한 번의 스텝으로 합쳐 항상 5%씩만 변경되도록 한다.
+    // 묶음을 이 시간 창 안에서 한 번의 스텝으로 합쳐 설정된 증감 단위만큼만 변경되도록 한다.
     private const long WheelStepThrottleMilliseconds = 50;
 
     private static readonly Brush SwapBorderBrush = new SolidColorBrush(Color.FromArgb(0x80, 0x15, 0xA3, 0xFF));
@@ -81,6 +82,10 @@ public partial class StreamSlotView : UserControl
     }
 
     public event Action<StreamSlotView>? SlotSelected;
+
+    public event Action<StreamSlotView>? PlaybackStateChanged;
+
+    public event Action<StreamSlotView>? VolumeChanged;
 
     public event Action<StreamSlotView, string, string?>? StreamUrlDropRequested;
 
@@ -145,8 +150,15 @@ public partial class StreamSlotView : UserControl
     /// <summary>세션 복원·전체 볼륨 변경 등 외부 요청으로 볼륨을 오버레이 없이 적용한다.</summary>
     public void SetVolumePercentSilently(int volumePercent)
     {
-        _volumePercent = Math.Clamp(volumePercent, MinVolumePercent, MaxVolumePercent);
+        var clamped = Math.Clamp(volumePercent, MinVolumePercent, MaxVolumePercent);
+        if (_volumePercent == clamped)
+        {
+            return;
+        }
+
+        _volumePercent = clamped;
         _ = ApplyVolumeToWebPageAsync();
+        VolumeChanged?.Invoke(this);
     }
 
     public async Task ClearAsync()
@@ -510,7 +522,7 @@ public partial class StreamSlotView : UserControl
 
         if (message.Type.Equals("slot-wheel", StringComparison.OrdinalIgnoreCase))
         {
-            ApplyWheelVolume(message.DeltaY);
+            ApplyWheelVolume(message.DeltaY, message.CtrlKey);
             return;
         }
 
@@ -591,11 +603,11 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
-        ApplyWheelVolume(-e.Delta);
+        ApplyWheelVolume(-e.Delta, Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
         e.Handled = true;
     }
 
-    private void ApplyWheelVolume(double deltaY)
+    private void ApplyWheelVolume(double deltaY, bool ctrlKey)
     {
         if (deltaY == 0)
         {
@@ -605,7 +617,7 @@ public partial class StreamSlotView : UserControl
         SlotSelected?.Invoke(this);
 
         // 한 번의 물리적 스크롤이 발생시킨 연속된 휠 이벤트 묶음은 첫 이벤트만 반영하고
-        // 나머지는 무시해 항상 5%씩만 변경되도록 한다.
+        // 나머지는 무시해 한 번에 하나의 증감 단위만 적용되도록 한다.
         var now = Environment.TickCount64;
         if (now - _lastWheelStepTimestamp < WheelStepThrottleMilliseconds)
         {
@@ -613,10 +625,10 @@ public partial class StreamSlotView : UserControl
         }
 
         _lastWheelStepTimestamp = now;
-        SetVolumePercent(CalculateWheelVolumePercent(_volumePercent, deltaY));
+        SetVolumePercent(CalculateWheelVolumePercent(_volumePercent, deltaY, ctrlKey));
     }
 
-    private static int CalculateWheelVolumePercent(int currentVolumePercent, double deltaY)
+    private static int CalculateWheelVolumePercent(int currentVolumePercent, double deltaY, bool ctrlKey)
     {
         var direction = Math.Sign(deltaY);
         if (direction == 0)
@@ -624,15 +636,24 @@ public partial class StreamSlotView : UserControl
             return Math.Clamp(currentVolumePercent, MinVolumePercent, MaxVolumePercent);
         }
 
-        var nextVolumePercent = currentVolumePercent + (direction < 0 ? VolumeStepPercent : -VolumeStepPercent);
+        var stepPercent = ctrlKey ? FineVolumeStepPercent : VolumeStepPercent;
+        var nextVolumePercent = currentVolumePercent + (direction < 0 ? stepPercent : -stepPercent);
         return Math.Clamp(nextVolumePercent, MinVolumePercent, MaxVolumePercent);
     }
 
     private void SetVolumePercent(int volumePercent)
     {
-        _volumePercent = Math.Clamp(volumePercent, MinVolumePercent, MaxVolumePercent);
+        var clamped = Math.Clamp(volumePercent, MinVolumePercent, MaxVolumePercent);
+        if (_volumePercent == clamped)
+        {
+            ShowVolumeIndicator(_volumePercent);
+            return;
+        }
+
+        _volumePercent = clamped;
         ShowVolumeIndicator(_volumePercent);
         _ = ApplyVolumeToWebPageAsync();
+        VolumeChanged?.Invoke(this);
     }
 
     private void ShowVolumeIndicator(int volumePercent)
@@ -998,7 +1019,8 @@ public partial class StreamSlotView : UserControl
     event.stopPropagation();
     window.chrome?.webview?.postMessage({
       type: "slot-wheel",
-      deltaY: event.deltaY
+      deltaY: event.deltaY,
+      ctrlKey: event.ctrlKey
     });
   }, { capture: true, passive: false });
 
@@ -1583,10 +1605,18 @@ public partial class StreamSlotView : UserControl
 
     private void UpdateCurrentLocation(string url, string streamName)
     {
-        CurrentUrl = url;
-        CurrentStreamName = string.IsNullOrWhiteSpace(streamName)
+        var normalizedName = string.IsNullOrWhiteSpace(streamName)
             ? _navigationService.CreateDisplayName(url)
             : streamName.Trim();
+        if (CurrentUrl.Equals(url, StringComparison.OrdinalIgnoreCase) &&
+            CurrentStreamName.Equals(normalizedName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        CurrentUrl = url;
+        CurrentStreamName = normalizedName;
+        PlaybackStateChanged?.Invoke(this);
     }
 
     private void ShowInitializationError(Exception ex)
@@ -1606,6 +1636,8 @@ public partial class StreamSlotView : UserControl
         public string? Direction { get; init; }
 
         public double DeltaY { get; init; }
+
+        public bool CtrlKey { get; init; }
 
         public bool Pressed { get; init; }
 

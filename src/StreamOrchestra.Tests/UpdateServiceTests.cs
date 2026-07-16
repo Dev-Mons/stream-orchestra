@@ -165,15 +165,39 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task DownloadAndApplyAsync_SavesStateAfterDownloadBeforeRestart()
+    {
+        var events = new List<string>();
+        var checker = new FakeUpdateChecker(events);
+        var service = new UpdateService(checker, new AutoUpdateState());
+
+        await service.DownloadAndApplyAsync(() => events.Add("save"));
+
+        Assert.Equal(["download", "save", "restart"], events);
+    }
+
+    [Fact]
     public async Task DownloadAndApplyAsync_ForwardsCancellationToken()
     {
         var checker = new FakeUpdateChecker();
         var service = new UpdateService(checker, new AutoUpdateState());
         using var cancellationTokenSource = new CancellationTokenSource();
 
-        await service.DownloadAndApplyAsync(cancellationTokenSource.Token);
+        await service.DownloadAndApplyAsync(() => { }, cancellationTokenSource.Token);
 
-        Assert.Equal(cancellationTokenSource.Token, checker.ApplyCancellationToken);
+        Assert.Equal(cancellationTokenSource.Token, checker.DownloadCancellationToken);
+    }
+
+    [Fact]
+    public async Task DownloadAndApplyAsync_DoesNotSaveOrRestart_WhenNoUpdateWasDownloaded()
+    {
+        var events = new List<string>();
+        var checker = new FakeUpdateChecker(events) { DownloadSucceeds = false };
+        var service = new UpdateService(checker, new AutoUpdateState());
+
+        await service.DownloadAndApplyAsync(() => events.Add("save"));
+
+        Assert.Equal(["download"], events);
     }
 
     [Fact]
@@ -198,15 +222,22 @@ public sealed class UpdateServiceTests
 
     private sealed class FakeUpdateChecker : IUpdateChecker
     {
+        private readonly List<string>? _events;
+
+        public FakeUpdateChecker(List<string>? events = null)
+        {
+            _events = events;
+        }
+
         public AvailableUpdate? NextUpdate { get; set; }
 
         public bool ThrowOnCheck { get; set; }
 
+        public bool DownloadSucceeds { get; set; } = true;
+
         public int CheckCallCount { get; private set; }
 
-        public int ApplyCallCount { get; private set; }
-
-        public CancellationToken ApplyCancellationToken { get; private set; }
+        public CancellationToken DownloadCancellationToken { get; private set; }
 
         public Task<AvailableUpdate?> CheckForUpdateAsync(CancellationToken cancellationToken = default)
         {
@@ -219,11 +250,16 @@ public sealed class UpdateServiceTests
             return Task.FromResult(NextUpdate);
         }
 
-        public Task DownloadAndApplyAsync(CancellationToken cancellationToken = default)
+        public Task<bool> DownloadUpdateAsync(CancellationToken cancellationToken = default)
         {
-            ApplyCallCount++;
-            ApplyCancellationToken = cancellationToken;
-            return Task.CompletedTask;
+            DownloadCancellationToken = cancellationToken;
+            _events?.Add("download");
+            return Task.FromResult(DownloadSucceeds);
+        }
+
+        public void ApplyUpdateAndRestart()
+        {
+            _events?.Add("restart");
         }
     }
 }
