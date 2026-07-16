@@ -97,9 +97,18 @@ public sealed class UpdateService
         };
     }
 
-    public Task DownloadAndApplyAsync(CancellationToken cancellationToken = default)
+    public async Task DownloadAndApplyAsync(Action beforeRestart, CancellationToken cancellationToken = default)
     {
-        return _checker.DownloadAndApplyAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(beforeRestart);
+
+        if (!await _checker.DownloadUpdateAsync(cancellationToken))
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        beforeRestart();
+        _checker.ApplyUpdateAndRestart();
     }
 
     private async Task<UpdateCheckResult> CheckCoreAsync(CancellationToken cancellationToken)

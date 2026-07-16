@@ -55,6 +55,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _swapModeKeyboardPollTimer;
     private DispatcherTimer? _statusToastTimer;
     private DispatcherTimer? _centerVolumeTimer;
+    private DispatcherTimer? _appStateSaveTimer;
     private WorkspacePreset? _activeWorkspace;
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
@@ -64,6 +65,7 @@ public partial class MainWindow : Window
     private LayoutCardMode _layoutCardMode = LayoutCardMode.Add;
     private bool _isExplorerPanelVisible = true;
     private bool _isUpdateOperationInProgress;
+    private bool _isAppStateAutoSaveReady;
     private GridLength _lastExplorerColumnWidth = new(360);
     private LayoutPreset? _selectedLayout;
     private ShortcutSettings _shortcutSettings = new();
@@ -103,8 +105,16 @@ public partial class MainWindow : Window
         SourceInitialized += MainWindow_SourceInitialized;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         PreviewKeyUp += MainWindow_PreviewKeyUp;
-        SizeChanged += (_, _) => QueueRefreshOverlayPlacements();
-        LocationChanged += (_, _) => RefreshOverlayPlacements();
+        SizeChanged += (_, _) =>
+        {
+            QueueRefreshOverlayPlacements();
+            QueueAppStateSave();
+        };
+        LocationChanged += (_, _) =>
+        {
+            RefreshOverlayPlacements();
+            QueueAppStateSave();
+        };
         Deactivated += (_, _) =>
         {
             SetRemoveModeActive(false);
@@ -242,6 +252,8 @@ public partial class MainWindow : Window
             var configuration = new SlotConfiguration(slotId, _profileService.GetGroupForSlot(slotId));
             var slotView = new StreamSlotView(configuration, _profileService, _streamNavigationService);
             slotView.SlotSelected += SelectSlot;
+            slotView.PlaybackStateChanged += _ => QueueAppStateSave();
+            slotView.VolumeChanged += _ => QueueAppStateSave();
             slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
             slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
             slotView.RemoveSlotRequested += SlotView_RemoveSlotRequested;
@@ -311,6 +323,7 @@ public partial class MainWindow : Window
         StopPlaybackForHiddenSlots([]);
 
         StatusTextBlock.Text = "사용자 지정 레이아웃이 없습니다. 설정 → 레이아웃에서 레이아웃을 생성하세요.";
+        QueueAppStateSave();
     }
 
     private void RefreshLayoutSelector()
@@ -379,6 +392,7 @@ public partial class MainWindow : Window
         StopPlaybackForHiddenSlots(layout.Slots.Select(slot => slot.SlotId).ToHashSet());
 
         StatusTextBlock.Text = $"Layout applied: {layout.Name} ({layout.GridColumns}x{layout.GridRows}, {layout.EffectiveSlotCount} visible slots)";
+        QueueAppStateSave();
     }
 
     // 보이지 않게 된 슬롯(레이아웃에 포함되지 않은 슬롯)의 재생을 about:blank로 중지한다.
@@ -467,8 +481,7 @@ public partial class MainWindow : Window
         SetRemoveModeActive(false);
         SetSwapModeActive(false);
 
-        // 단축키 변경은 즉시 영속화해 크래시 등으로 손실되지 않게 한다.
-        _presetStorageService.SaveAppState(CaptureAppState());
+        QueueAppStateSave();
 
         StatusTextBlock.Text = "단축키 설정을 적용했습니다. " +
             $"제거 {_shortcutSettings.RemoveKey.Name} · " +
@@ -501,6 +514,8 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _isAppStateAutoSaveReady = true;
+            QueueAppStateSave();
             _ = StartAutomaticUpdateCheckAsync();
         }
     }
@@ -539,6 +554,7 @@ public partial class MainWindow : Window
             _isUpdateOperationInProgress = true;
             ownsUpdateOperation = true;
             var result = await _updateService.RunAutomaticCheckAsync(cancellationToken);
+            QueueAppStateSave();
             if (result.Outcome == UpdateCheckOutcome.Available && result.Update is not null)
             {
                 await PromptForUpdateAsync(result.Update);
@@ -585,7 +601,7 @@ public partial class MainWindow : Window
         if (choice == MessageBoxResult.Cancel)
         {
             _updateService.SkipVersion(update.Version);
-            _presetStorageService.SaveAppState(CaptureAppState());
+            QueueAppStateSave();
             StatusTextBlock.Text = $"버전 {update.Version} 건너뜀.";
             return;
         }
@@ -598,7 +614,9 @@ public partial class MainWindow : Window
         try
         {
             StatusTextBlock.Text = $"업데이트 {update.Version} 다운로드 중...";
-            await _updateService.DownloadAndApplyAsync(_updateCancellationTokenSource.Token);
+            await _updateService.DownloadAndApplyAsync(
+                () => _presetStorageService.SaveAppState(CaptureAppState()),
+                _updateCancellationTokenSource.Token);
         }
         catch
         {
@@ -625,6 +643,7 @@ public partial class MainWindow : Window
         try
         {
             var result = await _updateService.RunManualCheckAsync(_updateCancellationTokenSource.Token);
+            QueueAppStateSave();
             switch (result.Outcome)
             {
                 case UpdateCheckOutcome.Available when result.Update is not null:
@@ -1231,6 +1250,7 @@ public partial class MainWindow : Window
         _activeWorkspace = updatedWorkspace;
         _presetStorageService.SaveWorkspaces(_workspaces);
         RefreshWorkspaceComboBox();
+        QueueAppStateSave();
         StatusTextBlock.Text = $"Preset saved: {updatedWorkspace.Name}";
     }
 
@@ -1361,6 +1381,11 @@ public partial class MainWindow : Window
 
     private void SelectSlot(StreamSlotView slot)
     {
+        if (ReferenceEquals(_selectedSlot, slot))
+        {
+            return;
+        }
+
         if (_selectedSlot is not null)
         {
             _selectedSlot.SetSelected(false);
@@ -1369,6 +1394,7 @@ public partial class MainWindow : Window
         _selectedSlot = slot;
         _selectedSlot.SetSelected(true);
         StatusTextBlock.Text = $"Selected Slot {slot.SlotId} / Group {slot.ProfileGroupId}";
+        QueueAppStateSave();
     }
 
     private void SaveWorkspaceAs()
@@ -1390,6 +1416,7 @@ public partial class MainWindow : Window
         _activeWorkspace = workspace;
         _presetStorageService.SaveWorkspaces(_workspaces);
         RefreshWorkspaceComboBox();
+        QueueAppStateSave();
         StatusTextBlock.Text = $"Preset saved as: {workspace.Name}";
     }
 
@@ -1451,6 +1478,39 @@ public partial class MainWindow : Window
         };
     }
 
+    private void FlushAppStateSave()
+    {
+        if (!_isAppStateAutoSaveReady)
+        {
+            return;
+        }
+
+        _presetStorageService.SaveAppState(CaptureAppState());
+    }
+
+    private void QueueAppStateSave()
+    {
+        if (!_isAppStateAutoSaveReady)
+        {
+            return;
+        }
+
+        _appStateSaveTimer ??= CreateAppStateSaveTimer();
+        _appStateSaveTimer.Stop();
+        _appStateSaveTimer.Start();
+    }
+
+    private DispatcherTimer CreateAppStateSaveTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            FlushAppStateSave();
+        };
+        return timer;
+    }
+
     private async Task ApplyWorkspaceAsync(WorkspacePreset workspace, bool setActiveWorkspace)
     {
         // 사용자 지정 레이아웃이 하나도 없으면 표시할 레이아웃이 없으므로 빈 상태로 둔다.
@@ -1463,6 +1523,7 @@ public partial class MainWindow : Window
                 RefreshWorkspaceComboBox();
             }
 
+            QueueAppStateSave();
             return;
         }
 
@@ -1505,6 +1566,8 @@ public partial class MainWindow : Window
             _activeWorkspace = workspace;
             RefreshWorkspaceComboBox();
         }
+
+        QueueAppStateSave();
     }
 
     private void UpsertWorkspace(WorkspacePreset workspace)
@@ -1633,6 +1696,7 @@ public partial class MainWindow : Window
         ToggleExplorerIcon.Source = isVisible ? SidebarCloseIcon : SidebarOpenIcon;
         UpdateExplorerToggleTooltip();
         QueueRefreshOverlayPlacements();
+        QueueAppStateSave();
     }
 
     private void QueueRefreshOverlayPlacements()
@@ -1670,7 +1734,7 @@ public partial class MainWindow : Window
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
         _updateCancellationTokenSource.Cancel();
-        _presetStorageService.SaveAppState(CaptureAppState());
+        _appStateSaveTimer?.Stop();
     }
 
     private async void ApplyQualityPolicyButton_Click(object sender, RoutedEventArgs e)
@@ -1693,6 +1757,7 @@ public partial class MainWindow : Window
         }
 
         RefreshQualityMenuChecks();
+        QueueAppStateSave();
         await ApplyQualityPolicyToSlotsAsync(GetVisibleNonBlankSlots());
     }
 

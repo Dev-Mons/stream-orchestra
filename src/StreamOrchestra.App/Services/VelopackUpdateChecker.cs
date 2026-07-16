@@ -33,18 +33,25 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
         return new AvailableUpdate(info.TargetFullRelease.Version.ToString());
     }
 
-    public async Task DownloadAndApplyAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> DownloadUpdateAsync(CancellationToken cancellationToken = default)
     {
         var info = _cachedUpdateInfo ?? await _manager.CheckForUpdatesAsync().ConfigureAwait(false);
         if (info is null)
         {
-            return;
+            return false;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         await _manager.DownloadUpdatesAsync(info, null, cancellationToken).ConfigureAwait(false);
+        _cachedUpdateInfo = info;
+        return true;
+    }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        _manager.ApplyUpdatesAndRestart(info);
+    public void ApplyUpdateAndRestart()
+    {
+        if (_cachedUpdateInfo is not null)
+        {
+            _manager.ApplyUpdatesAndRestart(_cachedUpdateInfo);
+        }
     }
 }

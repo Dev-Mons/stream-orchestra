@@ -299,10 +299,31 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("dialog.ShortcutsChanged += ApplyShortcutSettings;", codeBehind);
         Assert.Contains("_shortcutSettings = settings;", codeBehind);
         Assert.Contains("ApplyShortcutLabelsToSlots();", codeBehind);
-        Assert.Contains("_presetStorageService.SaveAppState(CaptureAppState());", codeBehind);
+        Assert.Contains("QueueAppStateSave();", codeBehind);
         // AppState 캡처에 단축키 매핑이 포함된다.
         Assert.Contains("Shortcuts = _shortcutSettings", codeBehind);
         Assert.Contains("_shortcutSettings = _loadedAppState?.Shortcuts", codeBehind);
+    }
+
+    [Fact]
+    public void CodeBehind_AutoSavesStateChangesWithoutDependingOnWindowClosing()
+    {
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+
+        Assert.Contains("slotView.PlaybackStateChanged += _ => QueueAppStateSave();", codeBehind);
+        Assert.Contains("slotView.VolumeChanged += _ => QueueAppStateSave();", codeBehind);
+        Assert.Contains("private void FlushAppStateSave()", codeBehind);
+        Assert.Contains("private void QueueAppStateSave()", codeBehind);
+        Assert.Contains("Interval = TimeSpan.FromSeconds(3)", codeBehind);
+        Assert.Contains("_isAppStateAutoSaveReady = true;", codeBehind);
+        Assert.Contains("StatusTextBlock.Text = $\"Layout applied:", codeBehind);
+        Assert.Contains("QueueAppStateSave();", codeBehind);
+
+        var closingStart = codeBehind.IndexOf("private void MainWindow_Closing", StringComparison.Ordinal);
+        var closingEnd = codeBehind.IndexOf("private async void ApplyQualityPolicyButton_Click", closingStart, StringComparison.Ordinal);
+        Assert.True(closingStart >= 0 && closingEnd > closingStart);
+        var closingMethod = codeBehind[closingStart..closingEnd];
+        Assert.DoesNotContain("SaveAppState", closingMethod);
     }
 
     [Fact]
