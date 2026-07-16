@@ -5,6 +5,20 @@ namespace StreamOrchestra.Tests;
 public sealed class MainWindowLayoutTests
 {
     [Fact]
+    public void TopToolbar_ProvidesAddressBasedSoopRecordingWindow()
+    {
+        var document = LoadMainWindowDocument();
+        var button = FindElementByName(document, "RecordingButton");
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+
+        Assert.Equal("● 녹화", GetAttribute(button, "Content"));
+        Assert.Equal("RecordingButton_Click", GetAttribute(button, "Click"));
+        Assert.Equal("SOOP 방송 주소로 녹화", GetAttribute(button, "ToolTip"));
+        Assert.Contains("new RecordingWindow(suggestedUrl)", codeBehind);
+        Assert.Contains("_selectedSlot.CurrentUrl", codeBehind);
+    }
+
+    [Fact]
     public void TopToolbar_RemovesManualLoadAndVerificationControls()
     {
         var document = LoadMainWindowDocument();

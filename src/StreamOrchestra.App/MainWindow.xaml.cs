@@ -56,6 +56,7 @@ public partial class MainWindow : Window
     private DispatcherTimer? _statusToastTimer;
     private DispatcherTimer? _centerVolumeTimer;
     private DispatcherTimer? _appStateSaveTimer;
+    private RecordingWindow? _recordingWindow;
     private WorkspacePreset? _activeWorkspace;
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
@@ -468,6 +469,32 @@ public partial class MainWindow : Window
         // 키를 캡처할 때마다 즉시 적용·저장한다(다이얼로그는 변경만 통지).
         dialog.ShortcutsChanged += ApplyShortcutSettings;
         dialog.ShowDialog();
+    }
+
+    private void RecordingButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recordingWindow is not null)
+        {
+            if (_recordingWindow.WindowState == WindowState.Minimized)
+            {
+                _recordingWindow.WindowState = WindowState.Normal;
+            }
+
+            _recordingWindow.Activate();
+            return;
+        }
+
+        var suggestedUrl = _selectedSlot is not null &&
+            SoopRecordingService.IsSupportedSoopUrl(_selectedSlot.CurrentUrl)
+            ? _selectedSlot.CurrentUrl
+            : null;
+        var window = new RecordingWindow(suggestedUrl)
+        {
+            Owner = this
+        };
+        _recordingWindow = window;
+        window.Closed += (_, _) => _recordingWindow = null;
+        window.Show();
     }
 
     private void ApplyShortcutSettings(ShortcutSettings settings)

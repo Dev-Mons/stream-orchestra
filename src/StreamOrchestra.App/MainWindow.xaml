@@ -201,6 +201,22 @@
                            Stretch="Uniform" />
                 </Button>
 
+                <Button x:Name="RecordingButton"
+                        DockPanel.Dock="Right"
+                        Margin="0,0,8,0"
+                        Padding="12,3"
+                        Height="28"
+                        VerticalAlignment="Center"
+                        WindowChrome.IsHitTestVisibleInChrome="True"
+                        Background="#7F1D1D"
+                        BorderBrush="#B43A3A"
+                        BorderThickness="1"
+                        Foreground="#FFFFFF"
+                        FontWeight="SemiBold"
+                        Content="● 녹화"
+                        ToolTip="SOOP 방송 주소로 녹화"
+                        Click="RecordingButton_Click" />
+
                 <TextBlock x:Name="DiagnosticsTextBlock"
                            DockPanel.Dock="Right"
                            Margin="0,0,8,0"
