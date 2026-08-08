@@ -192,7 +192,7 @@
                         VerticalAlignment="Center"
                         WindowChrome.IsHitTestVisibleInChrome="True"
                         Style="{StaticResource SidebarToggleButton}"
-                        ToolTip="현재 재생 중인 화면 전체 새로고침"
+                        ToolTip="현재 재생 중인 화면 전체 강제 복구"
                         Click="RefreshPlayingScreensButton_Click">
                     <Image x:Name="RefreshPlayingScreensIcon"
                            Source="/Assets/refresh.png"

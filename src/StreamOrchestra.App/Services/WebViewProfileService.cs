@@ -29,6 +29,8 @@ public sealed class WebViewProfileService
 
     public ProfileGroup ExplorerGroup { get; }
 
+    public SoopLoginSessionCookieService SoopLoginSessionCookies { get; } = new();
+
     public IReadOnlyCollection<ProfileGroup> Groups => _groups.Values.ToArray();
 
     public ProfileGroup GetGroupForSlot(int slotId)

@@ -31,7 +31,7 @@ public sealed class SoopRecordingServiceTests
 
         var arguments = SoopRecordingService.BuildArguments(request);
 
-        Assert.Contains("best[height<=720]/best", arguments);
+        Assert.Contains("b[height<=720]/b", arguments);
         Assert.Contains(@"D:\Recordings Folder", arguments);
         Assert.Contains("%(title).100B [%(id)s] 20260716_210507.%(ext)s", arguments);
         Assert.Equal(request.StreamUrl, arguments[^1]);
@@ -41,7 +41,7 @@ public sealed class SoopRecordingServiceTests
     }
 
     [Fact]
-    public void BuildArguments_UsesSingleCombinedBestFormatWithoutFfmpegRequirement()
+    public void BuildArguments_UsesSingleCombinedBestAliasWithoutFormatWarning()
     {
         var request = new RecordingRequest(
             "https://play.sooplive.com/a/1",
@@ -53,6 +53,61 @@ public sealed class SoopRecordingServiceTests
         var formatIndex = arguments.ToList().IndexOf("--format");
 
         Assert.True(formatIndex >= 0);
-        Assert.Equal("best", arguments[formatIndex + 1]);
+        Assert.Equal("b", arguments[formatIndex + 1]);
+    }
+
+    [Fact]
+    public void BuildArguments_AddsExplicitFfmpegLocationAsSeparateArgument()
+    {
+        var request = new RecordingRequest(
+            "https://play.sooplive.com/a/1",
+            @"D:\Recordings",
+            "best",
+            DateTimeOffset.Now);
+
+        var arguments = SoopRecordingService.BuildArguments(request, @"C:\Tools Folder\ffmpeg.exe");
+        var ffmpegIndex = arguments.ToList().IndexOf("--ffmpeg-location");
+
+        Assert.True(ffmpegIndex >= 0);
+        Assert.Equal(@"C:\Tools Folder\ffmpeg.exe", arguments[ffmpegIndex + 1]);
+    }
+
+    [Fact]
+    public void BuildArguments_AddsCompleteSubscriberCredentialsAsSeparateArguments()
+    {
+        var request = new RecordingRequest(
+            "https://play.sooplive.com/a/1",
+            @"D:\Recordings",
+            "best",
+            DateTimeOffset.Now,
+            " account-id ",
+            "p a&ss");
+
+        var arguments = SoopRecordingService.BuildArguments(request);
+        var usernameIndex = arguments.ToList().IndexOf("--username");
+        var passwordIndex = arguments.ToList().IndexOf("--password");
+
+        Assert.True(usernameIndex >= 0);
+        Assert.Equal("account-id", arguments[usernameIndex + 1]);
+        Assert.True(passwordIndex >= 0);
+        Assert.Equal("p a&ss", arguments[passwordIndex + 1]);
+    }
+
+    [Theory]
+    [InlineData("account-id", null)]
+    [InlineData(null, "password")]
+    public void BuildArguments_RejectsIncompleteSubscriberCredentials(string? username, string? password)
+    {
+        var request = new RecordingRequest(
+            "https://play.sooplive.com/a/1",
+            @"D:\Recordings",
+            "best",
+            DateTimeOffset.Now,
+            username,
+            password);
+
+        var exception = Assert.Throws<ArgumentException>(() => SoopRecordingService.BuildArguments(request));
+
+        Assert.Contains("SOOP ID와 비밀번호", exception.Message);
     }
 }

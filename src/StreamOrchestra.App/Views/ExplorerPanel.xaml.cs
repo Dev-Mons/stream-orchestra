@@ -212,8 +212,18 @@ public partial class ExplorerPanel : UserControl
         }
     }
 
-    private void CoreWebView2_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    private async void CoreWebView2_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
+        if (WebViewPopupPolicy.ShouldPreservePopupContext(e.Uri))
+        {
+            await WebViewPopupWindow.OpenRequestedAsync(
+                e,
+                _profileService.GetEnvironmentAsync(_profileService.ExplorerGroup),
+                _profileService.SoopLoginSessionCookies,
+                Window.GetWindow(this));
+            return;
+        }
+
         e.Handled = true;
         if (!string.IsNullOrWhiteSpace(e.Uri))
         {

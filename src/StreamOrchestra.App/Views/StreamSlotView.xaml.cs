@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Text.Json;
 using System.Windows.Threading;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
@@ -20,6 +21,8 @@ public partial class StreamSlotView : UserControl
     private const int InitialVolumePercent = 100;
     private const int VolumeStepPercent = 10;
     private const int FineVolumeStepPercent = 5;
+    private static readonly TimeSpan NavigationTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PlaybackReadyTimeout = TimeSpan.FromSeconds(15);
     private static readonly Brush RemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 31, 41, 55));
     private static readonly Brush RemoveButtonBorder = new SolidColorBrush(Color.FromRgb(243, 246, 250));
     private static readonly Brush SelectedRemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 185, 28, 28));
@@ -39,6 +42,11 @@ public partial class StreamSlotView : UserControl
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
     private readonly DispatcherTimer _volumeOverlayTimer;
+    private readonly SemaphoreSlim _initializationGate = new(1, 1);
+    private readonly SemaphoreSlim _navigationGate = new(1, 1);
+    private readonly SemaphoreSlim _processRecoveryGate = new(1, 1);
+    private CoreWebView2Environment? _environment;
+    private uint? _lastRecoveredBrowserProcessId;
     private bool _isInitialized;
     private bool _isMuted;
     private int _volumePercent = InitialVolumePercent;
@@ -105,6 +113,9 @@ public partial class StreamSlotView : UserControl
     /// <summary>SOOP이 같은 프로필의 동시 재생 개수 초과 경고를 표시함.</summary>
     public event Action<StreamSlotView>? SoopPlaybackLimitDetected;
 
+    /// <summary>WebView2 장애 감지 및 자동 복구 상태가 변경됨.</summary>
+    public event Action<StreamSlotView, string>? RecoveryStatusChanged;
+
     /// <summary>WebView2 콘텐츠에서 키 상태가 바뀜(가상 키 코드, 눌림 여부). 어떤 동작에 매핑됐는지는 호스트가 결정한다.</summary>
     public event Action<int, bool>? KeyStateChanged;
 
@@ -127,13 +138,23 @@ public partial class StreamSlotView : UserControl
     public async Task NavigateAsync(string url, string? streamName = null)
     {
         var normalizedUrl = _navigationService.NormalizeUrl(url);
-        _hasExplicitStreamName = !string.IsNullOrWhiteSpace(streamName);
-        UpdateCurrentLocation(
-            normalizedUrl,
-            _hasExplicitStreamName ? streamName!.Trim() : _navigationService.CreateDisplayName(normalizedUrl));
+        await _navigationGate.WaitAsync();
+        try
+        {
+            _hasExplicitStreamName = !string.IsNullOrWhiteSpace(streamName);
+            UpdateCurrentLocation(
+                normalizedUrl,
+                _hasExplicitStreamName ? streamName!.Trim() : _navigationService.CreateDisplayName(normalizedUrl));
 
-        await EnsureInitializedAsync();
-        Browser.CoreWebView2.Navigate(normalizedUrl);
+            await EnsureInitializedAsync();
+            await RunNavigationAndWaitAsync(
+                () => Browser.CoreWebView2.Navigate(normalizedUrl),
+                NavigationTimeout);
+        }
+        finally
+        {
+            _navigationGate.Release();
+        }
     }
 
     public async Task ReloadAsync()
@@ -143,8 +164,36 @@ public partial class StreamSlotView : UserControl
             return;
         }
 
-        await EnsureInitializedAsync();
-        Browser.CoreWebView2.Reload();
+        await _navigationGate.WaitAsync();
+        try
+        {
+            await EnsureInitializedAsync();
+            await RunNavigationAndWaitAsync(
+                Browser.CoreWebView2.Reload,
+                NavigationTimeout);
+        }
+        finally
+        {
+            _navigationGate.Release();
+        }
+    }
+
+    public async Task WaitForPlaybackReadyAsync()
+    {
+        if (!IsSoopUrl(CurrentUrl))
+        {
+            return;
+        }
+
+        await _navigationGate.WaitAsync();
+        try
+        {
+            await WaitForPlaybackReadyCoreAsync(PlaybackReadyTimeout);
+        }
+        finally
+        {
+            _navigationGate.Release();
+        }
     }
 
     /// <summary>세션 복원·전체 볼륨 변경 등 외부 요청으로 볼륨을 오버레이 없이 적용한다.</summary>
@@ -163,16 +212,25 @@ public partial class StreamSlotView : UserControl
 
     public async Task ClearAsync()
     {
-        _hasExplicitStreamName = false;
-
-        UpdateCurrentLocation("about:blank", "Empty");
-        if (!_isInitialized)
+        await _navigationGate.WaitAsync();
+        try
         {
-            return;
-        }
+            _hasExplicitStreamName = false;
+            UpdateCurrentLocation("about:blank", "Empty");
+            if (!_isInitialized)
+            {
+                return;
+            }
 
-        await EnsureInitializedAsync();
-        await NavigateAndWaitAsync("about:blank", TimeSpan.FromSeconds(3));
+            await EnsureInitializedAsync();
+            await RunNavigationAndWaitAsync(
+                () => Browser.CoreWebView2.Navigate("about:blank"),
+                TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            _navigationGate.Release();
+        }
     }
 
     public async Task StopPlaybackForReplacementAsync()
@@ -384,60 +442,364 @@ public partial class StreamSlotView : UserControl
 
     private async Task EnsureInitializedAsync()
     {
-        if (_isInitialized)
-        {
-            return;
-        }
-
-        InitializationOverlay.Visibility = Visibility.Visible;
-        InitializationTextBlock.Text = $"Initializing Group {Configuration.ProfileGroup.Id}...";
-
-        var environment = await _profileService.GetEnvironmentAsync(Configuration.ProfileGroup);
-        await Browser.EnsureCoreWebView2Async(environment);
-        await InstallPlaybackViewportScriptAsync();
-
-        Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
-        Browser.CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
-        Browser.CoreWebView2.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
-        Browser.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
-        Browser.CoreWebView2.NewWindowRequested += CoreWebView2_NewWindowRequested;
-        _isMuted = false;
-        Browser.CoreWebView2.IsMuted = false;
-        _isInitialized = true;
-
-        InitializationOverlay.Visibility = Visibility.Collapsed;
-        _ = ApplyVolumeToWebPageAsync();
-    }
-
-    private async Task NavigateAndWaitAsync(string normalizedUrl, TimeSpan timeout)
-    {
-        if (Browser.CoreWebView2 is null)
-        {
-            return;
-        }
-
-        var navigationCompleted = new TaskCompletionSource<object?>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-
-        void Handler(object? sender, CoreWebView2NavigationCompletedEventArgs e)
-        {
-            navigationCompleted.TrySetResult(null);
-        }
-
-        Browser.CoreWebView2.NavigationCompleted += Handler;
+        await _initializationGate.WaitAsync();
         try
         {
-            Browser.CoreWebView2.Navigate(normalizedUrl);
-            await navigationCompleted.Task.WaitAsync(timeout);
-        }
-        catch (TimeoutException)
-        {
-            // about:blank 전환 대기는 SOOP 세션 해제를 돕기 위한 best-effort이다.
+            if (_isInitialized)
+            {
+                return;
+            }
+
+            InitializationOverlay.Visibility = Visibility.Visible;
+            InitializationTextBlock.Text = $"Initializing Group {Configuration.ProfileGroup.Id}...";
+
+            var environment = await _profileService.GetEnvironmentAsync(Configuration.ProfileGroup);
+            if (!ReferenceEquals(_environment, environment))
+            {
+                if (_environment is not null)
+                {
+                    _environment.BrowserProcessExited -= Environment_BrowserProcessExited;
+                }
+
+                _environment = environment;
+                _environment.BrowserProcessExited += Environment_BrowserProcessExited;
+            }
+
+            await Browser.EnsureCoreWebView2Async(environment);
+            await InstallPlaybackViewportScriptAsync();
+            AttachCoreWebViewEvents(Browser.CoreWebView2);
+
+            _isMuted = false;
+            Browser.CoreWebView2.IsMuted = false;
+            _isInitialized = true;
+
+            InitializationOverlay.Visibility = Visibility.Collapsed;
+            _ = ApplyVolumeToWebPageAsync();
         }
         finally
         {
-            Browser.CoreWebView2.NavigationCompleted -= Handler;
+            _initializationGate.Release();
         }
+    }
+
+    private async Task RunNavigationAndWaitAsync(Action startNavigation, TimeSpan timeout)
+    {
+        if (Browser.CoreWebView2 is null)
+        {
+            throw new InvalidOperationException("WebView2 is not initialized.");
+        }
+
+        ulong? expectedNavigationId = null;
+        var navigationCompleted = new TaskCompletionSource<CoreWebView2NavigationCompletedEventArgs>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void StartingHandler(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        {
+            expectedNavigationId ??= e.NavigationId;
+        }
+
+        void CompletedHandler(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (expectedNavigationId is null || e.NavigationId != expectedNavigationId.Value)
+            {
+                return;
+            }
+
+            navigationCompleted.TrySetResult(e);
+        }
+
+        Browser.CoreWebView2.NavigationStarting += StartingHandler;
+        Browser.CoreWebView2.NavigationCompleted += CompletedHandler;
+        try
+        {
+            startNavigation();
+            var result = await navigationCompleted.Task.WaitAsync(timeout);
+            if (!result.IsSuccess)
+            {
+                throw new InvalidOperationException($"WebView2 navigation failed: {result.WebErrorStatus}.");
+            }
+        }
+        finally
+        {
+            Browser.CoreWebView2.NavigationStarting -= StartingHandler;
+            Browser.CoreWebView2.NavigationCompleted -= CompletedHandler;
+        }
+    }
+
+    private void AttachCoreWebViewEvents(CoreWebView2 coreWebView)
+    {
+        coreWebView.NavigationCompleted += CoreWebView2_NavigationCompleted;
+        coreWebView.SourceChanged += CoreWebView2_SourceChanged;
+        coreWebView.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
+        coreWebView.WebMessageReceived += CoreWebView2_WebMessageReceived;
+        coreWebView.NewWindowRequested += CoreWebView2_NewWindowRequested;
+        coreWebView.ProcessFailed += CoreWebView2_ProcessFailed;
+    }
+
+    private void DetachCoreWebViewEvents(CoreWebView2 coreWebView)
+    {
+        coreWebView.NavigationCompleted -= CoreWebView2_NavigationCompleted;
+        coreWebView.SourceChanged -= CoreWebView2_SourceChanged;
+        coreWebView.DocumentTitleChanged -= CoreWebView2_DocumentTitleChanged;
+        coreWebView.WebMessageReceived -= CoreWebView2_WebMessageReceived;
+        coreWebView.NewWindowRequested -= CoreWebView2_NewWindowRequested;
+        coreWebView.ProcessFailed -= CoreWebView2_ProcessFailed;
+    }
+
+    private async void CoreWebView2_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+    {
+        var action = WebViewRecoveryPolicy.GetAction(e.ProcessFailedKind);
+        var details =
+            $"WebView2 process failure: Slot {SlotId}, Group {ProfileGroupId}, " +
+            $"Kind={e.ProcessFailedKind}, Reason={e.Reason}, ExitCode={e.ExitCode}, Url={CurrentUrl}";
+        ReportRecoveryStatus(details);
+
+        if (action == WebViewRecoveryAction.Recreate)
+        {
+            InitializationOverlay.Visibility = Visibility.Visible;
+            InitializationTextBlock.Text = "WebView2 browser process stopped. Recreating...";
+            return;
+        }
+
+        if (action == WebViewRecoveryAction.Reload)
+        {
+            await RecoverFromProcessFailureAsync(action, details);
+        }
+    }
+
+    private void Environment_BrowserProcessExited(
+        object? sender,
+        CoreWebView2BrowserProcessExitedEventArgs e)
+    {
+        var details =
+            $"WebView2 browser process exited: Slot {SlotId}, Group {ProfileGroupId}, " +
+            $"ProcessId={e.BrowserProcessId}, ExitKind={e.BrowserProcessExitKind}, Url={CurrentUrl}";
+        ReportRecoveryStatus(details);
+
+        if (e.BrowserProcessExitKind != CoreWebView2BrowserProcessExitKind.Failed ||
+            _lastRecoveredBrowserProcessId == e.BrowserProcessId)
+        {
+            return;
+        }
+
+        _lastRecoveredBrowserProcessId = e.BrowserProcessId;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _ = RecoverFromProcessFailureAsync(WebViewRecoveryAction.Recreate, details);
+        }));
+    }
+
+    private async Task RecoverFromProcessFailureAsync(WebViewRecoveryAction action, string details)
+    {
+        if (!await _processRecoveryGate.WaitAsync(0))
+        {
+            return;
+        }
+
+        try
+        {
+            if (action == WebViewRecoveryAction.Recreate)
+            {
+                await RecreateBrowserAsync();
+            }
+            else if (action == WebViewRecoveryAction.Reload)
+            {
+                await ReloadAsync();
+                await WaitForPlaybackReadyAsync();
+            }
+
+            ReportRecoveryStatus($"WebView2 recovery completed: Slot {SlotId}, Action={action}, Url={CurrentUrl}");
+        }
+        catch (Exception ex)
+        {
+            InitializationOverlay.Visibility = Visibility.Visible;
+            InitializationTextBlock.Text = $"WebView2 recovery failed: {ex.Message}";
+            ReportRecoveryStatus($"{details}; RecoveryError={ex}");
+        }
+        finally
+        {
+            _processRecoveryGate.Release();
+        }
+    }
+
+    private async Task RecreateBrowserAsync()
+    {
+        await _navigationGate.WaitAsync();
+        try
+        {
+            var restoreUrl = CurrentUrl;
+            var oldBrowser = Browser;
+            var oldIndex = BrowserHost.Children.IndexOf(oldBrowser);
+
+            try
+            {
+                if (oldBrowser.CoreWebView2 is not null)
+                {
+                    DetachCoreWebViewEvents(oldBrowser.CoreWebView2);
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // The failed control is already closed; replacement is still required.
+            }
+            catch (InvalidOperationException)
+            {
+                // A crashed browser process can leave CoreWebView2 inaccessible.
+            }
+
+            BrowserHost.Children.Remove(oldBrowser);
+            oldBrowser.Dispose();
+
+            Browser = CreateBrowserControl();
+            BrowserHost.Children.Insert(Math.Max(0, oldIndex), Browser);
+            _isInitialized = false;
+            _playbackViewportScriptId = null;
+            _qualityObserverScriptId = null;
+
+            await EnsureInitializedAsync();
+            if (!restoreUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+            {
+                await RunNavigationAndWaitAsync(
+                    () => Browser.CoreWebView2.Navigate(restoreUrl),
+                    NavigationTimeout);
+                await WaitForPlaybackReadyCoreAsync(PlaybackReadyTimeout);
+            }
+        }
+        finally
+        {
+            _navigationGate.Release();
+        }
+    }
+
+    private Microsoft.Web.WebView2.Wpf.WebView2 CreateBrowserControl()
+    {
+        var browser = new Microsoft.Web.WebView2.Wpf.WebView2
+        {
+            AllowExternalDrop = true
+        };
+        browser.PreviewMouseLeftButtonDown += SlotBorder_PreviewMouseLeftButtonDown;
+        browser.MouseMove += SlotBorder_MouseMove;
+        browser.PreviewMouseWheel += SlotBorder_PreviewMouseWheel;
+        return browser;
+    }
+
+    private async Task WaitForPlaybackReadyCoreAsync(TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        PlaybackHealthSnapshot? lastSnapshot = null;
+        double? previousTime = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var json = await Browser.CoreWebView2.ExecuteScriptAsync(CreatePlaybackHealthScript());
+            var snapshot = JsonSerializer.Deserialize<PlaybackHealthSnapshot>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (snapshot is not null)
+            {
+                lastSnapshot = snapshot;
+                if (snapshot.ErrorCode is not null)
+                {
+                    throw new InvalidOperationException(
+                        $"SOOP video reported media error {snapshot.ErrorCode} (networkState={snapshot.NetworkState}).");
+                }
+
+                if (snapshot.Found &&
+                    !snapshot.Paused &&
+                    snapshot.ReadyState >= 2 &&
+                    snapshot.VideoWidth > 0 &&
+                    snapshot.VideoHeight > 0 &&
+                    previousTime is not null &&
+                    snapshot.CurrentTime > previousTime.Value + 0.05)
+                {
+                    return;
+                }
+
+                if (snapshot.Found)
+                {
+                    previousTime = snapshot.CurrentTime;
+                }
+            }
+
+            await Task.Delay(500);
+        }
+
+        var state = lastSnapshot is null
+            ? "no video state returned"
+            : $"found={lastSnapshot.Found}, paused={lastSnapshot.Paused}, readyState={lastSnapshot.ReadyState}, " +
+              $"networkState={lastSnapshot.NetworkState}, size={lastSnapshot.VideoWidth}x{lastSnapshot.VideoHeight}, " +
+              $"currentTime={lastSnapshot.CurrentTime:F2}";
+        throw new TimeoutException($"SOOP playback did not become healthy within {timeout.TotalSeconds:F0}s ({state}).");
+    }
+
+    private static string CreatePlaybackHealthScript()
+    {
+        return """
+(() => {
+  const videos = Array.from(document.querySelectorAll("video"));
+  const video = videos.find(candidate => !candidate.paused) || videos[0];
+  if (!video) {
+    return { found: false, paused: true, readyState: 0, networkState: 0, errorCode: null, videoWidth: 0, videoHeight: 0, currentTime: 0 };
+  }
+
+  return {
+    found: true,
+    paused: video.paused,
+    readyState: video.readyState,
+    networkState: video.networkState,
+    errorCode: video.error?.code ?? null,
+    videoWidth: video.videoWidth,
+    videoHeight: video.videoHeight,
+    currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0
+  };
+})()
+""";
+    }
+
+    private static bool IsSoopUrl(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return uri.Host.Equals("sooplive.co.kr", StringComparison.OrdinalIgnoreCase) ||
+               uri.Host.EndsWith(".sooplive.co.kr", StringComparison.OrdinalIgnoreCase) ||
+               uri.Host.Equals("sooplive.com", StringComparison.OrdinalIgnoreCase) ||
+               uri.Host.EndsWith(".sooplive.com", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ReportRecoveryStatus(string message)
+    {
+        Trace.WriteLine($"[{DateTimeOffset.Now:O}] {message}");
+        if (Dispatcher.CheckAccess())
+        {
+            RecoveryStatusChanged?.Invoke(this, message);
+            return;
+        }
+
+        Dispatcher.BeginInvoke(new Action(() => RecoveryStatusChanged?.Invoke(this, message)));
+    }
+
+    private sealed class PlaybackHealthSnapshot
+    {
+        public bool Found { get; init; }
+
+        public bool Paused { get; init; }
+
+        public int ReadyState { get; init; }
+
+        public int NetworkState { get; init; }
+
+        public int? ErrorCode { get; init; }
+
+        public int VideoWidth { get; init; }
+
+        public int VideoHeight { get; init; }
+
+        public double CurrentTime { get; init; }
     }
 
     private void CoreWebView2_SourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
@@ -491,8 +853,18 @@ public partial class StreamSlotView : UserControl
         _ = ApplyVolumeToWebPageAsync();
     }
 
-    private void CoreWebView2_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    private async void CoreWebView2_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
+        if (WebViewPopupPolicy.ShouldPreservePopupContext(e.Uri))
+        {
+            await WebViewPopupWindow.OpenRequestedAsync(
+                e,
+                _profileService.GetEnvironmentAsync(Configuration.ProfileGroup),
+                _profileService.SoopLoginSessionCookies,
+                Window.GetWindow(this));
+            return;
+        }
+
         e.Handled = true;
         if (!string.IsNullOrWhiteSpace(e.Uri))
         {

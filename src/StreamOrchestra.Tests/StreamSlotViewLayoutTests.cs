@@ -317,7 +317,8 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("방송개수", text);
         Assert.Contains("동시시청", text);
         Assert.Contains("StopPlaybackForReplacementAsync", text);
-        Assert.Contains("NavigateAndWaitAsync(\"about:blank\"", text);
+        Assert.Contains("Browser.CoreWebView2.Navigate(\"about:blank\")", text);
+        Assert.Contains("RunNavigationAndWaitAsync", text);
     }
 
     private static XDocument LoadStreamSlotViewDocument()

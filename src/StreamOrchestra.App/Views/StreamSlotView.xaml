@@ -20,7 +20,8 @@
             MouseMove="SlotBorder_MouseMove"
             PreviewMouseWheel="SlotBorder_PreviewMouseWheel">
         <Grid>
-            <Grid Background="#05070A">
+            <Grid x:Name="BrowserHost"
+                  Background="#05070A">
                 <wv2:WebView2 x:Name="Browser"
                               AllowExternalDrop="True"
                               PreviewMouseLeftButtonDown="SlotBorder_PreviewMouseLeftButtonDown"

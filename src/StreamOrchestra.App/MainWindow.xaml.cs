@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 using StreamOrchestra.App.Views;
@@ -259,6 +260,7 @@ public partial class MainWindow : Window
             slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
             slotView.RemoveSlotRequested += SlotView_RemoveSlotRequested;
             slotView.SoopPlaybackLimitDetected += SlotView_SoopPlaybackLimitDetected;
+            slotView.RecoveryStatusChanged += SlotView_RecoveryStatusChanged;
             slotView.KeyStateChanged += OnSlotKeyStateChanged;
             slotView.SwapDragCompleted += ReconcileSwapModeWithKeyboardState;
             _slots.Add(slotView);
@@ -731,6 +733,12 @@ public partial class MainWindow : Window
     private void SlotView_SoopPlaybackLimitDetected(StreamSlotView slot)
     {
         _ = RecoverSoopProfileGroupAsync(slot);
+    }
+
+    private void SlotView_RecoveryStatusChanged(StreamSlotView slot, string message)
+    {
+        StatusTextBlock.Text = message;
+        UpdateDiagnostics();
     }
 
     private void ToggleRemoveScreen(StreamSlotView slot)
@@ -1313,30 +1321,47 @@ public partial class MainWindow : Window
         var targetSlots = GetVisibleNonBlankSlots();
         if (targetSlots.Length == 0)
         {
-            StatusTextBlock.Text = "새로고침할 재생 중인 화면이 없습니다.";
+            StatusTextBlock.Text = "강제 복구할 재생 중인 화면이 없습니다.";
             return;
         }
 
-        var reloadedCount = 0;
-        StatusTextBlock.Text = $"재생 중인 화면 {targetSlots.Length}개를 새로고침합니다.";
+        var recoveredCount = 0;
+        var failures = new List<string>();
+        StatusTextBlock.Text = $"재생 중인 화면 {targetSlots.Length}개를 강제 복구합니다.";
 
-        foreach (var slot in targetSlots)
+        var soopGroups = targetSlots
+            .Where(slot => IsSoopUrl(slot.CurrentUrl))
+            .GroupBy(slot => slot.ProfileGroupId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        foreach (var group in soopGroups)
+        {
+            var groupSlots = group.ToArray();
+            if (await RecoverSoopProfileGroupAsync(groupSlots[0], bypassCooldown: true, recoveryReason: "수동 강제 복구"))
+            {
+                recoveredCount += groupSlots.Length;
+            }
+            else
+            {
+                failures.Add($"Group {group.Key}");
+            }
+        }
+
+        foreach (var slot in targetSlots.Where(slot => !IsSoopUrl(slot.CurrentUrl)))
         {
             try
             {
                 await slot.ReloadAsync();
-                reloadedCount++;
+                recoveredCount++;
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text =
-                    $"재생 화면 새로고침 일부 실패: {reloadedCount}/{targetSlots.Length}. " +
-                    $"Slot {slot.SlotId}: {ex.Message}";
-                return;
+                failures.Add($"Slot {slot.SlotId}: {ex.Message}");
             }
         }
 
-        StatusTextBlock.Text = $"재생 중인 화면 {reloadedCount}개 새로고침을 요청했습니다.";
+        StatusTextBlock.Text = failures.Count == 0
+            ? $"재생 중인 화면 {recoveredCount}개 강제 복구를 완료했습니다."
+            : $"재생 화면 강제 복구 일부 실패: {recoveredCount}/{targetSlots.Length}. {string.Join("; ", failures)}";
         UpdateDiagnostics();
     }
 
@@ -1832,22 +1857,30 @@ public partial class MainWindow : Window
                (IsSoopUrl(slot.CurrentUrl) || IsSoopUrl(normalizedUrl));
     }
 
-    private async Task RecoverSoopProfileGroupAsync(StreamSlotView triggeringSlot)
+    private async Task<bool> RecoverSoopProfileGroupAsync(
+        StreamSlotView triggeringSlot,
+        bool bypassCooldown = false,
+        string recoveryReason = "방송 개수 경고")
     {
         var groupId = triggeringSlot.ProfileGroupId;
         if (!_recoveringSoopLimitGroups.Add(groupId))
         {
-            return;
+            StatusTextBlock.Text = $"SOOP Group {groupId} 복구가 이미 진행 중입니다.";
+            return false;
         }
 
         try
         {
+            Trace.WriteLine(
+                $"[{DateTimeOffset.Now:O}] SOOP recovery requested: Group={groupId}, " +
+                $"Reason={recoveryReason}, TriggerSlot={triggeringSlot.SlotId}, Url={triggeringSlot.CurrentUrl}");
             var now = DateTimeOffset.UtcNow;
-            if (_lastSoopLimitRecoveryByGroup.TryGetValue(groupId, out var lastRecoveryAt) &&
+            if (!bypassCooldown &&
+                _lastSoopLimitRecoveryByGroup.TryGetValue(groupId, out var lastRecoveryAt) &&
                 now - lastRecoveryAt < SoopGroupRecoveryCooldown)
             {
                 StatusTextBlock.Text = $"SOOP 방송 개수 경고 감지: Group {groupId} 복구 쿨다운 중입니다.";
-                return;
+                return false;
             }
 
             _lastSoopLimitRecoveryByGroup[groupId] = now;
@@ -1871,11 +1904,11 @@ public partial class MainWindow : Window
 
             if (slotsToClear.Length == 0)
             {
-                return;
+                return true;
             }
 
             StatusTextBlock.Text =
-                $"SOOP 방송 개수 경고 감지: Group {groupId} {slotsToRestore.Length}개 화면을 재동기화합니다.";
+                $"SOOP {recoveryReason}: Group {groupId} {slotsToRestore.Length}개 화면을 재동기화합니다.";
 
             foreach (var slot in slotsToClear)
             {
@@ -1887,16 +1920,23 @@ public partial class MainWindow : Window
             foreach (var (slot, url, streamName) in slotsToRestore)
             {
                 await NavigateSlotAsync(slot, url, streamName);
+                await slot.WaitForPlaybackReadyAsync();
                 await Task.Delay(SoopGroupRecoveryStepDelay);
             }
 
             StatusTextBlock.Text =
                 $"SOOP Group {groupId} 재동기화 완료: {slotsToRestore.Length}개 화면을 다시 로드했습니다.";
+            Trace.WriteLine(
+                $"[{DateTimeOffset.Now:O}] SOOP recovery completed: Group={groupId}, Restored={slotsToRestore.Length}");
             UpdateDiagnostics();
+            return true;
         }
         catch (Exception ex)
         {
             StatusTextBlock.Text = $"SOOP Group {groupId} 재동기화 실패: {ex.Message}";
+            Trace.WriteLine(
+                $"[{DateTimeOffset.Now:O}] SOOP recovery failed: Group={groupId}, Error={ex}");
+            return false;
         }
         finally
         {

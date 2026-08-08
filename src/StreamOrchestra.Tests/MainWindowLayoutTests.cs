@@ -89,7 +89,7 @@ public sealed class MainWindowLayoutTests
         Assert.Equal("RefreshPlayingScreensButton_Click", GetAttribute(refreshButton, "Click"));
         Assert.Equal("Right", GetAttribute(refreshButton, "DockPanel.Dock"));
         Assert.Equal("SidebarToggleButton", GetAttribute(refreshButton, "Style")?.Trim('{', '}').Replace("StaticResource ", ""));
-        Assert.Equal("현재 재생 중인 화면 전체 새로고침", GetAttribute(refreshButton, "ToolTip"));
+        Assert.Equal("현재 재생 중인 화면 전체 강제 복구", GetAttribute(refreshButton, "ToolTip"));
         Assert.Equal("/Assets/refresh.png", GetAttribute(refreshIcon, "Source"));
 
         var toolbar = refreshButton.Ancestors().First(ancestor => ancestor.Name.LocalName == "DockPanel");
@@ -99,8 +99,11 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("ReloadPlayingScreensAsync", codeBehind);
         Assert.Contains("GetVisibleNonBlankSlots()", codeBehind);
         Assert.Contains("await slot.ReloadAsync();", codeBehind);
+        Assert.Contains("RecoverSoopProfileGroupAsync", codeBehind);
+        Assert.Contains("bypassCooldown: true", codeBehind);
         Assert.Contains("public async Task ReloadAsync()", slotCodeBehind);
-        Assert.Contains("Browser.CoreWebView2.Reload();", slotCodeBehind);
+        Assert.Contains("Browser.CoreWebView2.Reload", slotCodeBehind);
+        Assert.Contains("RunNavigationAndWaitAsync", slotCodeBehind);
     }
 
     [Fact]

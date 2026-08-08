@@ -31,7 +31,7 @@
 ### 프로필 그룹 분리
 
 - 슬롯 1–3은 그룹 **A**, 4–6은 **B**, 7–9는 **C**, 10–12는 **D**, 13–16은 **E**를 사용합니다. 탐색 패널은 별도의 Explorer 그룹을 씁니다.
-- 각 그룹은 `%LOCALAPPDATA%\StreamOrchestra\Profiles` 아래의 독립된 영속 WebView2 사용자 데이터 폴더를 사용하므로, 그룹별 로그인 세션이 분리·유지됩니다.
+- 각 그룹은 `%LOCALAPPDATA%\StreamOrchestra\Profiles` 아래의 독립된 영속 WebView2 사용자 데이터 폴더를 사용하므로, 그룹별 로그인 세션이 분리·유지됩니다. 소셜 로그인 팝업이 완료되면 SOOP 공용 도메인의 세션 쿠키만 30일 만료 쿠키로 전환하며, 네이버 쿠키는 변경하지 않습니다. SOOP에서 로그아웃하면 해당 로그인 쿠키도 함께 제거됩니다.
 
 ### 마우스·키보드 조작
 
@@ -59,7 +59,7 @@
 
 - 최상단 **● 녹화** 버튼에서 SOOP 방송 주소, 저장 폴더, 화질을 지정해 현재 시점부터 원본 스트림을 파일로 저장할 수 있습니다. 화면 캡처 방식이 아니므로 해당 방송을 슬롯에 띄워 둘 필요가 없습니다.
 - 현재 선택한 슬롯이 SOOP 방송이면 그 주소가 자동으로 입력되며, 다른 주소로 바꿔 녹화할 수도 있습니다. 녹화 창은 별도 창으로 열려 멀티뷰를 계속 조작할 수 있습니다.
-- 최초 사용 시 앱이 [yt-dlp 공식 릴리스](https://github.com/yt-dlp/yt-dlp/releases)에서 Windows 실행 파일과 `SHA2-256SUMS`를 내려받아 SHA-256 무결성을 확인한 뒤 `%LOCALAPPDATA%\StreamOrchestra\Tools`에 설치합니다.
+- 최초 사용 시 앱이 [yt-dlp 공식 릴리스](https://github.com/yt-dlp/yt-dlp/releases)와 [yt-dlp용 FFmpeg 공식 빌드](https://github.com/yt-dlp/FFmpeg-Builds/releases)에서 Windows 실행 파일을 내려받아 각각의 SHA-256 체크섬을 확인한 뒤 `%LOCALAPPDATA%\StreamOrchestra\Tools`에 설치합니다.
 - 녹화 중에는 경과 시간과 도구 로그가 표시됩니다. **중지**를 누르거나 방송이 끝나면 파일이 저장 폴더에 남으며 **폴더 열기**로 바로 확인할 수 있습니다.
 - 공개적으로 접근 가능한 SOOP/기존 AfreecaTV 주소를 지원합니다. 로그인 전용·성인 인증·DRM 등 플랫폼의 접근 통제를 우회하지 않으며, 녹화 권한이 있는 방송에만 사용해야 합니다.
 

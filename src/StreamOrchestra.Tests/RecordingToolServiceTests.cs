@@ -28,4 +28,19 @@ public sealed class RecordingToolServiceTests
         Assert.False(parsed);
         Assert.Empty(hash);
     }
+
+    [Fact]
+    public void TryParseExpectedSha256_ReadsOfficialFfmpegArchiveEntry()
+    {
+        const string expected = "e887d4c7b3ef08bd3734f56b72afc2ff734cc53745be0a655fa5719bd9aac5cf";
+        var checksums = $"{expected}  ffmpeg-master-latest-win64-gpl.zip\n";
+
+        var parsed = RecordingToolService.TryParseExpectedSha256(
+            checksums,
+            "ffmpeg-master-latest-win64-gpl.zip",
+            out var hash);
+
+        Assert.True(parsed);
+        Assert.Equal(expected, hash);
+    }
 }

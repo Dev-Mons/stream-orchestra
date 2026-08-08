@@ -67,7 +67,7 @@ public partial class RecordingWindow : Window
         StartButton.IsEnabled = false;
         ToolInstallProgressBar.Value = 0;
         ToolInstallProgressBar.Visibility = Visibility.Visible;
-        ToolStatusTextBlock.Text = "공식 녹화 도구 다운로드 중...";
+        ToolStatusTextBlock.Text = "공식 yt-dlp 및 FFmpeg 다운로드 중...";
 
         try
         {
@@ -127,11 +127,12 @@ public partial class RecordingWindow : Window
         }
 
         var executablePath = _toolService.FindExecutable();
-        if (executablePath is null)
+        var ffmpegExecutablePath = _toolService.FindFfmpegExecutable();
+        if (executablePath is null || ffmpegExecutablePath is null)
         {
             var answer = MessageBox.Show(
                 this,
-                "녹화에 필요한 yt-dlp가 없습니다. 공식 릴리스에서 지금 설치할까요?",
+                "라이브 녹화에 필요한 yt-dlp와 FFmpeg를 공식 릴리스에서 지금 설치할까요?\n\nFFmpeg 압축 파일은 약 170MB입니다.",
                 "녹화 도구 설치",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
@@ -141,7 +142,8 @@ public partial class RecordingWindow : Window
             }
 
             executablePath = _toolService.FindExecutable();
-            if (executablePath is null)
+            ffmpegExecutablePath = _toolService.FindFfmpegExecutable();
+            if (executablePath is null || ffmpegExecutablePath is null)
             {
                 return;
             }
@@ -157,20 +159,57 @@ public partial class RecordingWindow : Window
             return;
         }
 
+        var username = UsernameTextBox.Text.Trim();
+        var password = PasswordBox.Password;
+        var hasUsername = !string.IsNullOrWhiteSpace(username);
+        var hasPassword = !string.IsNullOrEmpty(password);
+        if (hasUsername != hasPassword)
+        {
+            MessageBox.Show(
+                this,
+                "구독자 전용 방송을 녹화하려면 SOOP ID와 비밀번호를 모두 입력해 주세요.",
+                "계정 확인",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            if (hasUsername)
+            {
+                PasswordBox.Focus();
+            }
+            else
+            {
+                UsernameTextBox.Focus();
+            }
+
+            return;
+        }
+
         _recordingStartedAt = DateTimeOffset.Now;
         _recordingCancellationTokenSource = new CancellationTokenSource();
         var qualityId = (QualityComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "best";
-        var request = new RecordingRequest(url, outputFolder, qualityId, _recordingStartedAt);
+        var request = new RecordingRequest(
+            url,
+            outputFolder,
+            qualityId,
+            _recordingStartedAt,
+            hasUsername ? username : null,
+            hasPassword ? password : null);
         var progress = new Progress<string>(AppendLogLine);
 
         SetRecordingUi(isRecording: true);
         LogTextBox.Clear();
         AppendLogLine($"녹화 시작: {url}");
+        if (hasUsername)
+        {
+            AppendLogLine("SOOP 계정 인증을 사용합니다. 비밀번호는 저장하거나 로그에 표시하지 않습니다.");
+        }
+
         _recordingTask = _recordingService.RecordAsync(
             executablePath,
+            ffmpegExecutablePath,
             request,
             progress,
             _recordingCancellationTokenSource.Token);
+        PasswordBox.Clear();
 
         RecordingResult result;
         try
@@ -216,6 +255,8 @@ public partial class RecordingWindow : Window
         OutputFolderTextBox.IsEnabled = !isRecording;
         BrowseFolderButton.IsEnabled = !isRecording;
         QualityComboBox.IsEnabled = !isRecording;
+        UsernameTextBox.IsEnabled = !isRecording;
+        PasswordBox.IsEnabled = !isRecording;
         InstallToolButton.IsEnabled = !isRecording;
         StartButton.IsEnabled = !isRecording;
         StopButton.IsEnabled = isRecording;
@@ -242,10 +283,12 @@ public partial class RecordingWindow : Window
     private void RefreshToolStatus()
     {
         var path = _toolService.FindExecutable();
-        ToolStatusTextBlock.Text = path is null
-            ? "녹화 도구가 필요합니다. (최초 1회)"
-            : "녹화 도구 준비됨";
-        InstallToolButton.Content = path is null ? "녹화 도구 설치" : "도구 업데이트";
+        var ffmpegPath = _toolService.FindFfmpegExecutable();
+        var toolsReady = path is not null && ffmpegPath is not null;
+        ToolStatusTextBlock.Text = toolsReady
+            ? "녹화 도구 준비됨 (yt-dlp + FFmpeg)"
+            : "녹화 도구가 필요합니다. (최초 1회)";
+        InstallToolButton.Content = toolsReady ? "도구 업데이트" : "녹화 도구 설치";
     }
 
     private void BrowseFolderButton_Click(object sender, RoutedEventArgs e)

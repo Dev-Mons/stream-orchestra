@@ -47,19 +47,27 @@ public sealed class SoopRecordingService : IDisposable
                IsHostOrSubdomain(host, "afreecatv.com");
     }
 
-    public static IReadOnlyList<string> BuildArguments(RecordingRequest request)
+    public static IReadOnlyList<string> BuildArguments(
+        RecordingRequest request,
+        string? ffmpegExecutablePath = null)
     {
         var format = request.QualityId switch
         {
-            "1080" => "best[height<=1080]/best",
-            "720" => "best[height<=720]/best",
-            "540" => "best[height<=540]/best",
-            "360" => "best[height<=360]/best",
-            _ => "best"
+            "1080" => "b[height<=1080]/b",
+            "720" => "b[height<=720]/b",
+            "540" => "b[height<=540]/b",
+            "360" => "b[height<=360]/b",
+            _ => "b"
         };
         var timestamp = request.StartedAt.LocalDateTime.ToString("yyyyMMdd_HHmmss");
+        var hasUsername = !string.IsNullOrWhiteSpace(request.Username);
+        var hasPassword = !string.IsNullOrEmpty(request.Password);
+        if (hasUsername != hasPassword)
+        {
+            throw new ArgumentException("SOOP ID와 비밀번호를 모두 입력해 주세요.", nameof(request));
+        }
 
-        return
+        List<string> arguments =
         [
             "--ignore-config",
             "--no-playlist",
@@ -68,16 +76,34 @@ public sealed class SoopRecordingService : IDisposable
             "--no-part",
             "--hls-use-mpegts",
             "--windows-filenames",
-            "--trim-filenames", "180",
+            "--trim-filenames", "180"
+        ];
+        if (hasUsername)
+        {
+            arguments.Add("--username");
+            arguments.Add(request.Username!.Trim());
+            arguments.Add("--password");
+            arguments.Add(request.Password!);
+        }
+        if (!string.IsNullOrWhiteSpace(ffmpegExecutablePath))
+        {
+            arguments.Add("--ffmpeg-location");
+            arguments.Add(ffmpegExecutablePath);
+        }
+
+        arguments.AddRange(
+        [
             "--format", format,
             "--paths", request.OutputFolder,
             "--output", $"%(title).100B [%(id)s] {timestamp}.%(ext)s",
             request.StreamUrl
-        ];
+        ]);
+        return arguments;
     }
 
     public async Task<RecordingResult> RecordAsync(
         string executablePath,
+        string ffmpegExecutablePath,
         RecordingRequest request,
         IProgress<string>? output = null,
         CancellationToken cancellationToken = default)
@@ -85,6 +111,10 @@ public sealed class SoopRecordingService : IDisposable
         if (!File.Exists(executablePath))
         {
             throw new FileNotFoundException("녹화 도구를 찾을 수 없습니다.", executablePath);
+        }
+        if (!File.Exists(ffmpegExecutablePath))
+        {
+            throw new FileNotFoundException("라이브 방송 저장에 필요한 FFmpeg를 찾을 수 없습니다.", ffmpegExecutablePath);
         }
 
         if (!IsSupportedSoopUrl(request.StreamUrl))
@@ -102,7 +132,7 @@ public sealed class SoopRecordingService : IDisposable
             RedirectStandardError = true,
             WorkingDirectory = request.OutputFolder
         };
-        foreach (var argument in BuildArguments(request))
+        foreach (var argument in BuildArguments(request, ffmpegExecutablePath))
         {
             startInfo.ArgumentList.Add(argument);
         }
