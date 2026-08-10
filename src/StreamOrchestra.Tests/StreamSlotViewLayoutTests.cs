@@ -229,6 +229,33 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
+    public void CodeBehind_AddsCopyAddressCommandToBrowserContextMenu()
+    {
+        var codeBehind = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+
+        Assert.Contains("coreWebView.ContextMenuRequested += CoreWebView2_ContextMenuRequested;", codeBehind);
+        Assert.Contains("coreWebView.ContextMenuRequested -= CoreWebView2_ContextMenuRequested;", codeBehind);
+        Assert.Contains("\"주소 복사하기\"", codeBehind);
+        Assert.Contains("Clipboard.SetText(address);", codeBehind);
+    }
+
+    [Theory]
+    [InlineData("https://play.sooplive.com/channel", true)]
+    [InlineData("http://example.com/stream", true)]
+    [InlineData("about:blank", false)]
+    [InlineData("javascript:alert(1)", false)]
+    [InlineData("", false)]
+    public void CodeBehind_CopyAddressCommandAcceptsOnlyWebAddresses(string address, bool expected)
+    {
+        var method = typeof(StreamOrchestra.App.Views.StreamSlotView).GetMethod(
+            "IsCopyableAddress",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        Assert.NotNull(method);
+        Assert.Equal(expected, method!.Invoke(null, [address]));
+    }
+
+    [Fact]
     public void CodeBehind_ProvidesBestEffortQualityControlAutomation()
     {
         var path = GetAppViewPath("StreamSlotView.xaml.cs");

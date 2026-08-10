@@ -54,6 +54,8 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     private string _preferredQualityKey = "master";
     private string? _playbackViewportScriptId;
     private string? _qualityObserverScriptId;
+    private CoreWebView2ContextMenuItem? _copyAddressContextMenuItem;
+    private string? _contextMenuAddress;
     private Point? _slotDragStartPoint;
     private Point? _swapDragStartPoint;
     private long _lastWheelStepTimestamp;
@@ -534,6 +536,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         coreWebView.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
         coreWebView.WebMessageReceived += CoreWebView2_WebMessageReceived;
         coreWebView.NewWindowRequested += CoreWebView2_NewWindowRequested;
+        coreWebView.ContextMenuRequested += CoreWebView2_ContextMenuRequested;
         coreWebView.ProcessFailed += CoreWebView2_ProcessFailed;
     }
 
@@ -544,7 +547,60 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         coreWebView.DocumentTitleChanged -= CoreWebView2_DocumentTitleChanged;
         coreWebView.WebMessageReceived -= CoreWebView2_WebMessageReceived;
         coreWebView.NewWindowRequested -= CoreWebView2_NewWindowRequested;
+        coreWebView.ContextMenuRequested -= CoreWebView2_ContextMenuRequested;
         coreWebView.ProcessFailed -= CoreWebView2_ProcessFailed;
+    }
+
+    private void CoreWebView2_ContextMenuRequested(
+        object? sender,
+        CoreWebView2ContextMenuRequestedEventArgs e)
+    {
+        if (sender is not CoreWebView2 coreWebView)
+        {
+            return;
+        }
+
+        _copyAddressContextMenuItem ??= CreateCopyAddressContextMenuItem(coreWebView.Environment);
+        _contextMenuAddress = CurrentUrl;
+        _copyAddressContextMenuItem.IsEnabled = IsCopyableAddress(_contextMenuAddress);
+        e.MenuItems.Insert(0, _copyAddressContextMenuItem);
+    }
+
+    private CoreWebView2ContextMenuItem CreateCopyAddressContextMenuItem(CoreWebView2Environment environment)
+    {
+        var menuItem = environment.CreateContextMenuItem(
+            "주소 복사하기",
+            iconStream: null,
+            CoreWebView2ContextMenuItemKind.Command);
+        menuItem.CustomItemSelected += (_, _) =>
+        {
+            if (_contextMenuAddress is not { } address || !IsCopyableAddress(address))
+            {
+                return;
+            }
+
+            Dispatcher.BeginInvoke(new Action(() => CopyAddressToClipboard(address)));
+        };
+        return menuItem;
+    }
+
+    private static bool IsCopyableAddress(string? address)
+    {
+        return Uri.TryCreate(address, UriKind.Absolute, out var uri) &&
+               (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+                uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void CopyAddressToClipboard(string address)
+    {
+        try
+        {
+            Clipboard.SetText(address);
+        }
+        catch (ExternalException ex)
+        {
+            Trace.WriteLine($"[{DateTimeOffset.Now:O}] Failed to copy stream address: {ex.Message}");
+        }
     }
 
     private async void CoreWebView2_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
