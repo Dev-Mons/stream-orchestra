@@ -77,7 +77,6 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="4,0,0,0" />
             <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="Focusable" Value="False" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="#13283F" />
@@ -302,8 +301,7 @@
                         Style="{StaticResource PrimaryButtonStyle}"
                         Click="AddRecordingButton_Click" />
                 <ContentControl x:Name="SelectedDetailHost"
-                                Grid.Row="1"
-                                Content="{Binding SelectedItem, ElementName=RecordingListBox}">
+                                Grid.Row="1">
                     <ContentControl.ContentTemplate>
                         <DataTemplate DataType="{x:Type models:RecordingSessionViewModel}">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">

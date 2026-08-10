@@ -9,7 +9,8 @@ public sealed class RecordingWindowLayoutTests
     {
         var document = LoadDocument("RecordingWindow.xaml");
 
-        Assert.NotNull(FindByName(document, "RecordingListBox"));
+        var recordingList = FindByName(document, "RecordingListBox");
+        Assert.Equal("RecordingListBox_SelectionChanged", Attribute(recordingList, "SelectionChanged"));
         Assert.NotNull(FindByName(document, "RecordingSearchTextBox"));
         Assert.NotNull(FindByName(document, "SelectedDetailHost"));
         Assert.NotNull(FindByName(document, "EmptyDetailPanel"));
@@ -22,6 +23,23 @@ public sealed class RecordingWindowLayoutTests
             element.Name.LocalName == "Button" && Attribute(element, "Content") == "방송 제거");
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "Button" && Attribute(element, "Content") == "저장 위치 변경");
+    }
+
+    [Fact]
+    public void RecordingWorkspace_SelectionRemainsInteractiveAndUpdatesDetailContent()
+    {
+        var document = LoadDocument("RecordingWindow.xaml");
+        var codeBehind = File.ReadAllText(GetViewPath("RecordingWindow.xaml.cs"));
+        var listItemStyle = document.Descendants().Single(element =>
+            element.Name.LocalName == "Style" && Attribute(element, "Key") == "RecordingListItemStyle");
+
+        Assert.DoesNotContain(listItemStyle.Descendants(), element =>
+            element.Name.LocalName == "Setter" &&
+            Attribute(element, "Property") == "Focusable" &&
+            Attribute(element, "Value") == "False");
+        Assert.Contains(
+            "SelectedDetailHost.Content = RecordingListBox.SelectedItem;",
+            codeBehind);
     }
 
     [Fact]

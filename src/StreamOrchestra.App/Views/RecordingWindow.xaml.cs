@@ -458,6 +458,7 @@ public partial class RecordingWindow : Window
 
     private void RecordingListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        SelectedDetailHost.Content = RecordingListBox.SelectedItem;
         RefreshSelectedState();
     }
 
