@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using StreamOrchestra.App.Models;
 
@@ -59,7 +60,7 @@ public sealed class SoopRecordingService : IDisposable
             "360" => "b[height<=360]/b",
             _ => "b"
         };
-        var timestamp = request.StartedAt.LocalDateTime.ToString("yyyyMMdd_HHmmss");
+        var timestamp = request.StartedAt.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
         var hasUsername = !string.IsNullOrWhiteSpace(request.Username);
         var hasPassword = !string.IsNullOrEmpty(request.Password);
         if (hasUsername != hasPassword)
