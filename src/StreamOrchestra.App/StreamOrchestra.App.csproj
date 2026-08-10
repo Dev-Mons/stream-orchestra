@@ -38,6 +38,7 @@
     <Resource Include="Assets\refresh.png" />
     <Resource Include="Assets\sidebar-open.png" />
     <Resource Include="Assets\sidebar-close.png" />
+    <Resource Include="Assets\soop-symbol-white.png" />
   </ItemGroup>
 
 </Project>
