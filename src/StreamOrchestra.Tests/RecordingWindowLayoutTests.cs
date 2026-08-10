@@ -15,6 +15,9 @@ public sealed class RecordingWindowLayoutTests
         Assert.NotNull(FindByName(document, "SelectedDetailHost"));
         Assert.NotNull(FindByName(document, "EmptyDetailPanel"));
         Assert.Equal("방송 추가", Attribute(FindByName(document, "AddRecordingButton"), "Content"));
+        var openOutputFolderButton = FindByName(document, "OpenOutputFolderButton");
+        Assert.Equal("폴더 열기", Attribute(openOutputFolderButton, "Content"));
+        Assert.Equal("OpenSelectedFolderButton_Click", Attribute(openOutputFolderButton, "Click"));
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "TextBlock" && Attribute(element, "Text") == "최근 활동");
         Assert.Contains(document.Descendants(), element =>

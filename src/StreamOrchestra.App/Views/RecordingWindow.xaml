@@ -276,11 +276,16 @@
                                    Foreground="#7E8CA0"
                                    FontSize="12"
                                    TextTrimming="CharacterEllipsis" />
-                        <Button Content="저장 위치 변경"
-                                Height="34"
-                                HorizontalAlignment="Left"
-                                Margin="0,12,0,0"
-                                Click="ChangeOutputFolderButton_Click" />
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                            <Button Content="저장 위치 변경"
+                                    Height="34"
+                                    Click="ChangeOutputFolderButton_Click" />
+                            <Button x:Name="OpenOutputFolderButton"
+                                    Content="폴더 열기"
+                                    Height="34"
+                                    Margin="10,0,0,0"
+                                    Click="OpenSelectedFolderButton_Click" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </Grid>
