@@ -62,4 +62,20 @@ public sealed class StreamNavigationServiceTests
 
         Assert.Equal(expected, displayName);
     }
+
+    [Theory]
+    [InlineData("방송국 이름", true)]
+    [InlineData("BJ_1234", true)]
+    [InlineData("296247067", false)]
+    [InlineData("SOOP", false)]
+    [InlineData("embed", false)]
+    [InlineData("https://play.sooplive.com/296247067", false)]
+    public void IsMeaningfulDisplayName_RejectsBroadcastIdsAndGenericPlayerNames(
+        string value,
+        bool expected)
+    {
+        var service = new StreamNavigationService();
+
+        Assert.Equal(expected, service.IsMeaningfulDisplayName(value));
+    }
 }

@@ -27,7 +27,8 @@ public sealed class WorkspacePresetNormalizationService
             LayoutId = layoutId,
             Slots = Enumerable.Range(1, PlaybackTestPlanService.MaxSlotCount)
                 .Select(slotId => NormalizeSlot(slotId, slotsById))
-                .ToArray()
+                .ToArray(),
+            Sync = SyncPresetNormalizationService.Normalize(workspace.Sync)
         };
     }
 

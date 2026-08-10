@@ -61,6 +61,26 @@
                                FontWeight="Bold"/>
                 </Border>
             </primitives:Popup>
+            <primitives:Popup x:Name="SyncStatusPopup"
+                              PlacementTarget="{Binding ElementName=SlotBorder}"
+                              Placement="Relative"
+                              IsOpen="False"
+                              AllowsTransparency="True"
+                              IsHitTestVisible="False"
+                              Focusable="False">
+                <Border x:Name="SyncStatusBorder"
+                        Background="#D9233040"
+                        BorderBrush="#805E7187"
+                        BorderThickness="1"
+                        Padding="8,5"
+                        CornerRadius="6">
+                    <TextBlock x:Name="SyncStatusTextBlock"
+                               Text="SYNC · 방송명"
+                               Foreground="#F3F6FA"
+                               FontSize="11"
+                               FontWeight="SemiBold" />
+                </Border>
+            </primitives:Popup>
             <primitives:Popup x:Name="RemoveSlotPopup"
                               PlacementTarget="{Binding ElementName=SlotBorder}"
                               Placement="Relative"

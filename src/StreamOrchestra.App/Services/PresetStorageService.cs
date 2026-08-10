@@ -185,7 +185,8 @@ public sealed class PresetStorageService
             Id = id,
             Name = name,
             LayoutId = workspace.LayoutId?.Trim() ?? "",
-            Slots = workspace.Slots ?? []
+            Slots = workspace.Slots ?? [],
+            Sync = SyncPresetNormalizationService.Normalize(workspace.Sync)
         };
     }
 

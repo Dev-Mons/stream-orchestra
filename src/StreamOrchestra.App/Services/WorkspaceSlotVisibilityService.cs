@@ -22,7 +22,8 @@ public sealed class WorkspaceSlotVisibilityService
             Slots = sourceSlots
                 .OfType<WorkspaceSlot>()
                 .Select(slot => visibleSlotIds.Contains(slot.SlotId) ? slot : BlankSlot(slot))
-                .ToArray()
+                .ToArray(),
+            Sync = SyncPresetNormalizationService.Normalize(workspace.Sync)
         };
     }
 

@@ -1,0 +1,440 @@
+using System.Globalization;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using StreamOrchestra.App.Models;
+using StreamOrchestra.App.Services;
+using StreamOrchestra.App.Views;
+
+namespace StreamOrchestra.App;
+
+public partial class MainWindow
+{
+    private StreamSyncCoordinator? _syncCoordinator;
+    private bool _isRefreshingSyncUi;
+    private DateTimeOffset _lastSyncListRefreshAtUtc;
+
+    private void InitializeSyncFeature()
+    {
+        _syncCoordinator = new StreamSyncCoordinator(_slots);
+        _syncCoordinator.StateChanged += OnSyncStateChanged;
+        _syncCoordinator.LoadPreset(new SyncGroupPreset());
+
+        foreach (var slot in _slots)
+        {
+            slot.PlaybackStateChanged += SyncSlot_PlaybackStateChanged;
+        }
+
+        Closing += (_, _) =>
+        {
+            if (_syncCoordinator.IsEnabled)
+            {
+                _ = _syncCoordinator.StopAsync();
+            }
+        };
+        RefreshSyncUi(rebuildLists: true);
+    }
+
+    private void SyncSlot_PlaybackStateChanged(StreamSlotView slot)
+    {
+        if (_syncCoordinator?.ReconcileMemberStreamIdentity(slot.SlotId) == true)
+        {
+            QueueAppStateSave();
+        }
+
+        if (SyncPopup.IsOpen && !IsSyncPopupEditing())
+        {
+            RefreshSyncUi(rebuildLists: true);
+        }
+    }
+
+    private void OnSyncStateChanged()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke((Action)OnSyncStateChanged);
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var rebuildLists = SyncPopup.IsOpen &&
+                           !IsSyncPopupEditing() &&
+                           now - _lastSyncListRefreshAtUtc >= TimeSpan.FromSeconds(2);
+        RefreshSyncUi(rebuildLists);
+    }
+
+    private void SyncButton_Click(object sender, RoutedEventArgs e)
+    {
+        SyncPopup.IsOpen = !SyncPopup.IsOpen;
+        if (SyncPopup.IsOpen)
+        {
+            RefreshSyncUi(rebuildLists: true);
+        }
+    }
+
+    private async void SyncStartStopButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_syncCoordinator is null)
+        {
+            return;
+        }
+
+        if (_syncCoordinator.IsEnabled)
+        {
+            await _syncCoordinator.StopAsync();
+            StatusTextBlock.Text = "SOOP 재생 동기화를 정지했습니다.";
+        }
+        else if (!await _syncCoordinator.StartAsync())
+        {
+            StatusTextBlock.Text = "동기화할 방송을 2개 이상 추가해 주세요.";
+        }
+        else
+        {
+            StatusTextBlock.Text = "SOOP 재생 동기화를 시작했습니다.";
+        }
+
+        RefreshSyncUi(rebuildLists: true);
+    }
+
+    private void SyncMinimumSafetySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isRefreshingSyncUi || SyncMinimumSafetyText is null)
+        {
+            return;
+        }
+
+        var milliseconds = (int)Math.Round(e.NewValue / 100) * 100;
+        SyncMinimumSafetyText.Text = FormatSeconds(milliseconds);
+        if (_syncCoordinator?.SetMinimumSafetyDelay(milliseconds) == true)
+        {
+            QueueAppStateSave();
+        }
+    }
+
+    private SyncGroupPreset CaptureSyncPreset()
+    {
+        return _syncCoordinator?.CapturePreset() ?? new SyncGroupPreset();
+    }
+
+    private async Task ApplySyncPresetAsync(SyncGroupPreset? preset)
+    {
+        if (_syncCoordinator is null)
+        {
+            return;
+        }
+
+        await _syncCoordinator.StopAsync();
+        _syncCoordinator.LoadPreset(preset);
+        RefreshSyncUi(rebuildLists: true);
+    }
+
+    private void RefreshSyncUi(bool rebuildLists)
+    {
+        if (_syncCoordinator is null || SyncStatusDot is null)
+        {
+            return;
+        }
+
+        var state = _syncCoordinator.CreateViewState();
+        _isRefreshingSyncUi = true;
+        try
+        {
+            SyncStatusDot.Fill = CreateSyncStateBrush(state.RuntimeState);
+            SyncStartStopButton.Content = state.IsEnabled ? "정지" : "시작";
+            SyncStartStopButton.IsEnabled = state.IsEnabled || state.Members.Count >= 2;
+            SyncGroupStateText.Text = FormatRuntimeState(state.RuntimeState);
+            SyncReadyText.Text = $"준비 {state.ReadyMemberCount}/{state.Members.Count} · 그룹 최대 16개";
+            SyncEffectiveDelayText.Text = $"현재 유효 안전 딜레이 {FormatSeconds(state.EffectiveSafetyDelayMs)}";
+            SyncMinimumSafetySlider.Value = state.MinimumSafetyDelayMs;
+            SyncMinimumSafetyText.Text = FormatSeconds(state.MinimumSafetyDelayMs);
+            SyncNoticeText.Text = state.Notice;
+            SyncButton.ToolTip = $"SOOP 방송 재생 동기화 · {FormatRuntimeState(state.RuntimeState)}";
+
+            if (rebuildLists)
+            {
+                _lastSyncListRefreshAtUtc = DateTimeOffset.UtcNow;
+                RebuildSyncMemberRows(state);
+                RebuildSyncAvailableRows(state);
+            }
+        }
+        finally
+        {
+            _isRefreshingSyncUi = false;
+        }
+    }
+
+    private void RebuildSyncMemberRows(SyncGroupViewState state)
+    {
+        SyncMembersPanel.Children.Clear();
+        if (state.Members.Count == 0)
+        {
+            SyncMembersPanel.Children.Add(CreateEmptySyncText("아래 목록에서 동기화할 방송을 추가해 주세요."));
+            return;
+        }
+
+        foreach (var member in state.Members)
+        {
+            var container = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 7),
+                Padding = new Thickness(9),
+                Background = new SolidColorBrush(Color.FromRgb(24, 32, 42)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(48, 60, 73)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7)
+            };
+            var content = new StackPanel();
+            container.Child = content;
+
+            var heading = new Grid();
+            heading.ColumnDefinitions.Add(new ColumnDefinition());
+            heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var name = new TextBlock
+            {
+                Text = member.StreamName,
+                Foreground = Brushes.White,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            var status = new TextBlock
+            {
+                Text = member.StatusText,
+                Foreground = member.IsReady ? new SolidColorBrush(Color.FromRgb(111, 211, 158)) :
+                    new SolidColorBrush(Color.FromRgb(244, 197, 106)),
+                FontSize = 11
+            };
+            Grid.SetColumn(status, 1);
+            heading.Children.Add(name);
+            heading.Children.Add(status);
+            content.Children.Add(heading);
+
+            content.Children.Add(new TextBlock
+            {
+                Margin = new Thickness(0, 5, 0, 0),
+                Text = $"{FormatTimelineSource(member.TimelineSource)} · 버퍼 {FormatNullableSeconds(member.BufferSec)} · 오차 {FormatError(member.ErrorMs)}",
+                Foreground = new SolidColorBrush(Color.FromRgb(166, 178, 191)),
+                FontSize = 10
+            });
+
+            var controls = new StackPanel
+            {
+                Margin = new Thickness(0, 7, 0, 0),
+                Orientation = Orientation.Horizontal
+            };
+            var advanceButton = CreateSyncSmallButton("0.1초 앞당김", "이 방송을 0.1초 앞당깁니다.");
+            advanceButton.Click += (_, _) => ChangeManualDelay(member.SlotId, member.ManualDelayMs - 100);
+            controls.Children.Add(advanceButton);
+
+            var delayInput = new TextBox
+            {
+                Width = 58,
+                Height = 25,
+                Margin = new Thickness(5, 0, 5, 0),
+                Padding = new Thickness(4, 2, 4, 2),
+                Text = (member.ManualDelayMs / 1000d).ToString("0.0", CultureInfo.InvariantCulture),
+                TextAlignment = TextAlignment.Center,
+                ToolTip = "추가 지연(초), -60~60",
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
+            AutomationProperties.SetName(delayInput, $"{member.StreamName} 추가 지연 초");
+            delayInput.LostKeyboardFocus += (_, _) => CommitManualDelay(member.SlotId, delayInput.Text);
+            delayInput.KeyDown += (_, args) =>
+            {
+                if (args.Key == Key.Enter)
+                {
+                    CommitManualDelay(member.SlotId, delayInput.Text);
+                    Keyboard.ClearFocus();
+                }
+            };
+            controls.Children.Add(delayInput);
+
+            var delayButton = CreateSyncSmallButton("0.1초 늦춤", "이 방송을 0.1초 늦춥니다.");
+            delayButton.Click += (_, _) => ChangeManualDelay(member.SlotId, member.ManualDelayMs + 100);
+            controls.Children.Add(delayButton);
+
+            var resetButton = CreateSyncSmallButton("초기화", "이 방송의 수동 보정을 0초로 초기화합니다.");
+            resetButton.Margin = new Thickness(5, 0, 0, 0);
+            resetButton.Click += (_, _) => ChangeManualDelay(member.SlotId, 0);
+            controls.Children.Add(resetButton);
+
+            var removeButton = CreateSyncSmallButton("제거", "이 방송을 동기화 그룹에서 제거합니다.");
+            removeButton.Margin = new Thickness(5, 0, 0, 0);
+            removeButton.Foreground = new SolidColorBrush(Color.FromRgb(255, 166, 176));
+            removeButton.Click += async (_, _) =>
+            {
+                if (_syncCoordinator is not null && await _syncCoordinator.RemoveMemberAsync(member.SlotId))
+                {
+                    QueueAppStateSave();
+                    RefreshSyncUi(rebuildLists: true);
+                }
+            };
+            controls.Children.Add(removeButton);
+            content.Children.Add(controls);
+            SyncMembersPanel.Children.Add(container);
+        }
+    }
+
+    private void RebuildSyncAvailableRows(SyncGroupViewState state)
+    {
+        SyncAvailablePanel.Children.Clear();
+        var memberIds = state.Members.Select(member => member.SlotId).ToHashSet();
+        var available = _slots
+            .Where(slot => !memberIds.Contains(slot.SlotId) && IsSoopStreamUrl(slot.CurrentUrl))
+            .OrderBy(slot => slot.SlotId)
+            .ToArray();
+        if (available.Length == 0)
+        {
+            SyncAvailablePanel.Children.Add(CreateEmptySyncText("추가 가능한 SOOP 방송이 없습니다."));
+            return;
+        }
+
+        foreach (var slot in available)
+        {
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 5) };
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(new TextBlock
+            {
+                Text = slot.SyncDisplayName,
+                Foreground = new SolidColorBrush(Color.FromRgb(205, 215, 225)),
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            var addButton = CreateSyncSmallButton("추가", $"{slot.SyncDisplayName} 방송을 동기화 그룹에 추가합니다.");
+            addButton.IsEnabled = state.Members.Count < SlotProfileGroupMapping.MaxSlotCount;
+            addButton.Click += (_, _) =>
+            {
+                if (_syncCoordinator?.AddMember(slot.SlotId) == true)
+                {
+                    QueueAppStateSave();
+                    RefreshSyncUi(rebuildLists: true);
+                }
+            };
+            Grid.SetColumn(addButton, 1);
+            row.Children.Add(addButton);
+            SyncAvailablePanel.Children.Add(row);
+        }
+    }
+
+    private void ChangeManualDelay(int slotId, int manualDelayMs)
+    {
+        if (_syncCoordinator?.SetManualDelay(slotId, manualDelayMs) == true)
+        {
+            QueueAppStateSave();
+            RefreshSyncUi(rebuildLists: true);
+        }
+    }
+
+    private void CommitManualDelay(int slotId, string value)
+    {
+        var parsed = double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out var currentCultureValue)
+            ? currentCultureValue
+            : double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var invariantValue)
+                ? invariantValue
+                : double.NaN;
+        if (!double.IsFinite(parsed))
+        {
+            RefreshSyncUi(rebuildLists: true);
+            return;
+        }
+
+        parsed = Math.Clamp(parsed, -60, 60);
+        ChangeManualDelay(slotId, (int)Math.Round(parsed * 10) * 100);
+    }
+
+    private static Button CreateSyncSmallButton(string text, string automationName)
+    {
+        var button = new Button
+        {
+            Content = text,
+            MinHeight = 25,
+            Padding = new Thickness(7, 2, 7, 2),
+            Background = new SolidColorBrush(Color.FromRgb(38, 50, 64)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(59, 73, 89)),
+            BorderThickness = new Thickness(1),
+            Foreground = Brushes.White,
+            FontSize = 10,
+            ToolTip = automationName
+        };
+        AutomationProperties.SetName(button, automationName);
+        return button;
+    }
+
+    private static TextBlock CreateEmptySyncText(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Padding = new Thickness(6),
+            Foreground = new SolidColorBrush(Color.FromRgb(130, 143, 157)),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap
+        };
+    }
+
+    private static Brush CreateSyncStateBrush(SyncRuntimeState state)
+    {
+        return state switch
+        {
+            SyncRuntimeState.Running => new SolidColorBrush(Color.FromRgb(55, 190, 120)),
+            SyncRuntimeState.Recovering => new SolidColorBrush(Color.FromRgb(225, 80, 80)),
+            SyncRuntimeState.Preparing or SyncRuntimeState.Waiting or SyncRuntimeState.Degraded =>
+                new SolidColorBrush(Color.FromRgb(234, 179, 72)),
+            _ => new SolidColorBrush(Color.FromRgb(105, 117, 134))
+        };
+    }
+
+    private static string FormatRuntimeState(SyncRuntimeState state)
+    {
+        return state switch
+        {
+            SyncRuntimeState.Stopped => "정지",
+            SyncRuntimeState.Preparing => "시간축 준비 중",
+            SyncRuntimeState.Running => "정상 동기화 중",
+            SyncRuntimeState.Recovering => "버퍼 복구 중",
+            SyncRuntimeState.Waiting => "방송 신호 대기",
+            SyncRuntimeState.Degraded => "추정 동기화 중",
+            _ => state.ToString()
+        };
+    }
+
+    private static string FormatTimelineSource(SyncTimelineSource source)
+    {
+        return source switch
+        {
+            SyncTimelineSource.ProgramDateTime => "HLS 절대시각",
+            SyncTimelineSource.CdnDate => "CDN 추정시각",
+            SyncTimelineSource.LiveEdgeEstimate => "라이브 엣지 추정",
+            _ => "시간축 대기"
+        };
+    }
+
+    private static string FormatSeconds(int milliseconds) => $"{milliseconds / 1000d:0.0}초";
+
+    private static string FormatNullableSeconds(double? seconds) => seconds is null ? "--" : $"{seconds:0.00}초";
+
+    private static string FormatError(double? errorMs) =>
+        errorMs is null ? "--" : $"{errorMs.Value / 1000:+0.00;-0.00;0.00}초";
+
+    private static bool IsSoopStreamUrl(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        var host = uri.Host;
+        return host.Equals("sooplive.com", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".sooplive.com", StringComparison.OrdinalIgnoreCase) ||
+               host.Equals("sooplive.co.kr", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".sooplive.co.kr", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsSyncPopupEditing()
+    {
+        return SyncPopup.Child is UIElement child && child.IsKeyboardFocusWithin;
+    }
+}

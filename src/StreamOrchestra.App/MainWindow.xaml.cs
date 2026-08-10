@@ -90,6 +90,7 @@ public partial class MainWindow : Window
 
         CreateExplorerPanel();
         CreateSlots();
+        InitializeSyncFeature();
         ApplyShortcutLabelsToSlots();
         UpdateMuteAllTooltip();
         LoadLayouts();
@@ -1495,7 +1496,8 @@ public partial class MainWindow : Window
                     VolumePercent = slot.VolumePercent,
                     ProfileGroupId = slot.ProfileGroupId
                 })
-                .ToArray()
+                .ToArray(),
+            Sync = CaptureSyncPreset()
         };
 
         if (selectedLayout is not null)
@@ -1565,6 +1567,8 @@ public partial class MainWindow : Window
 
     private async Task ApplyWorkspaceAsync(WorkspacePreset workspace, bool setActiveWorkspace)
     {
+        await ApplySyncPresetAsync(workspace.Sync);
+
         // 사용자 지정 레이아웃이 하나도 없으면 표시할 레이아웃이 없으므로 빈 상태로 둔다.
         if (_layouts.Count == 0)
         {

@@ -9,4 +9,6 @@ public sealed class WorkspacePreset
     public string LayoutId { get; init; } = LayoutPresetIds.Default;
 
     public IReadOnlyList<WorkspaceSlot> Slots { get; init; } = [];
+
+    public SyncGroupPreset Sync { get; init; } = new();
 }

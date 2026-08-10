@@ -14,7 +14,7 @@ using StreamOrchestra.App.Services;
 
 namespace StreamOrchestra.App.Views;
 
-public partial class StreamSlotView : UserControl
+public partial class StreamSlotView : UserControl, IStreamSyncTarget
 {
     private const int MinVolumePercent = 0;
     private const int MaxVolumePercent = 100;
@@ -141,7 +141,7 @@ public partial class StreamSlotView : UserControl
         await _navigationGate.WaitAsync();
         try
         {
-            _hasExplicitStreamName = !string.IsNullOrWhiteSpace(streamName);
+            _hasExplicitStreamName = _navigationService.IsMeaningfulDisplayName(streamName);
             UpdateCurrentLocation(
                 normalizedUrl,
                 _hasExplicitStreamName ? streamName!.Trim() : _navigationService.CreateDisplayName(normalizedUrl));
@@ -467,6 +467,7 @@ public partial class StreamSlotView : UserControl
 
             await Browser.EnsureCoreWebView2Async(environment);
             await InstallPlaybackViewportScriptAsync();
+            await InitializeStreamSyncAsync();
             AttachCoreWebViewEvents(Browser.CoreWebView2);
 
             _isMuted = false;
@@ -655,6 +656,8 @@ public partial class StreamSlotView : UserControl
             _isInitialized = false;
             _playbackViewportScriptId = null;
             _qualityObserverScriptId = null;
+            _syncBridgeScriptId = null;
+            ResetStreamSyncObservations();
 
             await EnsureInitializedAsync();
             if (!restoreUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
@@ -1058,6 +1061,11 @@ public partial class StreamSlotView : UserControl
         if (VolumeIndicatorPopup.IsOpen)
         {
             RefreshCenteredPopupPlacement(VolumeIndicatorPopup, ref _lastVolumePopupAnchor, force);
+        }
+
+        if (SyncStatusPopup.IsOpen)
+        {
+            RefreshSyncBadgePlacement(force);
         }
     }
 

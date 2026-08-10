@@ -58,12 +58,31 @@ public sealed class StreamNavigationService
     public string CreateDisplayName(string? url, string? documentTitle)
     {
         var normalizedTitle = NormalizeDocumentTitle(documentTitle);
-        if (!string.IsNullOrWhiteSpace(normalizedTitle) && !LooksLikeUrl(normalizedTitle))
+        if (IsMeaningfulDisplayName(normalizedTitle))
         {
             return normalizedTitle;
         }
 
         return CreateDisplayName(url);
+    }
+
+    public bool IsMeaningfulDisplayName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = NormalizeDocumentTitle(value);
+        if (normalized.Equals("SOOP", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("embed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("about:blank", StringComparison.OrdinalIgnoreCase) ||
+            LooksLikeUrl(normalized))
+        {
+            return false;
+        }
+
+        return normalized.Length < 6 || !normalized.All(char.IsDigit);
     }
 
     private static string NormalizeDocumentTitle(string? documentTitle)
