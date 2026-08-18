@@ -57,6 +57,30 @@ public sealed class SyncTelemetryRecorderTests : IDisposable
     }
 
     [Fact]
+    public void OpaqueIdentities_AreStableWithinPurposeAndSeparatedAcrossPurposes()
+    {
+        var privacy = new SyncTelemetryPrivacy(Enumerable.Repeat((byte)19, 32).ToArray());
+        const string rawIdentity = "shared-caller-identity";
+        var purposes = new[]
+        {
+            SyncTelemetryIdentityPurpose.Channel,
+            SyncTelemetryIdentityPurpose.Session,
+            SyncTelemetryIdentityPurpose.Playlist,
+            SyncTelemetryIdentityPurpose.Request
+        };
+
+        var identities = purposes
+            .Select(purpose => privacy.CreateOpaqueIdentity(purpose, rawIdentity))
+            .ToArray();
+
+        Assert.Equal(purposes.Length, identities.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(identities, identity => Assert.DoesNotContain(rawIdentity, identity, StringComparison.Ordinal));
+        Assert.Equal(
+            identities[0],
+            privacy.CreateOpaqueIdentity(SyncTelemetryIdentityPurpose.Channel, rawIdentity));
+    }
+
+    [Fact]
     public void Recorder_RehashesCallerIdentifiersAndRebucketsHosts()
     {
         var recorder = SyncTelemetryRecorder.CreateEnabled(new SyncTelemetryRecorderOptions
@@ -353,6 +377,30 @@ public sealed class SyncTelemetryRecorderTests : IDisposable
 
         Assert.Null(service.SaveSyncTelemetrySnapshot(_rootFolder));
         Assert.Empty(Directory.GetFiles(_rootFolder, "sync-telemetry-*.json"));
+    }
+
+    [Fact]
+    public void ExplicitTelemetryExport_WritesOnlyAnEnabledSnapshotToTheChosenPath()
+    {
+        var recorder = SyncTelemetryRecorder.CreateEnabled(new SyncTelemetryRecorderOptions
+        {
+            SessionId = "export-session"
+        });
+        var destinationPath = Path.Combine(_rootFolder, "chosen", "pilot-session.json");
+
+        var path = new DiagnosticReportService().ExportSyncTelemetrySnapshot(
+            recorder.CreateSnapshot(),
+            destinationPath);
+
+        Assert.Equal(Path.GetFullPath(destinationPath), path);
+        Assert.True(File.Exists(path));
+        var persisted = File.ReadAllText(path);
+        Assert.Contains("\"isEnabled\": true", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("export-session", persisted, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() =>
+            new DiagnosticReportService().ExportSyncTelemetrySnapshot(
+                SyncTelemetryRecorder.Disabled.CreateSnapshot(),
+                destinationPath));
     }
 
     [Fact]

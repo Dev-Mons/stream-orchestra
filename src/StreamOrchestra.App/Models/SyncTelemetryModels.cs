@@ -2,8 +2,8 @@ namespace StreamOrchestra.App.Models;
 
 public static class SyncTelemetrySchema
 {
-    public const int SchemaVersion = 1;
-    public const string ModelVersion = "stream-sync-shadow-v1";
+    public const int SchemaVersion = 2;
+    public const string ModelVersion = "stream-sync-shadow-v2";
 }
 
 public sealed record SyncTelemetryClockSample(
@@ -44,7 +44,24 @@ public sealed record SyncNetworkTelemetry(
     long SourceEpoch = 0,
     long Sequence = 0,
     int SchemaVersion = SyncTelemetrySchema.SchemaVersion,
-    string ModelVersion = SyncTelemetrySchema.ModelVersion);
+    string ModelVersion = SyncTelemetrySchema.ModelVersion)
+{
+    public bool RequestStartObserved { get; init; }
+
+    public bool HasDateHeader { get; init; }
+
+    public bool HasAgeHeader { get; init; }
+
+    public long? AgeSecondsBucket { get; init; }
+
+    public bool IsExtensionlessResource { get; init; }
+
+    public string CorrelationSource { get; init; } = "web-resource-response-reduced";
+
+    public string CorrelationStatus { get; init; } = "unavailable";
+
+    public string FrameId { get; init; } = "";
+}
 
 public sealed record SyncPlaylistTelemetry(
     string SessionId,
@@ -66,7 +83,40 @@ public sealed record SyncPlaylistTelemetry(
     int NavigationGeneration = 0,
     long Sequence = 0,
     int SchemaVersion = SyncTelemetrySchema.SchemaVersion,
-    string ModelVersion = SyncTelemetrySchema.ModelVersion);
+    string ModelVersion = SyncTelemetrySchema.ModelVersion)
+{
+    public string RequestId { get; init; } = "";
+
+    public int ProgramDateTimeCount { get; init; }
+
+    public int ProgramDateTimeTimezoneCount { get; init; }
+
+    public string ProgramDateTimePrecisionBucket { get; init; } = "none";
+
+    public int DiscontinuityCount { get; init; }
+
+    public bool HasLowLatencySyntax { get; init; }
+
+    public int VariantCount { get; init; }
+
+    public int VideoRenditionCount { get; init; }
+
+    public int AudioRenditionCount { get; init; }
+
+    public bool MasterAssociationObserved { get; init; }
+
+    public string TrackingDisposition { get; init; } = "unknown";
+
+    public string EpochResetReason { get; init; } = "none";
+
+    public bool IsSourceSwitch { get; init; }
+
+    public string ContentTypeBucket { get; init; } = "";
+
+    public bool IsExtensionlessResource { get; init; }
+
+    public IReadOnlyList<string> ExtensionBuckets { get; init; } = [];
+}
 
 public sealed record SyncPlayerTelemetry(
     string SessionId,
@@ -86,7 +136,32 @@ public sealed record SyncPlayerTelemetry(
     int NavigationGeneration = 0,
     long Sequence = 0,
     int SchemaVersion = SyncTelemetrySchema.SchemaVersion,
-    string ModelVersion = SyncTelemetrySchema.ModelVersion);
+    string ModelVersion = SyncTelemetrySchema.ModelVersion)
+{
+    public bool Buffering { get; init; }
+
+    public bool PlayerProgressHealthy { get; init; }
+
+    public double? FrameAgeMilliseconds { get; init; }
+
+    public long? PresentedFrames { get; init; }
+
+    public string ChannelId { get; init; } = "";
+
+    public string BroadcastSessionId { get; init; } = "";
+
+    public string QualityBucket { get; init; } = "unknown";
+
+    public string CdnBucket { get; init; } = "unknown";
+
+    public string PcLoadBucket { get; init; } = "unknown";
+
+    public string NetworkBucket { get; init; } = "unknown";
+
+    public string PlaybackBucket { get; init; } = "unknown";
+
+    public string SourceBucket { get; init; } = "unknown";
+}
 
 public sealed record SyncEstimateTelemetry(
     string SessionId,

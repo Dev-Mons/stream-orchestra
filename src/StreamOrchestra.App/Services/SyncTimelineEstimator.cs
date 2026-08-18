@@ -28,6 +28,8 @@ public sealed record SyncTimelineEstimatorOptions
 
     public double KalmanDriftProcessNoise { get; init; } = 0.04;
 
+    public double MaximumAbsoluteDriftMillisecondsPerSecond { get; init; } = 100;
+
     public double HuberDeltaMilliseconds { get; init; } = 150;
 
     public double PredictionStandardDeviations { get; init; } = 1.96;
@@ -56,6 +58,7 @@ public sealed class SyncTimelineEstimator
             !IsPositiveFinite(_options.KalmanInitialDriftDeviationMillisecondsPerSecond) ||
             !IsPositiveFinite(_options.KalmanOffsetProcessNoise) ||
             !IsPositiveFinite(_options.KalmanDriftProcessNoise) ||
+            !IsPositiveFinite(_options.MaximumAbsoluteDriftMillisecondsPerSecond) ||
             !IsPositiveFinite(_options.HuberDeltaMilliseconds) ||
             !IsPositiveFinite(_options.PredictionStandardDeviations) ||
             !IsPositiveFinite(_options.CusumAllowanceMilliseconds) ||
@@ -219,7 +222,10 @@ public sealed class SyncTimelineEstimator
         var gainDrift = state.P10 / innovationVariance;
         var innovation = measurement - state.KalmanOffset;
         state.KalmanOffset += gainOffset * innovation;
-        state.KalmanDrift += gainDrift * innovation;
+        state.KalmanDrift = Math.Clamp(
+            state.KalmanDrift + gainDrift * innovation,
+            -_options.MaximumAbsoluteDriftMillisecondsPerSecond,
+            _options.MaximumAbsoluteDriftMillisecondsPerSecond);
 
         var p00 = state.P00;
         var p01 = state.P01;
@@ -405,17 +411,28 @@ public sealed class SyncTimelineEstimator
         }
 
         var currentSeconds = Math.Max(samples[^1].Seconds, predictionSeconds);
+        var boundedSlope = Math.Clamp(
+            slope,
+            -_options.MaximumAbsoluteDriftMillisecondsPerSecond,
+            _options.MaximumAbsoluteDriftMillisecondsPerSecond);
+        var totalWeight = weights.Sum();
+        var boundedIntercept = totalWeight <= 0
+            ? intercept
+            : samples.Select((sample, index) =>
+                    weights[index] * (sample.OffsetMilliseconds - boundedSlope * sample.Seconds))
+                .Sum() / totalWeight;
         var residualVariance = samples
             .Select(sample =>
             {
-                var residual = sample.OffsetMilliseconds - (intercept + slope * sample.Seconds);
+                var residual = sample.OffsetMilliseconds -
+                               (boundedIntercept + boundedSlope * sample.Seconds);
                 return residual * residual;
             })
             .Average();
         var projectionHorizon = Math.Max(0, currentSeconds - samples[^1].Seconds);
         return new HuberFit(
-            intercept + slope * currentSeconds,
-            slope,
+            boundedIntercept + boundedSlope * currentSeconds,
+            boundedSlope,
             Math.Sqrt(Math.Max(
                 0,
                 residualVariance + _options.KalmanOffsetProcessNoise * projectionHorizon)));

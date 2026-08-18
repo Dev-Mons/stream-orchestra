@@ -73,6 +73,11 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         _profileService = profileService;
         _navigationService = navigationService;
         _syncTelemetryRecorder = syncTelemetryRecorder ?? SyncTelemetryRecorder.Disabled;
+        _syncTelemetrySessionOwner = _syncTelemetryRecorder as SyncTelemetrySessionController;
+        if (_syncTelemetrySessionOwner is not null)
+        {
+            _syncTelemetrySessionOwner.EnabledChanged += SyncTelemetryEnabledChanged;
+        }
 
         InitializeComponent();
         _volumeOverlayTimer = new DispatcherTimer
@@ -689,6 +694,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
             var restoreUrl = CurrentUrl;
             var oldBrowser = Browser;
             var oldIndex = BrowserHost.Children.IndexOf(oldBrowser);
+            await DisableCdpCorrelationAsync();
 
             try
             {

@@ -317,6 +317,23 @@ public sealed class StreamSyncCoordinatorTests
         Assert.Contains(first.Commands, command => command.Type == SyncCommandType.SetRate);
     }
 
+    [Fact]
+    public async Task Tick_BlocksHardSeekUntilCdpCoverageGateIsExplicitlyPassed()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var first = CreateTarget(1, now, currentTime: 199);
+        var second = CreateTarget(2, now, currentTime: 197);
+        first.Timeline = first.Timeline! with { CdpHardSeekGatePassed = false };
+        var coordinator = new StreamSyncCoordinator([first, second]);
+        coordinator.AddMember(1);
+        coordinator.AddMember(2);
+
+        await coordinator.StartAsync();
+
+        Assert.DoesNotContain(first.Commands, command => command.Type == SyncCommandType.Seek);
+        Assert.Contains(first.Commands, command => command.Type == SyncCommandType.SetRate);
+    }
+
     [Theory]
     [InlineData(15000, true)]
     [InlineData(15001, false)]
@@ -464,6 +481,7 @@ public sealed class StreamSyncCoordinatorTests
         await coordinator.TickAsync(now.AddMilliseconds(500));
 
         Assert.NotEmpty(first.Commands);
+        Assert.Contains(first.Commands, command => command.Type == SyncCommandType.ResetRate);
         Assert.Equal(SyncRuntimeState.Degraded, coordinator.RuntimeState);
     }
 
@@ -688,7 +706,8 @@ public sealed class StreamSyncCoordinatorTests
                 SourceEpoch = 1,
                 IsEpochStable = true,
                 IndependentEvidenceCount = 3,
-                NetworkCapability = SyncNetworkObservationCapability.CdpCorrelated
+                NetworkCapability = SyncNetworkObservationCapability.CdpCorrelated,
+                CdpHardSeekGatePassed = true
             }
         };
     }

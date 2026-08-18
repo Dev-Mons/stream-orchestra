@@ -54,6 +54,25 @@ public sealed record SyncTelemetryRecorderOptions
     public byte[]? IdentityKey { get; init; }
 }
 
+public static class SyncTelemetryIdentityPurpose
+{
+    public const string Session = "session";
+    public const string Request = "request";
+    public const string Playlist = "playlist";
+    public const string Progress = "progress";
+    public const string Source = "source";
+    public const string Observation = "observation";
+    public const string Decision = "decision";
+    public const string Tick = "tick";
+    public const string Command = "command";
+    public const string ManualEvent = "manual-event";
+    public const string Channel = "channel";
+    public const string BroadcastSession = "broadcast-session";
+    public const string Suggestion = "suggestion";
+    public const string UrlIdentity = "url-identity";
+    public const string Frame = "frame";
+}
+
 public sealed class SystemSyncTelemetryClock : ISyncTelemetryClock
 {
     public static SystemSyncTelemetryClock Instance { get; } = new();
@@ -95,7 +114,12 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         "legacy-decision", "low-confidence", "invalid-range", "no-intersection", "epoch-unstable",
         "stale", "source-reset", "deadband", "bounded-rate", "hard-seek", "unknown");
     private static readonly IReadOnlySet<string> ActionOutcomes = CodeSet(
-        "ok", "position-confirmed", "rate-confirmed", "delivery-failed", "timed-out", "rejected", "unknown");
+        "ok", "verified", "position-confirmed", "rate-confirmed", "rate-assigned", "seek-assigned",
+        "pause-requested", "resume-requested", "reset-rate-assigned", "pause-confirmed", "resume-confirmed",
+        "delivery-failed", "timed-out", "rejected", "verification-mismatch", "navigation-reset",
+        "video-unavailable", "invalid-value", "invalid-range", "rate-mismatch", "rate-not-progressing",
+        "position-mismatch", "seeked-timeout", "pause-mismatch", "resume-mismatch", "resume-rejected",
+        "unsupported-command", "command-exception", "command-failed", "webview-unavailable", "unknown");
     private static readonly IReadOnlySet<string> PrivateExtensionBuckets = CodeSet(
         "ext-x-first-segment-timestamp", "other", "none", "unknown");
     private static readonly IReadOnlySet<string> WarningCodes = CodeSet(
@@ -103,6 +127,17 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         "pdt-discontinuous", "invalid-byte-range", "invalid-uri", "unsupported-tag", "unknown");
     private static readonly IReadOnlySet<string> ContextBuckets = CodeSet(
         "channel-quality-cdn", "channel-quality", "channel", "global", "unknown");
+    private static readonly IReadOnlySet<string> CorrelationSources = CodeSet(
+        "web-resource-response-reduced", "cdp-network");
+    private static readonly IReadOnlySet<string> CorrelationStatuses = CodeSet(
+        "unavailable", "pending", "correlated", "ambiguous", "runtime-mismatch", "expired", "invalid");
+    private static readonly IReadOnlySet<string> PdtPrecisionBuckets = CodeSet(
+        "none", "seconds", "milliseconds", "microseconds-or-finer", "unknown");
+    private static readonly IReadOnlySet<string> TrackingDispositions = CodeSet(
+        "new-evidence", "duplicate", "stale", "rollback", "not-trackable", "unknown");
+    private static readonly IReadOnlySet<string> EpochResetReasons = CodeSet(
+        "none", "initial-observation", "navigation", "session", "rendition", "source",
+        "discontinuity", "sequence-rollback", "unknown");
     private readonly object _gate = new();
     private readonly ISyncTelemetryClock _clock;
     private readonly SyncTelemetryPrivacy _privacy;
@@ -127,7 +162,7 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         _capacity = Math.Clamp(options.MaxEventsPerCategory, 1, 8192);
         _privacy = new SyncTelemetryPrivacy(options.IdentityKey);
         SessionId = _privacy.CreateOpaqueIdentity(
-            "session",
+            SyncTelemetryIdentityPurpose.Session,
             string.IsNullOrWhiteSpace(options.SessionId)
                 ? Guid.NewGuid().ToString("N")
                 : options.SessionId);
@@ -190,7 +225,7 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         var safe = value with
         {
             SessionId = SessionId,
-            RequestId = NormalizeOpaqueId("request", value.RequestId),
+            RequestId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Request, value.RequestId),
             Resource = SanitizeIdentity(value.Resource),
             ResourceKind = NormalizeAllowed(value.ResourceKind, ResourceKinds),
             RequestStartedAt = requestStartedAt,
@@ -203,6 +238,10 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
                 : null,
             OutcomeCode = NormalizeAllowed(value.OutcomeCode, NetworkOutcomes),
             SourceEpoch = Math.Max(0, value.SourceEpoch),
+            AgeSecondsBucket = value.AgeSecondsBucket is >= 0 ? value.AgeSecondsBucket : null,
+            CorrelationSource = NormalizeAllowed(value.CorrelationSource, CorrelationSources),
+            CorrelationStatus = NormalizeAllowed(value.CorrelationStatus, CorrelationStatuses),
+            FrameId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Frame, value.FrameId),
             Sequence = NextSequence(),
             SchemaVersion = SyncTelemetrySchema.SchemaVersion,
             ModelVersion = SyncTelemetrySchema.ModelVersion
@@ -221,15 +260,32 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         var safe = value with
         {
             SessionId = SessionId,
-            PlaylistId = NormalizeOpaqueId("playlist", value.PlaylistId),
+            PlaylistId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Playlist, value.PlaylistId),
+            RequestId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Request, value.RequestId),
             Playlist = SanitizeIdentity(value.Playlist),
             PlaylistKind = NormalizeAllowed(value.PlaylistKind, PlaylistKinds),
             RenditionKind = NormalizeAllowed(value.RenditionKind, RenditionKinds),
-            ProgressKey = NormalizeOpaqueId("progress", value.ProgressKey),
+            ProgressKey = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Progress, value.ProgressKey),
             Epoch = Math.Max(0, value.Epoch),
             ObservedAt = observedAt,
             PrivateExtensionBucket = NormalizeAllowed(value.PrivateExtensionBucket, PrivateExtensionBuckets, "none"),
             WarningCodes = NormalizeCodes(value.WarningCodes),
+            ProgramDateTimeCount = Math.Max(0, value.ProgramDateTimeCount),
+            ProgramDateTimeTimezoneCount = Math.Clamp(
+                value.ProgramDateTimeTimezoneCount,
+                0,
+                Math.Max(0, value.ProgramDateTimeCount)),
+            ProgramDateTimePrecisionBucket = NormalizeAllowed(
+                value.ProgramDateTimePrecisionBucket,
+                PdtPrecisionBuckets),
+            DiscontinuityCount = Math.Max(0, value.DiscontinuityCount),
+            VariantCount = Math.Max(0, value.VariantCount),
+            VideoRenditionCount = Math.Max(0, value.VideoRenditionCount),
+            AudioRenditionCount = Math.Max(0, value.AudioRenditionCount),
+            TrackingDisposition = NormalizeAllowed(value.TrackingDisposition, TrackingDispositions),
+            EpochResetReason = NormalizeAllowed(value.EpochResetReason, EpochResetReasons, "none"),
+            ContentTypeBucket = NormalizeContentType(value.ContentTypeBucket),
+            ExtensionBuckets = NormalizeExtensionBuckets(value.ExtensionBuckets),
             Sequence = NextSequence(),
             SchemaVersion = SyncTelemetrySchema.SchemaVersion,
             ModelVersion = SyncTelemetrySchema.ModelVersion
@@ -261,6 +317,18 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
             PageSampleMonotonicMilliseconds = FiniteOrNull(value.PageSampleMonotonicMilliseconds),
             DroppedVideoFrames = value.DroppedVideoFrames is >= 0 ? value.DroppedVideoFrames : null,
             TotalVideoFrames = value.TotalVideoFrames is >= 0 ? value.TotalVideoFrames : null,
+            FrameAgeMilliseconds = NonNegativeFiniteOrNull(value.FrameAgeMilliseconds),
+            PresentedFrames = value.PresentedFrames is >= 0 ? value.PresentedFrames : null,
+            ChannelId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Channel, value.ChannelId),
+            BroadcastSessionId = NormalizeOpaqueId(
+                SyncTelemetryIdentityPurpose.BroadcastSession,
+                value.BroadcastSessionId),
+            QualityBucket = NormalizeBucket(value.QualityBucket),
+            CdnBucket = NormalizeBucket(value.CdnBucket),
+            PcLoadBucket = NormalizeBucket(value.PcLoadBucket),
+            NetworkBucket = NormalizeBucket(value.NetworkBucket),
+            PlaybackBucket = NormalizeBucket(value.PlaybackBucket),
+            SourceBucket = NormalizeBucket(value.SourceBucket),
             Sequence = NextSequence(),
             SchemaVersion = SyncTelemetrySchema.SchemaVersion,
             ModelVersion = SyncTelemetrySchema.ModelVersion
@@ -288,7 +356,7 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         {
             SessionId = SessionId,
             EstimatorId = NormalizeAllowed(value.EstimatorId, EstimatorIds),
-            SourceId = NormalizeOpaqueId("source", value.SourceId),
+            SourceId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Source, value.SourceId),
             Epoch = Math.Max(0, value.Epoch),
             EstimatedAt = estimatedAt,
             RawOffsetMilliseconds = FiniteOrNull(value.RawOffsetMilliseconds),
@@ -299,8 +367,8 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
             TimelineConfidence = ConfidenceOrNull(value.TimelineConfidence),
             BiasConfidence = ConfidenceOrNull(value.BiasConfidence),
             ControllabilityConfidence = ConfidenceOrNull(value.ControllabilityConfidence),
-            ObservationId = NormalizeOpaqueId("observation", value.ObservationId),
-            ProgressKey = NormalizeOpaqueId("progress", value.ProgressKey),
+            ObservationId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Observation, value.ObservationId),
+            ProgressKey = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Progress, value.ProgressKey),
             EstimatorRole = NormalizeAllowed(value.EstimatorRole, EstimatorRoles),
             PredictionLowerMilliseconds = predictionLower,
             PredictionUpperMilliseconds = predictionUpper,
@@ -323,13 +391,13 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         var safe = value with
         {
             SessionId = SessionId,
-            DecisionId = NormalizeOpaqueId("decision", value.DecisionId),
+            DecisionId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Decision, value.DecisionId),
             Epoch = Math.Max(0, value.Epoch),
             DecidedAt = decidedAt,
             ExistingController = SanitizeDecision(value.ExistingController),
             CandidateController = SanitizeDecision(value.CandidateController),
             CandidateIsShadowOnly = true,
-            TickId = NormalizeOpaqueId("tick", value.TickId),
+            TickId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Tick, value.TickId),
             Sequence = NextSequence(),
             SchemaVersion = SyncTelemetrySchema.SchemaVersion,
             ModelVersion = SyncTelemetrySchema.ModelVersion
@@ -350,13 +418,13 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         var safe = value with
         {
             SessionId = SessionId,
-            CommandId = NormalizeOpaqueId("command", value.CommandId),
+            CommandId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Command, value.CommandId),
             Epoch = Math.Max(0, value.Epoch),
             CommandType = NormalizeAllowed(value.CommandType, CommandCodes),
             RequestedValue = FiniteOrNull(value.RequestedValue),
             Stage = NormalizeBucket(value.Stage),
             OccurredAt = occurredAt,
-            DecisionId = NormalizeOpaqueId("decision", value.DecisionId),
+            DecisionId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Decision, value.DecisionId),
             ObservedMediaTimeSeconds = FiniteOrNull(value.ObservedMediaTimeSeconds),
             ObservedPlaybackRate = FiniteOrNull(value.ObservedPlaybackRate),
             PostActionErrorMilliseconds = FiniteOrNull(value.PostActionErrorMilliseconds),
@@ -381,16 +449,18 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
         var safe = value with
         {
             SessionId = SessionId,
-            EventId = NormalizeOpaqueId("manual-event", value.EventId),
-            StableChannelHash = NormalizeOpaqueId("channel", value.StableChannelHash),
-            BroadcastSessionHash = NormalizeOpaqueId("broadcast", value.BroadcastSessionHash),
+            EventId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.ManualEvent, value.EventId),
+            StableChannelHash = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Channel, value.StableChannelHash),
+            BroadcastSessionHash = NormalizeOpaqueId(
+                SyncTelemetryIdentityPurpose.BroadcastSession,
+                value.BroadcastSessionHash),
             EventType = NormalizeBucket(value.EventType),
             OccurredAt = occurredAt,
             AlgorithmPriorMilliseconds = FiniteOrNull(value.AlgorithmPriorMilliseconds),
             PreviousUserResidualMilliseconds = FiniteOrNull(value.PreviousUserResidualMilliseconds),
             NewUserResidualMilliseconds = FiniteOrNull(value.NewUserResidualMilliseconds),
             EffectiveDelayMilliseconds = FiniteOrNull(value.EffectiveDelayMilliseconds),
-            SuggestionId = NormalizeOpaqueId("suggestion", value.SuggestionId),
+            SuggestionId = NormalizeOpaqueId(SyncTelemetryIdentityPurpose.Suggestion, value.SuggestionId),
             ContextBucket = NormalizeAllowed(value.ContextBucket, ContextBuckets),
             SourceEpoch = Math.Max(0, value.SourceEpoch),
             Sequence = NextSequence(),
@@ -467,7 +537,7 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
             host,
             path,
             _privacy.CreateOpaqueIdentity(
-                "url-identity",
+                SyncTelemetryIdentityPurpose.UrlIdentity,
                 $"{scheme}\0{host}\0{path}\0{value.PersistenceHash}"));
     }
 
@@ -520,6 +590,15 @@ public sealed class SyncTelemetryRecorder : ISyncTelemetryRecorder
             .Take(16)
             .ToArray() ?? [];
     }
+
+    private static IReadOnlyList<string> NormalizeExtensionBuckets(IReadOnlyList<string>? values) =>
+        values?
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(NormalizeBucket)
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .Take(16)
+            .ToArray() ?? [];
 
     private static bool TryNormalizeStamp(
         SyncTelemetryClockSample value,
@@ -790,7 +869,7 @@ public sealed class SyncTelemetryPrivacy
             schemeBucket,
             hostBucket,
             pathBucket,
-            CreateKeyedHash(canonical));
+            CreateOpaqueIdentity(SyncTelemetryIdentityPurpose.UrlIdentity, canonical));
     }
 
     public string CreateOpaqueIdentity(string domain, string? value)

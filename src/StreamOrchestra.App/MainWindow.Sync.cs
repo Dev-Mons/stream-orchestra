@@ -1,9 +1,12 @@
 using System.Globalization;
+using System.IO;
+using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
@@ -14,15 +17,23 @@ namespace StreamOrchestra.App;
 public partial class MainWindow
 {
     private StreamSyncCoordinator? _syncCoordinator;
+    private readonly SyncTelemetrySessionController _syncTelemetrySessionController = new();
+    private SyncTelemetryIdentityKeyStore? _syncTelemetryIdentityKeyStore;
     private ISyncBiasPriorService _syncBiasPriorService = DisabledSyncBiasPriorService.Instance;
     private bool _isRefreshingSyncUi;
     private DateTimeOffset _lastSyncListRefreshAtUtc;
 
     private void InitializeSyncFeature()
     {
+        _syncTelemetryIdentityKeyStore = new SyncTelemetryIdentityKeyStore(
+            Path.Combine(
+                _presetStorageService.DataFolder,
+                SyncTelemetryIdentityKeyStore.DefaultFileName));
         try
         {
-            _syncBiasPriorService = SyncBiasPriorService.CreateDefault(_presetStorageService.DataFolder);
+            _syncBiasPriorService = SyncBiasPriorService.CreateDefault(
+                _presetStorageService.DataFolder,
+                _syncTelemetrySessionController);
         }
         catch
         {
@@ -30,6 +41,7 @@ public partial class MainWindow
         }
         _syncCoordinator = new StreamSyncCoordinator(
             _slots,
+            syncTelemetryRecorder: _syncTelemetrySessionController,
             biasPriorService: _syncBiasPriorService);
         _syncCoordinator.StateChanged += OnSyncStateChanged;
         _syncCoordinator.LoadPreset(new SyncGroupPreset());
@@ -110,6 +122,144 @@ public partial class MainWindow
         RefreshSyncUi(rebuildLists: true);
     }
 
+    private void SyncTelemetryStartStopButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_syncTelemetrySessionController.IsEnabled)
+        {
+            var snapshot = _syncTelemetrySessionController.StopSession();
+            StatusTextBlock.Text = snapshot is null
+                ? "진단 수집 세션이 이미 종료되어 있습니다."
+                : $"진단 수집을 종료했습니다. {CountTelemetryEvents(snapshot):N0}개 이벤트를 메모리에 보관 중입니다.";
+            RefreshSyncTelemetryUi();
+            return;
+        }
+
+        var replacementNotice = _syncTelemetrySessionController.HasCompletedSession
+            ? "\n\n주의: 메모리에 남아 있는 이전 미내보내기 세션은 새 세션 시작과 함께 삭제됩니다."
+            : "";
+        var consent = MessageBox.Show(
+            this,
+            "동기화 진단 수집을 시작할까요?\n\n" +
+            "수집: 앱/WebView2 버전 구간, 해시 처리된 세션·채널·playlist·request 식별자, " +
+            "opt-in 동안의 passive CDP request lifecycle bucket, HLS/player 상태와 시각, " +
+            "추정·결정·명령 결과, 수동 보정 이벤트. CDP는 진단 연계에만 쓰며 hard seek gate는 계속 잠겨 있습니다.\n\n" +
+            "수집 안 함: cookie, Authorization, token, signed query, 원본 URL/manifest/header/body, " +
+            "영상 픽셀, 음성 또는 오디오 파형.\n\n" +
+            "파일럿 유효 조건: 공개 SOOP 플레이어 2개 이상을 같은 그룹에서 총 17분 이상 유지하며, 처음 2분은 warm-up으로 분석에서 제외됩니다. " +
+            "더 짧은 수집도 내보낼 수 있지만 primary 표본으로 집계되지 않습니다.\n\n" +
+            "보관: 파일럿 세션에서 카테고리별 최대 8,192개를 메모리에만 보관합니다. 자동 업로드와 자동 파일 저장은 없으며, " +
+            "세션 종료 후 직접 내보낼 때만 JSON 파일이 생성됩니다. 앱 종료 또는 삭제 시 메모리 수집본은 폐기됩니다. " +
+            "같은 목적의 식별자를 세션 간 연계하는 HMAC 키만 현재 Windows 사용자 보호로 로컬에 남고, 수집본 삭제 시 함께 삭제되어 이후 값이 바뀝니다." +
+            replacementNotice,
+            "동기화 진단 세션 동의",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Information);
+        if (consent != MessageBoxResult.Yes)
+        {
+            StatusTextBlock.Text = "진단 수집을 시작하지 않았습니다.";
+            return;
+        }
+
+        byte[]? identityKey = null;
+        try
+        {
+            identityKey = _syncTelemetryIdentityKeyStore?.LoadOrCreate();
+            var started = _syncTelemetrySessionController.StartSession(new SyncTelemetryRecorderOptions
+            {
+                AppVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "unknown",
+                RuntimeBucket = GetWebViewRuntimeBucket(),
+                MaxEventsPerCategory = 8192,
+                IdentityKey = identityKey
+            });
+            StatusTextBlock.Text = started
+                ? "진단 수집을 시작했습니다. 동기화 제어 방식은 변경되지 않습니다."
+                : "진단 수집 세션이 이미 실행 중입니다.";
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"진단 수집을 시작하지 못했습니다: {ex.Message}";
+        }
+        finally
+        {
+            if (identityKey is not null)
+            {
+                CryptographicOperations.ZeroMemory(identityKey);
+            }
+        }
+
+        RefreshSyncTelemetryUi();
+    }
+
+    private void SyncTelemetryExportButton_Click(object sender, RoutedEventArgs e)
+    {
+        var snapshot = _syncTelemetrySessionController.CompletedSnapshot;
+        if (snapshot is null)
+        {
+            StatusTextBlock.Text = "먼저 진단 수집을 종료해 주세요.";
+            return;
+        }
+
+        var startedAt = snapshot.Sessions.FirstOrDefault()?.StartedAt.Utc ?? snapshot.GeneratedAtUtc;
+        var dialog = new SaveFileDialog
+        {
+            Title = "동기화 진단 데이터 내보내기",
+            Filter = "JSON 파일 (*.json)|*.json|모든 파일 (*.*)|*.*",
+            FileName = $"sync-telemetry-{startedAt:yyyyMMdd-HHmmss}.json",
+            AddExtension = true,
+            DefaultExt = ".json",
+            OverwritePrompt = true
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var path = new DiagnosticReportService().ExportSyncTelemetrySnapshot(snapshot, dialog.FileName);
+            StatusTextBlock.Text = $"privacy-safe 진단 데이터를 내보냈습니다: {path}";
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"진단 데이터 내보내기에 실패했습니다: {ex.Message}";
+        }
+    }
+
+    private void SyncTelemetryDeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        var hasCompletedSession = _syncTelemetrySessionController.HasCompletedSession;
+        var hasIdentityKey = _syncTelemetryIdentityKeyStore?.Exists == true;
+        if (!hasCompletedSession && !hasIdentityKey)
+        {
+            StatusTextBlock.Text = "삭제할 메모리 진단 수집본이나 HMAC 연계 키가 없습니다.";
+            return;
+        }
+
+        var confirmed = MessageBox.Show(
+            this,
+            "메모리에 보관 중인 진단 수집본과 세션 간 연계용 HMAC 키를 삭제할까요? " +
+            "이후 수집에서는 같은 식별자도 새 값으로 기록됩니다. 이미 내보낸 파일은 선택한 위치에 남아 있으며 앱이 추적하거나 삭제하지 않습니다.",
+            "진단 수집본 삭제",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirmed != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _syncTelemetrySessionController.DeleteCompletedSession();
+        try
+        {
+            _syncTelemetryIdentityKeyStore?.Delete();
+            StatusTextBlock.Text = "메모리 진단 수집본을 삭제하고 향후 세션 연계용 HMAC 키를 회전했습니다.";
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"메모리 수집본은 삭제했지만 HMAC 키 삭제에 실패했습니다: {ex.Message}";
+        }
+        RefreshSyncTelemetryUi();
+    }
+
     private void SyncMinimumSafetySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_isRefreshingSyncUi || SyncMinimumSafetyText is null)
@@ -167,6 +317,7 @@ public partial class MainWindow
             SyncMinimumSafetyText.Text = FormatSeconds(state.MinimumSafetyDelayMs);
             SyncNoticeText.Text = state.Notice;
             SyncButton.ToolTip = $"SOOP 방송 재생 동기화 · {FormatRuntimeState(state.RuntimeState)}";
+            RefreshSyncTelemetryUi();
 
             if (rebuildLists)
             {
@@ -178,6 +329,59 @@ public partial class MainWindow
         finally
         {
             _isRefreshingSyncUi = false;
+        }
+    }
+
+    private void RefreshSyncTelemetryUi()
+    {
+        if (SyncTelemetryStatusText is null)
+        {
+            return;
+        }
+
+        var isActive = _syncTelemetrySessionController.IsEnabled;
+        var completed = _syncTelemetrySessionController.CompletedSnapshot;
+        SyncTelemetryStartStopButton.Content = isActive ? "수집 종료" : "수집 시작";
+        SyncTelemetryExportButton.IsEnabled = !isActive && completed is not null;
+        SyncTelemetryDeleteButton.IsEnabled = !isActive &&
+                                              (completed is not null || _syncTelemetryIdentityKeyStore?.Exists == true);
+
+        if (isActive)
+        {
+            var summary = _syncTelemetrySessionController.CreateSummary();
+            SyncTelemetryStatusText.Text =
+                $"수집 중 · {CountTelemetryEvents(summary):N0}개 이벤트 · 초과 폐기 {summary.DroppedEventCount:N0}개";
+        }
+        else if (completed is not null)
+        {
+            SyncTelemetryStatusText.Text =
+                $"종료됨 · {CountTelemetryEvents(completed):N0}개 이벤트를 앱 메모리에 보관 중";
+        }
+        else
+        {
+            SyncTelemetryStatusText.Text = "꺼짐 · 사용자가 시작하기 전에는 수집하지 않음";
+        }
+    }
+
+    private static int CountTelemetryEvents(SyncTelemetrySummary summary) =>
+        summary.SessionCount + summary.NetworkEventCount + summary.PlaylistEventCount + summary.PlayerEventCount +
+        summary.EstimateEventCount + summary.DecisionEventCount + summary.ActionEventCount +
+        summary.ManualEventCount;
+
+    private static int CountTelemetryEvents(SyncTelemetrySnapshot snapshot) =>
+        snapshot.Sessions.Count + snapshot.Network.Count + snapshot.Playlists.Count + snapshot.Players.Count +
+        snapshot.Estimates.Count + snapshot.Decisions.Count + snapshot.Actions.Count +
+        snapshot.ManualEvents.Count;
+
+    private static string GetWebViewRuntimeBucket()
+    {
+        try
+        {
+            return CoreWebView2Environment.GetAvailableBrowserVersionString() ?? "unavailable";
+        }
+        catch
+        {
+            return "unavailable";
         }
     }
 

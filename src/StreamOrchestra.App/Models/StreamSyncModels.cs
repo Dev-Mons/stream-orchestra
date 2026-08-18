@@ -131,6 +131,8 @@ public sealed record SyncMemberSnapshot
 
     public int NetworkState { get; init; }
 
+    public string NetworkBucket { get; init; } = "unknown";
+
     public SyncPlayerEventKind EventKind { get; init; }
 
     public double? PageSampleMonotonicMilliseconds { get; init; }
@@ -207,6 +209,8 @@ public sealed record TimelineObservation
     public int IndependentEvidenceCount { get; init; }
 
     public SyncNetworkObservationCapability NetworkCapability { get; init; }
+
+    public bool CdpHardSeekGatePassed { get; init; }
 
     public long? ResponseHeadersMonotonicTicks { get; init; }
 

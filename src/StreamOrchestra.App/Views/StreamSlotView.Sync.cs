@@ -22,6 +22,16 @@ public partial class StreamSlotView
     private readonly HlsRenditionCatalog _hlsRenditionCatalog = new();
     private readonly SyncTimelineEstimator _syncTimelineEstimator = new();
     private readonly ISyncTelemetryRecorder _syncTelemetryRecorder = SyncTelemetryRecorder.Disabled;
+    private readonly SyncRuntimeLoadSampler _syncRuntimeLoadSampler = new();
+    private SyncTelemetrySessionController? _syncTelemetrySessionOwner;
+    private CdpNetworkCorrelationTracker? _cdpNetworkTracker;
+    private CoreWebView2? _cdpCoreWebView;
+    private CoreWebView2DevToolsProtocolEventReceiver? _cdpRequestReceiver;
+    private CoreWebView2DevToolsProtocolEventReceiver? _cdpResponseReceiver;
+    private CoreWebView2DevToolsProtocolEventReceiver? _cdpFinishedReceiver;
+    private CoreWebView2DevToolsProtocolEventReceiver? _cdpFailedReceiver;
+    private bool _cdpNetworkEnabled;
+    private bool _cdpEnableInProgress;
     private string _syncHlsSessionIdentity = Guid.NewGuid().ToString("N");
     private readonly Dictionary<ulong, SyncPlayerCandidate> _syncPlayerCandidates = [];
     private readonly Dictionary<string, PendingSyncCommand> _pendingSyncCommands = new(StringComparer.Ordinal);
@@ -32,6 +42,8 @@ public partial class StreamSlotView
     private SyncBadgeState? _lastSyncBadgeState;
     private string _syncBroadcasterName = "";
     private int _syncBroadcasterNameConfidence;
+    private long _lastSyncPlayerTelemetryMonotonicTicks;
+    private string _syncTelemetryCdnBucket = "unknown";
 
     public SyncMemberSnapshot? LatestSyncSnapshot { get; private set; }
 
@@ -44,6 +56,17 @@ public partial class StreamSlotView
         : _preferredQualityKey;
 
     public string SyncBroadcastSessionIdentity => _syncHlsSessionIdentity;
+
+    public void DisposeSyncTelemetryResources()
+    {
+        if (_syncTelemetrySessionOwner is not null)
+        {
+            _syncTelemetrySessionOwner.EnabledChanged -= SyncTelemetryEnabledChanged;
+        }
+
+        _ = DisableCdpCorrelationAsync();
+        _syncRuntimeLoadSampler.Dispose();
+    }
 
     public string SyncDisplayName => _syncBroadcasterNameConfidence >= 2 &&
                                      _navigationService.IsMeaningfulDisplayName(_syncBroadcasterName)
@@ -68,6 +91,10 @@ public partial class StreamSlotView
             ReceiveSyncMessage(frame: null, args);
         Browser.CoreWebView2.FrameCreated += (_, args) => WireSyncFrame(args.Frame);
         Browser.CoreWebView2.WebResourceResponseReceived += ReceiveHlsResponse;
+        if (_syncTelemetryRecorder.IsEnabled)
+        {
+            await EnableCdpCorrelationAsync();
+        }
     }
 
     private void ResetStreamSyncObservations()
@@ -84,6 +111,199 @@ public partial class StreamSlotView
         LatestEstimatorShadow = null;
         _syncBroadcasterName = "";
         _syncBroadcasterNameConfidence = 0;
+        _lastSyncPlayerTelemetryMonotonicTicks = 0;
+        _syncTelemetryCdnBucket = "unknown";
+        _cdpNetworkTracker?.Clear();
+    }
+
+    private void SyncTelemetryEnabledChanged(bool enabled)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(() => SyncTelemetryEnabledChanged(enabled)));
+            return;
+        }
+
+        if (enabled)
+        {
+            _ = EnableCdpCorrelationAsync();
+        }
+        else
+        {
+            _ = DisableCdpCorrelationAsync();
+        }
+    }
+
+    private async Task EnableCdpCorrelationAsync()
+    {
+        var core = Browser.CoreWebView2;
+        if (!_syncTelemetryRecorder.IsEnabled || core is null || _cdpNetworkEnabled || _cdpEnableInProgress)
+        {
+            return;
+        }
+
+        _cdpEnableInProgress = true;
+        try
+        {
+            var versionJson = await core.CallDevToolsProtocolMethodAsync("Browser.getVersion", "{}");
+            var runtime = CdpRuntimeSchemaValidator.ValidateBrowserVersion(
+                versionJson,
+                core.Environment.BrowserVersionString);
+            _cdpNetworkTracker = new CdpNetworkCorrelationTracker(runtime);
+            _cdpCoreWebView = core;
+            if (!runtime.IsCompatible)
+            {
+                return;
+            }
+
+            if (!_syncTelemetryRecorder.IsEnabled)
+            {
+                _cdpNetworkTracker.Clear();
+                _cdpNetworkTracker = null;
+                _cdpCoreWebView = null;
+                return;
+            }
+
+            _cdpRequestReceiver = core.GetDevToolsProtocolEventReceiver("Network.requestWillBeSent");
+            _cdpResponseReceiver = core.GetDevToolsProtocolEventReceiver("Network.responseReceived");
+            _cdpFinishedReceiver = core.GetDevToolsProtocolEventReceiver("Network.loadingFinished");
+            _cdpFailedReceiver = core.GetDevToolsProtocolEventReceiver("Network.loadingFailed");
+            _cdpRequestReceiver.DevToolsProtocolEventReceived += CdpRequestWillBeSent;
+            _cdpResponseReceiver.DevToolsProtocolEventReceived += CdpResponseReceived;
+            _cdpFinishedReceiver.DevToolsProtocolEventReceived += CdpLoadingFinished;
+            _cdpFailedReceiver.DevToolsProtocolEventReceived += CdpLoadingFailed;
+            await core.CallDevToolsProtocolMethodAsync("Network.enable", "{}");
+            _cdpNetworkEnabled = _syncTelemetryRecorder.IsEnabled;
+            if (!_cdpNetworkEnabled)
+            {
+                await DisableCdpCorrelationAsync();
+            }
+        }
+        catch
+        {
+            DetachCdpReceivers();
+            if (_syncTelemetryRecorder.IsEnabled)
+            {
+                _cdpNetworkTracker = new CdpNetworkCorrelationTracker(new CdpRuntimeCompatibility(
+                    false,
+                    "",
+                    "",
+                    core.Environment.BrowserVersionString,
+                    "cdp-enable-failed"));
+            }
+            else
+            {
+                _cdpNetworkTracker = null;
+                _cdpCoreWebView = null;
+            }
+        }
+        finally
+        {
+            _cdpEnableInProgress = false;
+        }
+    }
+
+    private async Task DisableCdpCorrelationAsync()
+    {
+        var core = _cdpCoreWebView;
+        var wasEnabled = _cdpNetworkEnabled;
+        _cdpNetworkEnabled = false;
+        DetachCdpReceivers();
+        _cdpNetworkTracker?.Clear();
+        _cdpNetworkTracker = null;
+        _cdpCoreWebView = null;
+        if (wasEnabled && core is not null)
+        {
+            try
+            {
+                await core.CallDevToolsProtocolMethodAsync("Network.disable", "{}");
+            }
+            catch
+            {
+                // Browser teardown and runtime mismatch both use the reduced-confidence path.
+            }
+        }
+    }
+
+    private void DetachCdpReceivers()
+    {
+        if (_cdpRequestReceiver is not null)
+        {
+            _cdpRequestReceiver.DevToolsProtocolEventReceived -= CdpRequestWillBeSent;
+        }
+
+        if (_cdpResponseReceiver is not null)
+        {
+            _cdpResponseReceiver.DevToolsProtocolEventReceived -= CdpResponseReceived;
+        }
+
+        if (_cdpFinishedReceiver is not null)
+        {
+            _cdpFinishedReceiver.DevToolsProtocolEventReceived -= CdpLoadingFinished;
+        }
+
+        if (_cdpFailedReceiver is not null)
+        {
+            _cdpFailedReceiver.DevToolsProtocolEventReceived -= CdpLoadingFailed;
+        }
+
+        _cdpRequestReceiver = null;
+        _cdpResponseReceiver = null;
+        _cdpFinishedReceiver = null;
+        _cdpFailedReceiver = null;
+    }
+
+    private void CdpRequestWillBeSent(
+        object? sender,
+        CoreWebView2DevToolsProtocolEventReceivedEventArgs args)
+    {
+        if (_syncTelemetryRecorder.IsEnabled)
+        {
+            _cdpNetworkTracker?.ObserveRequestWillBeSent(
+                args.ParameterObjectAsJson,
+                Stopwatch.GetTimestamp(),
+                DateTimeOffset.UtcNow,
+                _syncNavigationGeneration);
+        }
+    }
+
+    private void CdpResponseReceived(
+        object? sender,
+        CoreWebView2DevToolsProtocolEventReceivedEventArgs args)
+    {
+        if (_syncTelemetryRecorder.IsEnabled)
+        {
+            _cdpNetworkTracker?.ObserveResponseReceived(
+                args.ParameterObjectAsJson,
+                Stopwatch.GetTimestamp(),
+                DateTimeOffset.UtcNow);
+        }
+    }
+
+    private void CdpLoadingFinished(
+        object? sender,
+        CoreWebView2DevToolsProtocolEventReceivedEventArgs args)
+    {
+        if (_syncTelemetryRecorder.IsEnabled)
+        {
+            _cdpNetworkTracker?.ObserveLoadingFinished(
+                args.ParameterObjectAsJson,
+                Stopwatch.GetTimestamp(),
+                DateTimeOffset.UtcNow);
+        }
+    }
+
+    private void CdpLoadingFailed(
+        object? sender,
+        CoreWebView2DevToolsProtocolEventReceivedEventArgs args)
+    {
+        if (_syncTelemetryRecorder.IsEnabled)
+        {
+            _cdpNetworkTracker?.ObserveLoadingFailed(
+                args.ParameterObjectAsJson,
+                Stopwatch.GetTimestamp(),
+                DateTimeOffset.UtcNow);
+        }
     }
 
     private void WireSyncFrame(CoreWebView2Frame frame)
@@ -166,6 +386,7 @@ public partial class StreamSlotView
             CurrentSeekableRange = currentSeekableRange,
             Seeking = message.Seeking,
             NetworkState = message.NetworkState,
+            NetworkBucket = NormalizeNetworkBucket(message.NetworkBucket),
             EventKind = ParsePlayerEventKind(message.EventKind),
             PageSampleMonotonicMilliseconds = FiniteOrNull(message.PageSampleMonotonicMilliseconds),
             PageEventMonotonicMilliseconds = FiniteOrNull(message.PageEventMonotonicMilliseconds),
@@ -189,6 +410,55 @@ public partial class StreamSlotView
         var key = frame?.FrameId ?? 0;
         _syncPlayerCandidates[key] = new SyncPlayerCandidate(frame, snapshot);
         SelectPrimarySyncCandidate();
+        RecordPlayerTelemetry(snapshot);
+    }
+
+    private void RecordPlayerTelemetry(SyncMemberSnapshot snapshot)
+    {
+        if (!_syncTelemetryRecorder.IsEnabled)
+        {
+            return;
+        }
+
+        var minimumIntervalTicks = Stopwatch.Frequency * 5L;
+        var isStateEvent = snapshot.EventKind is
+            SyncPlayerEventKind.Waiting or
+            SyncPlayerEventKind.Stalled or
+            SyncPlayerEventKind.Error or
+            SyncPlayerEventKind.Seeking or
+            SyncPlayerEventKind.Seeked or
+            SyncPlayerEventKind.RateChange;
+        if (!isStateEvent &&
+            _lastSyncPlayerTelemetryMonotonicTicks > 0 &&
+            snapshot.HostReceivedMonotonicTicks - _lastSyncPlayerTelemetryMonotonicTicks < minimumIntervalTicks)
+        {
+            return;
+        }
+
+        _lastSyncPlayerTelemetryMonotonicTicks = snapshot.HostReceivedMonotonicTicks;
+        var channelIdentity = _navigationService.IsMeaningfulDisplayName(_syncBroadcasterName)
+            ? _syncBroadcasterName
+            : CurrentStreamName;
+        var sourceBucket = LatestTimeline?.Source switch
+        {
+            SyncTimelineSource.ProgramDateTime => "pdt",
+            SyncTimelineSource.CdnDate => "cdn-date",
+            SyncTimelineSource.LiveEdgeEstimate => "live-edge-estimate",
+            _ => "unknown"
+        };
+        _syncTelemetryRecorder.RecordPlayer(SyncTelemetryEventFactory.CreatePlayerEvent(
+            _syncTelemetryRecorder,
+            SlotId,
+            snapshot,
+            channelIdentity,
+            _syncHlsSessionIdentity,
+            SyncQualityBucket,
+            _syncTelemetryCdnBucket,
+            _syncRuntimeLoadSampler.CapturePcLoadBucket(),
+            snapshot.NetworkBucket,
+            sourceBucket,
+            LatestTimeline?.SourceEpoch ?? 0,
+            _syncNavigationGeneration));
     }
 
     private void ReceiveSyncCommandResult(SyncStatusMessage message)
@@ -204,6 +474,14 @@ public partial class StreamSlotView
         {
             pending.AppliedAtUtc ??= DateTimeOffset.UtcNow;
             pending.AppliedMonotonicTicks ??= Stopwatch.GetTimestamp();
+            RecordCommandTelemetry(
+                pending.Command,
+                "applied",
+                pending.AppliedAtUtc.Value,
+                pending.AppliedMonotonicTicks.Value,
+                FiniteOrNull(message.CurrentTime),
+                FiniteOrNull(message.PlaybackRate),
+                NormalizeCommandOutcome(message.CommandOutcome));
             return;
         }
 
@@ -218,7 +496,7 @@ public partial class StreamSlotView
             observedMediaTime,
             observedRate,
             message.Paused);
-        pending.Completion.TrySetResult(new SyncCommandResult
+        var result = new SyncCommandResult
         {
             CommandId = message.CommandId,
             Stage = wasVerified ? SyncCommandStage.Verified : SyncCommandStage.Failed,
@@ -238,13 +516,28 @@ public partial class StreamSlotView
             IssuedMonotonicTicks = pending.IssuedMonotonicTicks,
             AppliedMonotonicTicks = pending.AppliedMonotonicTicks,
             VerifiedMonotonicTicks = wasVerified ? Stopwatch.GetTimestamp() : null
-        });
+        };
+        RecordCommandTelemetry(
+            pending.Command,
+            wasVerified ? "verified" : "failed",
+            result.VerifiedAtUtc ?? DateTimeOffset.UtcNow,
+            result.VerifiedMonotonicTicks ?? Stopwatch.GetTimestamp(),
+            observedMediaTime,
+            observedRate,
+            result.OutcomeCode);
+        pending.Completion.TrySetResult(result);
     }
 
     private void CompletePendingSyncCommands(string outcome)
     {
         foreach (var pending in _pendingSyncCommands.Values)
         {
+            RecordCommandTelemetry(
+                pending.Command,
+                "failed",
+                DateTimeOffset.UtcNow,
+                Stopwatch.GetTimestamp(),
+                outcomeCode: outcome);
             pending.Completion.TrySetResult(new SyncCommandResult
             {
                 CommandId = pending.Command.CommandId,
@@ -290,6 +583,15 @@ public partial class StreamSlotView
         value is { } number && double.IsFinite(number) ? number : null;
 
     private static long? NonNegativeOrNull(long? value) => value is >= 0 ? value : null;
+
+    private static string NormalizeNetworkBucket(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "slow-2g" => "slow-2g",
+        "2g" => "2g",
+        "3g" => "3g",
+        "4g" => "4g",
+        _ => "unknown"
+    };
 
     private static bool VerifyCommandResult(
         SyncCommand command,
@@ -385,19 +687,22 @@ public partial class StreamSlotView
         object? sender,
         CoreWebView2WebResourceResponseReceivedEventArgs args)
     {
-        if (args.Response.StatusCode is < 200 or >= 300)
-        {
-            return;
-        }
-
         var generation = _syncNavigationGeneration;
         var headersReceivedMonotonic = Stopwatch.GetTimestamp();
+        var headersReceivedAtUtc = DateTimeOffset.UtcNow;
+        var rawRequestUri = args.Request.Uri;
+        var requestLinkIdentity = $"{generation}:{rawRequestUri}:{headersReceivedMonotonic}";
+        CdpNetworkCorrelationResult? cdpCorrelation = null;
+        var cdpMatchAttempted = false;
         DateTimeOffset? responseDateUtc = null;
         string? contentType = null;
+        string? ageHeader = null;
+        var hasDateHeader = false;
         try
         {
             contentType = args.Response.Headers.GetHeader("Content-Type");
             var dateHeader = args.Response.Headers.GetHeader("Date");
+            hasDateHeader = !string.IsNullOrWhiteSpace(dateHeader);
             if (DateTimeOffset.TryParse(
                     dateHeader,
                     CultureInfo.InvariantCulture,
@@ -406,19 +711,28 @@ public partial class StreamSlotView
             {
                 responseDateUtc = parsedDate.ToUniversalTime();
             }
+
+            ageHeader = args.Response.Headers.GetHeader("Age");
         }
         catch
         {
             // Response metadata is optional. The playlist body is still parsed conservatively.
         }
 
-        if (!HlsTimelineParser.IsHlsPlaylistResource(args.Request.Uri, contentType))
+        if (!HlsTimelineParser.IsHlsPlaylistResource(rawRequestUri, contentType))
         {
             return;
         }
 
+        long? bodyCompletedMonotonic = null;
+        var outcome = args.Response.StatusCode is >= 200 and < 300 ? "read-failed" : "http-error";
         try
         {
+            if (args.Response.StatusCode is < 200 or >= 300)
+            {
+                return;
+            }
+
             await using var content = await args.Response.GetContentAsync();
             if (content is null)
             {
@@ -428,71 +742,176 @@ public partial class StreamSlotView
             using var reader = new StreamReader(content);
             var playlist = await reader.ReadToEndAsync();
             var observedAt = DateTimeOffset.UtcNow;
-            var bodyCompletedMonotonic = Stopwatch.GetTimestamp();
+            bodyCompletedMonotonic = Stopwatch.GetTimestamp();
+            if (_cdpNetworkTracker is not null)
+            {
+                cdpCorrelation = _cdpNetworkTracker.MatchResponse(
+                    rawRequestUri,
+                    args.Response.StatusCode,
+                    contentType,
+                    generation,
+                    bodyCompletedMonotonic.Value);
+                cdpMatchAttempted = true;
+                if (cdpCorrelation.Status == "correlated")
+                {
+                    requestLinkIdentity = cdpCorrelation.RequestId;
+                }
+            }
+
             var parseResult = await Task.Run(() =>
                 _hlsTimelineParser.ParsePlaylist(new HlsPlaylistParseRequest(
                     playlist,
-                    args.Request.Uri,
+                    rawRequestUri,
                     contentType,
                     responseDateUtc,
                     observedAt)));
             if (parseResult is null || generation != _syncNavigationGeneration)
             {
+                outcome = "parse-failed";
                 return;
             }
 
+            outcome = "ok";
             await Dispatcher.InvokeAsync(() => UpdateHlsObservation(
                 parseResult,
+                rawRequestUri,
+                contentType,
+                requestLinkIdentity,
                 generation,
                 headersReceivedMonotonic,
-                bodyCompletedMonotonic));
+                bodyCompletedMonotonic.Value,
+                cdpCorrelation?.Status == "correlated"
+                    ? SyncNetworkObservationCapability.CdpCorrelated
+                    : SyncNetworkObservationCapability.WebResourceResponseReduced));
         }
         catch
         {
             // HLS responses can expire or be consumed by the player before inspection completes.
         }
+        finally
+        {
+            if (_syncTelemetryRecorder.IsEnabled)
+            {
+                if (!cdpMatchAttempted && _cdpNetworkTracker is not null)
+                {
+                    cdpCorrelation = _cdpNetworkTracker.MatchResponse(
+                        rawRequestUri,
+                        args.Response.StatusCode,
+                        contentType,
+                        generation,
+                        bodyCompletedMonotonic ?? Stopwatch.GetTimestamp());
+                }
+
+                _syncTelemetryCdnBucket = _syncTelemetryRecorder
+                    .CreateUrlIdentity(rawRequestUri)
+                    .HostBucket;
+                var telemetry = cdpCorrelation is { Status: "correlated" } correlated
+                    ? SyncTelemetryEventFactory.CreateCdpNetworkEvent(
+                        _syncTelemetryRecorder,
+                        SlotId,
+                        rawRequestUri,
+                        correlated,
+                        hasDateHeader,
+                        ageHeader,
+                        outcome,
+                        LatestTimeline?.SourceEpoch ?? 0)
+                    : SyncTelemetryEventFactory.CreateReducedNetworkEvent(
+                        _syncTelemetryRecorder,
+                        SlotId,
+                        rawRequestUri,
+                        args.Response.StatusCode,
+                        contentType,
+                        headersReceivedAtUtc,
+                        headersReceivedMonotonic,
+                        bodyCompletedMonotonic,
+                        hasDateHeader,
+                        ageHeader,
+                        outcome,
+                        generation,
+                        LatestTimeline?.SourceEpoch ?? 0,
+                        requestLinkIdentity,
+                        _cdpNetworkTracker is null
+                            ? "web-resource-response-reduced"
+                            : "cdp-network",
+                        cdpCorrelation?.Status ?? "unavailable");
+                _syncTelemetryRecorder.RecordNetwork(telemetry);
+            }
+        }
     }
 
     private void UpdateHlsObservation(
         HlsPlaylistParseResult parseResult,
+        string rawRequestUri,
+        string? contentType,
+        string requestIdentity,
         int generation,
         long headersReceivedMonotonic,
-        long bodyCompletedMonotonic)
+        long bodyCompletedMonotonic,
+        SyncNetworkObservationCapability networkCapability)
     {
         if (parseResult.Document.Kind == HlsPlaylistKind.Master)
         {
             _hlsRenditionCatalog.Register(parseResult.Document);
+            RecordPlaylistTelemetry(
+                parseResult,
+                rawRequestUri,
+                contentType,
+                requestIdentity,
+                tracking: null,
+                generation,
+                bodyCompletedMonotonic,
+                masterAssociationObserved: false);
             return;
         }
 
+        var originalRenditionKind = parseResult.Document.RenditionKind;
         parseResult = _hlsRenditionCatalog.Apply(parseResult);
         var document = parseResult.Document;
         var progressKey = parseResult.ProgressKey;
         var observation = parseResult.TimelineCandidate;
-        if (generation != _syncNavigationGeneration ||
-            document.Kind != HlsPlaylistKind.Media ||
-            progressKey is null ||
-            observation is null ||
-            document.RenditionKind != HlsRenditionKind.Video)
+        if (generation != _syncNavigationGeneration || document.Kind != HlsPlaylistKind.Media)
         {
             return;
         }
 
-        const string laneIdentity = "primary-video";
-        var tracking = _hlsPlaylistTracker.Observe(new HlsPlaylistTrackingContext
+        HlsPlaylistTrackingResult? tracking = null;
+        if (progressKey is not null)
         {
-            SlotId = this.SlotId,
-            NavigationGeneration = generation,
-            SessionIdentity = _syncHlsSessionIdentity,
-            TimelineLaneIdentity = laneIdentity,
-            PlaylistIdentityHash = document.PlaylistIdentity.PersistenceHash,
-            RenditionKind = document.RenditionKind,
-            SourceIdentity = $"{document.PlaylistIdentity.HostBucket}:pdt",
-            Document = document,
-            ProgressKey = progressKey,
-            ObservedMonotonicTicks = bodyCompletedMonotonic,
-            MonotonicFrequency = Stopwatch.Frequency
-        });
+            var laneIdentity = document.RenditionKind == HlsRenditionKind.Video
+                ? "primary-video"
+                : $"{document.RenditionKind}:{document.PlaylistIdentity.PersistenceHash}";
+            tracking = _hlsPlaylistTracker.Observe(new HlsPlaylistTrackingContext
+            {
+                SlotId = SlotId,
+                NavigationGeneration = generation,
+                SessionIdentity = _syncHlsSessionIdentity,
+                TimelineLaneIdentity = laneIdentity,
+                PlaylistIdentityHash = document.PlaylistIdentity.PersistenceHash,
+                RenditionKind = document.RenditionKind,
+                SourceIdentity = $"{document.PlaylistIdentity.HostBucket}:pdt",
+                Document = document,
+                ProgressKey = progressKey,
+                ObservedMonotonicTicks = bodyCompletedMonotonic,
+                MonotonicFrequency = Stopwatch.Frequency
+            });
+        }
+
+        RecordPlaylistTelemetry(
+            parseResult,
+            rawRequestUri,
+            contentType,
+            requestIdentity,
+            tracking,
+            generation,
+            bodyCompletedMonotonic,
+            originalRenditionKind == HlsRenditionKind.Unknown &&
+            document.RenditionKind != HlsRenditionKind.Unknown);
+        if (progressKey is null || observation is null ||
+            document.RenditionKind != HlsRenditionKind.Video || tracking is null)
+        {
+            return;
+        }
+
         var trackedObservation = observation with
         {
             ObservedMonotonicTicks = bodyCompletedMonotonic,
@@ -503,7 +922,8 @@ public partial class StreamSlotView
             SourceEpoch = tracking.SourceEpoch,
             IsEpochStable = tracking.IsEpochStable,
             IndependentEvidenceCount = tracking.IndependentEvidenceCount,
-            NetworkCapability = SyncNetworkObservationCapability.WebResourceResponseReduced,
+            NetworkCapability = networkCapability,
+            CdpHardSeekGatePassed = false,
             ResponseHeadersMonotonicTicks = headersReceivedMonotonic,
             BodyCompletedMonotonicTicks = bodyCompletedMonotonic
         };
@@ -512,6 +932,36 @@ public partial class StreamSlotView
         {
             UpdateTimelineObservation(trackedObservation);
         }
+    }
+
+    private void RecordPlaylistTelemetry(
+        HlsPlaylistParseResult parseResult,
+        string rawRequestUri,
+        string? contentType,
+        string requestIdentity,
+        HlsPlaylistTrackingResult? tracking,
+        int generation,
+        long observedMonotonicTicks,
+        bool masterAssociationObserved)
+    {
+        if (!_syncTelemetryRecorder.IsEnabled)
+        {
+            return;
+        }
+
+        _syncTelemetryRecorder.RecordPlaylist(SyncTelemetryEventFactory.CreatePlaylistEvent(
+            _syncTelemetryRecorder,
+            SlotId,
+            rawRequestUri,
+            contentType,
+            parseResult.Document,
+            parseResult.ProgressKey,
+            tracking,
+            DateTimeOffset.UtcNow,
+            observedMonotonicTicks,
+            generation,
+            masterAssociationObserved,
+            requestIdentity));
     }
 
     private void UpdateShadowEstimator(
@@ -679,6 +1129,12 @@ public partial class StreamSlotView
     {
         if (Browser.CoreWebView2 is null)
         {
+            RecordCommandTelemetry(
+                command,
+                "failed",
+                DateTimeOffset.UtcNow,
+                Stopwatch.GetTimestamp(),
+                outcomeCode: "webview-unavailable");
             return SyncCommandResult.Failed(command.CommandId, "webview-unavailable");
         }
 
@@ -693,6 +1149,12 @@ public partial class StreamSlotView
         };
         if (string.IsNullOrEmpty(action))
         {
+            RecordCommandTelemetry(
+                command,
+                "failed",
+                DateTimeOffset.UtcNow,
+                Stopwatch.GetTimestamp(),
+                outcomeCode: "unsupported-command");
             return SyncCommandResult.Failed(command.CommandId, "unsupported-command");
         }
 
@@ -704,6 +1166,12 @@ public partial class StreamSlotView
             DateTimeOffset.UtcNow,
             Stopwatch.GetTimestamp());
         _pendingSyncCommands[command.CommandId] = pending;
+        RecordCommandTelemetry(
+            command,
+            "issued",
+            pending.IssuedAtUtc,
+            pending.IssuedMonotonicTicks,
+            outcomeCode: "ok");
 
         var json = JsonSerializer.Serialize(new
         {
@@ -727,6 +1195,12 @@ public partial class StreamSlotView
         catch
         {
             _pendingSyncCommands.Remove(command.CommandId);
+            RecordCommandTelemetry(
+                command,
+                "failed",
+                DateTimeOffset.UtcNow,
+                Stopwatch.GetTimestamp(),
+                outcomeCode: "delivery-failed");
             return SyncCommandResult.Failed(command.CommandId, "delivery-failed");
         }
 
@@ -737,7 +1211,7 @@ public partial class StreamSlotView
         }
 
         _pendingSyncCommands.Remove(command.CommandId);
-        return new SyncCommandResult
+        var timedOut = new SyncCommandResult
         {
             CommandId = command.CommandId,
             Stage = SyncCommandStage.TimedOut,
@@ -747,6 +1221,56 @@ public partial class StreamSlotView
             IssuedMonotonicTicks = pending.IssuedMonotonicTicks,
             AppliedMonotonicTicks = pending.AppliedMonotonicTicks
         };
+        RecordCommandTelemetry(
+            command,
+            "timed-out",
+            DateTimeOffset.UtcNow,
+            Stopwatch.GetTimestamp(),
+            outcomeCode: "timed-out");
+        return timedOut;
+    }
+
+    private void RecordCommandTelemetry(
+        SyncCommand command,
+        string stage,
+        DateTimeOffset occurredAtUtc,
+        long monotonicTicks,
+        double? observedMediaTime = null,
+        double? observedPlaybackRate = null,
+        string outcomeCode = "unknown")
+    {
+        if (!_syncTelemetryRecorder.IsEnabled)
+        {
+            return;
+        }
+
+        double? postActionError = command.Type == SyncCommandType.Seek &&
+                                  command.Value is { } target &&
+                                  observedMediaTime is { } actual
+            ? (actual - target) * 1000
+            : null;
+        _syncTelemetryRecorder.RecordAction(new SyncActionTelemetry(
+            _syncTelemetryRecorder.SessionId,
+            SlotId,
+            command.CommandId,
+            Math.Max(0, LatestTimeline?.SourceEpoch ?? 0),
+            command.Type switch
+            {
+                SyncCommandType.Seek => "seek",
+                SyncCommandType.SetRate => "rate",
+                SyncCommandType.Pause => "pause",
+                SyncCommandType.Resume => "resume",
+                SyncCommandType.ResetRate => "reset-rate",
+                _ => "unknown"
+            },
+            command.Value,
+            stage,
+            new SyncTelemetryClockSample(occurredAtUtc.ToUniversalTime(), Math.Max(0, monotonicTicks)),
+            ObservedMediaTimeSeconds: observedMediaTime,
+            ObservedPlaybackRate: observedPlaybackRate,
+            PostActionErrorMilliseconds: postActionError,
+            OutcomeCode: outcomeCode,
+            NavigationGeneration: _syncNavigationGeneration));
     }
 
     public void SetSyncBadge(SyncBadgeState state)
@@ -966,6 +1490,10 @@ public partial class StreamSlotView
     if (sourceVideo && sourceVideo !== selectedVideo) return;
     const video = sourceVideo || selectedVideo;
     const identity = broadcasterIdentity();
+    const effectiveType = navigator.connection?.effectiveType;
+    const networkBucket = ["slow-2g", "2g", "3g", "4g"].includes(effectiveType)
+      ? effectiveType
+      : "unknown";
     attach(video);
     if (!video) {
       window.chrome.webview.postMessage({
@@ -973,6 +1501,7 @@ public partial class StreamSlotView
         hasVideo: false,
         eventKind,
         pageSampleMonotonicMilliseconds: performance.now(),
+        networkBucket,
         streamName: identity.name,
         streamNameConfidence: identity.confidence
       });
@@ -1020,6 +1549,7 @@ public partial class StreamSlotView
       seeking: video.seeking,
       readyState: video.readyState,
       networkState: video.networkState,
+      networkBucket,
       buffering: video.readyState < 3 && !video.paused,
       bufferedRanges: buffered,
       seekableRanges: seekable,
@@ -1195,6 +1725,8 @@ public partial class StreamSlotView
         public int ReadyState { get; init; }
 
         public int NetworkState { get; init; }
+
+        public string? NetworkBucket { get; init; }
 
         public bool Buffering { get; init; }
 

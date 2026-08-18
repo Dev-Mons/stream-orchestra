@@ -908,16 +908,27 @@ public sealed class StreamSyncCoordinator
         if (commands.Count > 0)
         {
             var results = await Task.WhenAll(commands.Select(item => item.Task));
+            var recoveryTasks = new List<Task<SyncCommandResult>>();
             for (var index = 0; index < commands.Count; index++)
             {
                 var issued = commands[index];
                 var result = results[index];
                 var verified = IsCommandVerified(issued.Command, result);
                 issued.Member.LastCommandFailed = !verified;
+                if (!verified)
+                {
+                    recoveryTasks.Add(_targets[issued.Member.SlotId]
+                        .ExecuteSyncCommandAsync(new SyncCommand(SyncCommandType.ResetRate)));
+                }
                 if (verified && issued.Command.Type == SyncCommandType.Seek)
                 {
                     issued.Member.LastHardSeekAtUtc = now;
                 }
+            }
+
+            if (recoveryTasks.Count > 0)
+            {
+                await Task.WhenAll(recoveryTasks);
             }
         }
         if (resumeAfter)
@@ -928,12 +939,20 @@ public sealed class StreamSyncCoordinator
                 return (item.Member, Command: command, Task: item.Target.ExecuteSyncCommandAsync(command));
             }).ToArray();
             var resumeResults = await Task.WhenAll(resumeCommands.Select(item => item.Task));
+            var resumeRecoveryTasks = new List<Task<SyncCommandResult>>();
             for (var index = 0; index < resumeCommands.Length; index++)
             {
                 if (!IsCommandVerified(resumeCommands[index].Command, resumeResults[index]))
                 {
                     resumeCommands[index].Member.LastCommandFailed = true;
+                    resumeRecoveryTasks.Add(_targets[resumeCommands[index].Member.SlotId]
+                        .ExecuteSyncCommandAsync(new SyncCommand(SyncCommandType.ResetRate)));
                 }
+            }
+
+            if (resumeRecoveryTasks.Count > 0)
+            {
+                await Task.WhenAll(resumeRecoveryTasks);
             }
         }
 
@@ -1203,6 +1222,7 @@ public sealed class StreamSyncCoordinator
         timeline.IsEpochStable &&
         timeline.IndependentEvidenceCount >= 2 &&
         timeline.NetworkCapability == SyncNetworkObservationCapability.CdpCorrelated &&
+        timeline.CdpHardSeekGatePassed &&
         !string.IsNullOrWhiteSpace(timeline.PlaylistIdentityHash) &&
         !string.IsNullOrWhiteSpace(timeline.ProgressKeyHash) &&
         IsMonotonicallyFresh(

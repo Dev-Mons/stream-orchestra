@@ -168,6 +168,25 @@ public sealed class SyncTimelineEstimatorTests
         Assert.All(results, result => Assert.Equal(SyncEstimatorResetReason.None, result.ResetReason));
     }
 
+    [Fact]
+    public void KalmanAndHuberDriftStayInsideConfiguredAbsoluteBound()
+    {
+        var estimator = new SyncTimelineEstimator(new SyncTimelineEstimatorOptions
+        {
+            MaximumAbsoluteDriftMillisecondsPerSecond = 10,
+            MinimumOutlierGateMilliseconds = 100_000
+        });
+        SyncEstimatorShadowResult? result = null;
+        for (var second = 1; second <= 20; second++)
+        {
+            result = estimator.Observe(Observation(1000 + second * 100, second));
+        }
+
+        Assert.NotNull(result);
+        Assert.InRange(result!.KalmanCandidate.DriftMillisecondsPerSecond!.Value, -10, 10);
+        Assert.InRange(result.HuberCandidate.DriftMillisecondsPerSecond!.Value, -10, 10);
+    }
+
     private static SyncEstimatorObservation Observation(
         double offsetMilliseconds,
         int second,

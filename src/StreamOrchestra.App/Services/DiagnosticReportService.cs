@@ -183,6 +183,29 @@ public sealed class DiagnosticReportService
         return path;
     }
 
+    public string ExportSyncTelemetrySnapshot(
+        SyncTelemetrySnapshot snapshot,
+        string destinationPath)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.IsEnabled)
+        {
+            throw new ArgumentException("An enabled telemetry snapshot is required.", nameof(snapshot));
+        }
+
+        if (string.IsNullOrWhiteSpace(destinationPath))
+        {
+            throw new ArgumentException("A destination path is required.", nameof(destinationPath));
+        }
+
+        var path = Path.GetFullPath(destinationPath);
+        var directory = Path.GetDirectoryName(path) ??
+                        throw new ArgumentException("A destination directory is required.", nameof(destinationPath));
+        Directory.CreateDirectory(directory);
+        SavePrivacySafeJson(path, snapshot);
+        return path;
+    }
+
     public string? SaveExternalBrowserFallbackScript(DiagnosticReport report, string dataFolder)
     {
         if (report.ExternalBrowserFallbackPlan is not { CanLaunch: true } plan)

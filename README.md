@@ -71,7 +71,7 @@
 
 - 최상단 **싱크** 버튼을 누르면 현재 로드된 SOOP 방송을 단일 동기화 그룹에 추가하거나 제거할 수 있습니다. 그룹은 2개부터 최대 16개 슬롯까지 지원합니다.
 - 동기화는 구조화한 HLS playlist identity·sequence·discontinuity와 timezone이 명시된 `PROGRAM-DATE-TIME`을 **플랫폼 HLS 시각**으로 사용합니다. HTTP `Date`와 검증되지 않은 vendor timestamp를 playlist tail 또는 캡처 시각으로 승격하지 않으며, 안전한 시간축이 없으면 라이브 엣지 거리 추정으로 강등합니다.
-- 플레이어의 전체 buffered/seekable 연속 구간, `requestVideoFrameCallback` 표본, 진행 상태와 명령 결과를 확인합니다. 현재 WebView response-event 경로는 reduced-confidence이므로 hard seek는 evidence gate에서 차단되고 bounded rate 보정만 허용됩니다. CDP correlation은 실제 runtime schema 검증 전 비활성입니다.
+- 플레이어의 전체 buffered/seekable 연속 구간, `requestVideoFrameCallback` 표본, 진행 상태와 명령 결과를 확인합니다. 진단 opt-in 동안에만 CDP `Network.*` lifecycle을 passive하게 연결하고, 불명확·스키마 불일치 시 WebView response-event reduced-confidence 경로로 즉시 내립니다. runtime별 100개 이상, correlation coverage 95% 이상, ambiguous 1% 이하, invalid 0%의 사전등록 gate가 실제 표본에서 통과하기 전에는 CDP 결과가 hard seek를 열지 않습니다.
 - 방송별로 0.1초씩 앞당기거나 늦춰 송출 장비·인코더 차이를 수동 보정할 수 있습니다. 수동 보정 범위는 ±60초이며, 기존 프리셋의 부호와 단위는 유지됩니다.
 - 안전 딜레이는 버퍼 상태에 따라 자동 조절됩니다. 사용자는 팝업에서 자동 조절이 내려가지 않을 최솟값을 1.5~15초로 지정할 수 있습니다.
 - 최초 정렬 뒤에는 정상 재생을 계속 모니터링하되 작은 오차에는 재탐색하지 않습니다. source/epoch/stale/range/command 검증을 통과하지 못하면 seek하지 않고 정상 속도 또는 bounded rate로 안전하게 fallback합니다.
@@ -80,7 +80,10 @@
 - robust offset/drift estimator와 공통 playable-interval controller는 기존 제어와 나란히 계산되는 **shadow 후보**이며 자동 제어에 사용되지 않습니다. 실제 SOOP passive 표본의 calibration·guardrail 검증을 통과하기 전에는 활성화하지 않습니다.
 - **현재 수동 정렬 확인**을 누른 독립 방송 세션만 pairwise 로컬 prior 학습에 사용합니다. 과거 경향은 support와 함께 제안만 표시되며 자동 적용되지 않습니다. 수락·거절·되돌리기가 분리되고, 기록은 Windows 사용자 DPAPI로 암호화되어 `%LOCALAPPDATA%\StreamOrchestra\Data`에 저장됩니다. 팝업에서 해시 처리된 기록을 내보내거나 전부 삭제할 수 있습니다.
 - 이 기능은 HLS/CDN 패키징 시간축과 브라우저 플레이어 위치를 정렬하고 과거 수동 경향을 제안합니다. 외부 공통 timecode나 영상·음성 내용 비교 없이 방송별 촬영·캡처·인코더 지연을 직접 측정할 수 없으므로 동일 장면의 완전한 동기화나 `±N ms` 정확도를 보장하지 않습니다.
-- telemetry는 schema/model version을 가진 privacy-safe DTO와 bounded recorder를 제공하지만 기본은 꺼져 있습니다. cookie·authorization·token·signed query·원본 manifest/URL·영상/음성 payload를 저장하지 않습니다. 개발·운영 검증 절차는 [동기화 검증 가이드](docs/stream-sync-validation.md)를 참고하세요.
+- telemetry는 schema/model version을 가진 privacy-safe DTO와 bounded recorder를 제공하며 기본은 꺼져 있습니다. 싱크 팝업의 **진단 수집**에서 수집 항목과 보관 정책을 확인하고 매 세션마다 명시적으로 동의해야 시작됩니다. 동기화 제어 방식은 바뀌지 않습니다.
+- 수집본은 파일럿 세션에서 카테고리별 최대 8,192개 이벤트를 앱 메모리에만 보관합니다. player 정기 표본은 5초 간격으로 제한하되 waiting/stalled/error/seeking/seeked/ratechange는 즉시 기록합니다. 세션을 종료한 뒤 사용자가 고른 위치로 privacy-safe JSON을 명시적으로 내보낼 수 있고, 메모리 수집본은 즉시 삭제하거나 앱 종료 시 폐기할 수 있습니다. 같은 목적의 식별자를 세션 간 연계하는 HMAC key만 Windows 사용자 DPAPI로 보호되며 **수집본 삭제**로 함께 회전할 수 있습니다. 자동 업로드와 자동 파일 저장은 없습니다.
+- cookie·authorization·token·signed query·원본 manifest/URL/header/body·영상 픽셀·음성/오디오 파형은 수집하거나 저장하지 않습니다. 이미 내보낸 파일은 앱이 추적하지 않으므로 사용자가 선택한 위치에서 직접 관리해야 합니다. 개발·운영 검증 절차는 [동기화 검증 가이드](docs/stream-sync-validation.md), [Passive shadow pilot 사전등록 프로토콜](docs/stream-sync-shadow-pilot-protocol.md), [보정·holdout 절차](docs/stream-sync-calibration.md), [closed-loop 운영 절차](docs/stream-sync-closed-loop-operations.md), [현재 go/no-go 기록](docs/stream-sync-pilot-go-no-go.md), [telemetry-off overhead baseline](docs/stream-sync-telemetry-overhead-baseline.md)을 참고하세요.
+- 설치된 WebView2의 CDP schema만 검증할 때는 실제 방송이나 사용자 프로필 대신 임시 프로필과 loopback 응답을 쓰는 `sync-pilot runtime-probe --output <evidence.json>`을 실행합니다. probe는 원본 요청 URL을 산출물에 저장하지 않고 종료 전에 `Network.disable`을 검증합니다.
 
 ### 프리셋과 세션 저장
 
@@ -138,6 +141,10 @@ dotnet run --project src\StreamOrchestra.Tools -- <command>
 | `validate-handoff` | 핸드오프 번들의 무결성(매니페스트·해시·경로·아티팩트 일관성) 검증 |
 | `browsers` | 설치/미설치된 외부 브라우저 폴백 후보 출력 |
 | `fallback` | 마지막 세션 슬롯에서 검토 가능한 외부 브라우저 폴백 PowerShell 스크립트 생성 |
+| `sync-telemetry-overhead` | 기본 비활성 telemetry guard의 wall/CPU/할당/메모리 overhead를 반복 측정하고 선택적으로 JSON 저장 |
+| `sync-pilot analyze` | 하나 이상의 privacy-safe telemetry export를 독립 session/group 단위로 검증·집계해 source/runtime capability JSON 생성 |
+| `sync-pilot calibrate` | 명시적 독립 reference가 있는 시간순 42/18 session dataset에서 estimator를 development-only 조정하고 versioned holdout artifact 생성 |
+| `sync-pilot suggestion-evaluate` | privacy-safe 로컬 prior export를 시간순으로 분리해 hierarchy support, seen/unseen, graph component, suggestion lifecycle과 residual을 평가 |
 
 대부분의 명령은 `--data-folder <path>`로 기본이 아닌 데이터 폴더를 검사할 수 있고, `--output <path>`로 결과 텍스트를 핸드오프 아티팩트로 저장할 수 있습니다.
 
