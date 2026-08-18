@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using StreamOrchestra.App.Models;
 
 namespace StreamOrchestra.App.Services;
@@ -19,17 +20,22 @@ public sealed class DiagnosticReportService
     private readonly ExternalBrowserLaunchPlanService _externalBrowserLaunchPlanService;
     private readonly ExternalBrowserLaunchScriptService _externalBrowserLaunchScriptService;
     private readonly FeasibilityAuditService _feasibilityAuditService;
+    private readonly ISyncTelemetryRecorder _syncTelemetryRecorder;
+    private readonly SyncTelemetryPrivacy _telemetryPrivacy;
 
     public DiagnosticReportService(
         ExternalBrowserDiscoveryService? externalBrowserDiscoveryService = null,
         ExternalBrowserLaunchPlanService? externalBrowserLaunchPlanService = null,
         ExternalBrowserLaunchScriptService? externalBrowserLaunchScriptService = null,
-        FeasibilityAuditService? feasibilityAuditService = null)
+        FeasibilityAuditService? feasibilityAuditService = null,
+        ISyncTelemetryRecorder? syncTelemetryRecorder = null)
     {
         _externalBrowserDiscoveryService = externalBrowserDiscoveryService;
         _externalBrowserLaunchPlanService = externalBrowserLaunchPlanService ?? new ExternalBrowserLaunchPlanService();
         _externalBrowserLaunchScriptService = externalBrowserLaunchScriptService ?? new ExternalBrowserLaunchScriptService();
         _feasibilityAuditService = feasibilityAuditService ?? new FeasibilityAuditService();
+        _syncTelemetryRecorder = syncTelemetryRecorder ?? SyncTelemetryRecorder.Disabled;
+        _telemetryPrivacy = new SyncTelemetryPrivacy();
     }
 
     public DiagnosticReport CreateReport(
@@ -86,7 +92,8 @@ public sealed class DiagnosticReportService
                 FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(feasibilityResults),
             FeasibilityDecision = feasibilityDecision,
             FeasibilityAudit = feasibilityAudit,
-            FeasibilitySuggestedRecordShapes = _feasibilityAuditService.CreateSuggestedRecordShapes(feasibilityAudit)
+            FeasibilitySuggestedRecordShapes = _feasibilityAuditService.CreateSuggestedRecordShapes(feasibilityAudit),
+            SyncTelemetry = _syncTelemetryRecorder.CreateSummary()
         };
     }
 
@@ -149,8 +156,30 @@ public sealed class DiagnosticReportService
     {
         Directory.CreateDirectory(dataFolder);
         var path = Path.Combine(dataFolder, $"diagnostic-report-{report.GeneratedAt:yyyyMMdd-HHmmss}.json");
-        JsonFileStorage.Save(path, report, SerializerOptions);
+        SavePrivacySafeJson(path, report);
 
+        return path;
+    }
+
+    public string SerializePrivacySafe<T>(T value)
+    {
+        var root = CreatePrivacySafeNode(value);
+        return root.ToJsonString(SerializerOptions);
+    }
+
+    public string? SaveSyncTelemetrySnapshot(string dataFolder)
+    {
+        if (!_syncTelemetryRecorder.IsEnabled)
+        {
+            return null;
+        }
+
+        var snapshot = _syncTelemetryRecorder.CreateSnapshot();
+        Directory.CreateDirectory(dataFolder);
+        var path = Path.Combine(
+            dataFolder,
+            $"sync-telemetry-{snapshot.GeneratedAtUtc:yyyyMMdd-HHmmss}.json");
+        SavePrivacySafeJson(path, snapshot);
         return path;
     }
 
@@ -172,5 +201,72 @@ public sealed class DiagnosticReportService
             path,
             fileInfo.Exists,
             fileInfo.Exists ? fileInfo.Length : 0);
+    }
+
+    private void SavePrivacySafeJson<T>(string path, T value)
+    {
+        var root = CreatePrivacySafeNode(value);
+        JsonFileStorage.Save(path, root, SerializerOptions);
+    }
+
+    private JsonNode CreatePrivacySafeNode<T>(T value)
+    {
+        var root = JsonSerializer.SerializeToNode(value, SerializerOptions) ?? new JsonObject();
+        ScrubNode(root);
+        return root;
+    }
+
+    private void ScrubNode(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject jsonObject:
+                foreach (var property in jsonObject.ToArray())
+                {
+                    if (IsSecretPropertyName(property.Key))
+                    {
+                        jsonObject[property.Key] = "[redacted]";
+                        continue;
+                    }
+
+                    ScrubNode(property.Value);
+                }
+                break;
+
+            case JsonArray jsonArray:
+                for (var index = 0; index < jsonArray.Count; index++)
+                {
+                    ScrubNode(jsonArray[index]);
+                }
+                break;
+
+            case JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text):
+                jsonValue.ReplaceWith(_telemetryPrivacy.SanitizeDiagnosticText(text));
+                break;
+        }
+    }
+
+    private static bool IsSecretPropertyName(string propertyName)
+    {
+        var normalized = propertyName.Replace("-", "", StringComparison.Ordinal)
+            .Replace("_", "", StringComparison.Ordinal)
+            .ToLowerInvariant();
+        return normalized is "authorization" or "proxyauthorization" or "cookie" or "cookies" or
+                   "setcookie" or "password" or "passwd" or "passphrase" or "accesstoken" or
+                   "refreshtoken" or "token" or "apikey" or "secret" or "signature" or
+                   "signedquery" or "signedurl" or "requestheaders" or "responseheaders" or
+                   "headers" or "rawbody" or "requestbody" or "responsebody" or "playlistbody" or
+                   "manifesttext" or "originalurl" or "requesturl" ||
+               normalized.EndsWith("authorizationheader", StringComparison.Ordinal) ||
+               normalized.EndsWith("cookieheader", StringComparison.Ordinal) ||
+               normalized.EndsWith("token", StringComparison.Ordinal) ||
+               normalized.EndsWith("password", StringComparison.Ordinal) ||
+               normalized.EndsWith("secret", StringComparison.Ordinal) ||
+               normalized.EndsWith("signature", StringComparison.Ordinal) ||
+               normalized.EndsWith("signedquery", StringComparison.Ordinal) ||
+               normalized.EndsWith("signedurl", StringComparison.Ordinal) ||
+               normalized.EndsWith("rawbody", StringComparison.Ordinal) ||
+               normalized.EndsWith("playlistbody", StringComparison.Ordinal) ||
+               normalized.EndsWith("manifesttext", StringComparison.Ordinal);
     }
 }

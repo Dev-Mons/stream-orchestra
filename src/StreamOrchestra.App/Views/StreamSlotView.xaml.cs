@@ -66,11 +66,13 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     public StreamSlotView(
         SlotConfiguration configuration,
         WebViewProfileService profileService,
-        StreamNavigationService navigationService)
+        StreamNavigationService navigationService,
+        ISyncTelemetryRecorder? syncTelemetryRecorder = null)
     {
         Configuration = configuration;
         _profileService = profileService;
         _navigationService = navigationService;
+        _syncTelemetryRecorder = syncTelemetryRecorder ?? SyncTelemetryRecorder.Disabled;
 
         InitializeComponent();
         _volumeOverlayTimer = new DispatcherTimer

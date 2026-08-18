@@ -523,6 +523,27 @@
                                   VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="SyncMembersPanel" />
                     </ScrollViewer>
+                    <Button x:Name="SyncConfirmAlignmentButton"
+                            Margin="0,7,0,0"
+                            MinHeight="27"
+                            Padding="8,3"
+                            Content="현재 수동 정렬 확인"
+                            ToolTip="현재 보정으로 방송이 정렬됐음을 명시적으로 확인해 로컬 제안 학습에 사용합니다."
+                            AutomationProperties.Name="현재 수동 정렬을 로컬 학습값으로 확인"
+                            Click="SyncConfirmAlignmentButton_Click" />
+                    <StackPanel Margin="0,5,0,0" Orientation="Horizontal">
+                        <Button x:Name="SyncExportBiasButton"
+                                MinHeight="25"
+                                Padding="7,2"
+                                Content="학습 데이터 내보내기"
+                                Click="SyncExportBiasButton_Click" />
+                        <Button x:Name="SyncDeleteBiasButton"
+                                Margin="5,0,0,0"
+                                MinHeight="25"
+                                Padding="7,2"
+                                Content="학습 데이터 삭제"
+                                Click="SyncDeleteBiasButton_Click" />
+                    </StackPanel>
 
                     <Separator Margin="0,12,0,10"
                                Background="#354150" />

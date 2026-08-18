@@ -12,11 +12,15 @@ public interface IStreamSyncTarget
 
     string SyncDisplayName { get; }
 
+    string SyncQualityBucket { get; }
+
+    string SyncBroadcastSessionIdentity { get; }
+
     SyncMemberSnapshot? LatestSyncSnapshot { get; }
 
     TimelineObservation? LatestTimeline { get; }
 
-    Task ExecuteSyncCommandAsync(SyncCommand command);
+    Task<SyncCommandResult> ExecuteSyncCommandAsync(SyncCommand command);
 
     void SetSyncBadge(SyncBadgeState state);
 }

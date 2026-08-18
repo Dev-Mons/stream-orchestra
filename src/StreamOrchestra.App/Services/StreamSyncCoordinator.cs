@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows.Threading;
 using StreamOrchestra.App.Models;
 
@@ -21,6 +22,11 @@ public sealed class StreamSyncCoordinator
     private readonly IReadOnlyDictionary<int, IStreamSyncTarget> _targets;
     private readonly Dictionary<int, MemberRuntime> _members = [];
     private readonly DispatcherTimer _timer;
+    private readonly Func<long> _monotonicTimestampProvider;
+    private readonly long _monotonicFrequency;
+    private readonly ISyncTelemetryRecorder _syncTelemetryRecorder;
+    private readonly SyncIntervalControlPolicy _intervalControlPolicy;
+    private readonly ISyncBiasPriorService _biasPriorService;
     private bool _tickInProgress;
     private DateTimeOffset? _startedAtUtc;
     private DateTimeOffset? _recoveryStartedAtUtc;
@@ -29,9 +35,20 @@ public sealed class StreamSyncCoordinator
     private int _minimumSafetyDelayMs = SyncPresetNormalizationService.DefaultMinimumSafetyDelayMs;
     private int _effectiveSafetyDelayMs = SyncPresetNormalizationService.DefaultMinimumSafetyDelayMs;
 
-    public StreamSyncCoordinator(IEnumerable<IStreamSyncTarget> targets)
+    public StreamSyncCoordinator(
+        IEnumerable<IStreamSyncTarget> targets,
+        Func<long>? monotonicTimestampProvider = null,
+        long monotonicFrequency = 0,
+        ISyncTelemetryRecorder? syncTelemetryRecorder = null,
+        SyncIntervalControlPolicy? intervalControlPolicy = null,
+        ISyncBiasPriorService? biasPriorService = null)
     {
         _targets = targets.ToDictionary(target => target.SlotId);
+        _monotonicTimestampProvider = monotonicTimestampProvider ?? Stopwatch.GetTimestamp;
+        _monotonicFrequency = monotonicFrequency > 0 ? monotonicFrequency : Stopwatch.Frequency;
+        _syncTelemetryRecorder = syncTelemetryRecorder ?? SyncTelemetryRecorder.Disabled;
+        _intervalControlPolicy = intervalControlPolicy ?? new SyncIntervalControlPolicy();
+        _biasPriorService = biasPriorService ?? DisabledSyncBiasPriorService.Instance;
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _timer.Tick += async (_, _) => await RunTimerTickAsync();
     }
@@ -48,6 +65,8 @@ public sealed class StreamSyncCoordinator
 
     public int EffectiveSafetyDelayMs => _effectiveSafetyDelayMs;
 
+    public SyncIntervalPolicyResult? LatestIntervalShadowResult { get; private set; }
+
     public bool ContainsMember(int slotId) => _members.ContainsKey(slotId);
 
     public void LoadPreset(SyncGroupPreset? preset)
@@ -60,7 +79,7 @@ public sealed class StreamSyncCoordinator
             {
                 _members[member.SlotId] = new MemberRuntime(
                     member.SlotId,
-                    member.ManualDelayMs,
+                    SyncPresetNormalizationService.NormalizeDelayComponents(member),
                     member.CalibratedStreamUrl);
             }
         }
@@ -84,6 +103,9 @@ public sealed class StreamSyncCoordinator
                 {
                     SlotId = member.SlotId,
                     ManualDelayMs = member.ManualDelayMs,
+                    DelayModelVersion = SyncManualDelaySchema.CurrentVersion,
+                    AlgorithmPriorMs = member.AlgorithmPriorMs,
+                    UserResidualMs = member.UserResidualMs,
                     CalibratedStreamUrl = member.CalibratedStreamUrl
                 })
                 .ToArray()
@@ -101,7 +123,7 @@ public sealed class StreamSyncCoordinator
 
         _members[slotId] = new MemberRuntime(
             slotId,
-            manualDelayMs: 0,
+            new SyncManualDelayComponents(0, 0, 0),
             SyncPresetNormalizationService.CreateStreamKey(target.CurrentUrl));
         if (IsEnabled)
         {
@@ -143,18 +165,36 @@ public sealed class StreamSyncCoordinator
             return false;
         }
 
-        member.ManualDelayMs = Math.Clamp(
+        var previous = member.DelayComponents;
+        var finalDelay = Math.Clamp(
             manualDelayMs,
+            -SyncPresetNormalizationService.MaximumManualDelayMs,
+            SyncPresetNormalizationService.MaximumManualDelayMs);
+        member.UserResidualMs = Math.Clamp(
+            finalDelay - member.AlgorithmPriorMs,
+            -SyncPresetNormalizationService.MaximumUserResidualMs,
+            SyncPresetNormalizationService.MaximumUserResidualMs);
+        member.ManualDelayMs = Math.Clamp(
+            member.AlgorithmPriorMs + member.UserResidualMs,
             -SyncPresetNormalizationService.MaximumManualDelayMs,
             SyncPresetNormalizationService.MaximumManualDelayMs);
         member.LastHardSeekAtUtc = null;
         member.HardSeekCandidateTicks = 0;
         member.HardSeekCandidateDirection = 0;
+        member.LastHardSeekEvidenceKey = "";
         member.ForceRealign = IsEnabled;
         if (_targets.TryGetValue(slotId, out var target) &&
             SyncPresetNormalizationService.CreateStreamKey(target.CurrentUrl) is { Length: > 0 } streamKey)
         {
             member.CalibratedStreamUrl = streamKey;
+        }
+        if (CreateBiasGroupMember(member) is { } biasMember)
+        {
+            _biasPriorService.RecordUserAdjustment(
+                biasMember,
+                previous,
+                member.DelayComponents,
+                DateTimeOffset.UtcNow);
         }
         StateChanged?.Invoke();
         return true;
@@ -179,9 +219,130 @@ public sealed class StreamSyncCoordinator
             member.ForceRealign = IsEnabled;
             member.HardSeekCandidateTicks = 0;
             member.HardSeekCandidateDirection = 0;
+            member.LastHardSeekEvidenceKey = "";
         }
         StateChanged?.Invoke();
         return true;
+    }
+
+    public bool MarkBiasSuggestionShown(int slotId)
+    {
+        if (!_members.TryGetValue(slotId, out var member) ||
+            member.PendingSuggestion is not { } suggestion ||
+            CreateBiasGroupMember(member) is not { } biasMember)
+        {
+            return false;
+        }
+
+        _biasPriorService.RecordSuggestionEvent(
+            biasMember,
+            suggestion,
+            SyncBiasManualEventKind.SuggestionShown,
+            member.DelayComponents,
+            DateTimeOffset.UtcNow);
+        return true;
+    }
+
+    public bool AcceptBiasSuggestion(int slotId)
+    {
+        if (!_members.TryGetValue(slotId, out var member) ||
+            member.PendingSuggestion is not { } suggestion)
+        {
+            return false;
+        }
+
+        member.PreSuggestionComponents = member.DelayComponents;
+        member.AcceptedSuggestion = suggestion;
+        member.AlgorithmPriorMs = Math.Clamp(
+            suggestion.SuggestedDelayMilliseconds,
+            -SyncPresetNormalizationService.MaximumManualDelayMs,
+            SyncPresetNormalizationService.MaximumManualDelayMs);
+        member.UserResidualMs = 0;
+        member.ManualDelayMs = member.AlgorithmPriorMs;
+        member.PendingSuggestion = null;
+        member.DismissedSuggestionId = "";
+        PrepareMemberForRealign(member);
+        if (CreateBiasGroupMember(member) is { } biasMember)
+        {
+            _biasPriorService.RecordSuggestionEvent(
+                biasMember,
+                suggestion,
+                SyncBiasManualEventKind.SuggestionAccepted,
+                member.DelayComponents,
+                DateTimeOffset.UtcNow);
+        }
+        StateChanged?.Invoke();
+        return true;
+    }
+
+    public bool RejectBiasSuggestion(int slotId)
+    {
+        if (!_members.TryGetValue(slotId, out var member) ||
+            member.PendingSuggestion is not { } suggestion)
+        {
+            return false;
+        }
+
+        if (CreateBiasGroupMember(member) is { } biasMember)
+        {
+            _biasPriorService.RecordSuggestionEvent(
+                biasMember,
+                suggestion,
+                SyncBiasManualEventKind.SuggestionRejected,
+                member.DelayComponents,
+                DateTimeOffset.UtcNow);
+        }
+        member.DismissedSuggestionId = suggestion.SuggestionId;
+        member.PendingSuggestion = null;
+        StateChanged?.Invoke();
+        return true;
+    }
+
+    public bool RevertBiasSuggestion(int slotId)
+    {
+        if (!_members.TryGetValue(slotId, out var member) ||
+            member.PreSuggestionComponents is not { } previous ||
+            member.AcceptedSuggestion is not { } suggestion)
+        {
+            return false;
+        }
+
+        member.AlgorithmPriorMs = previous.AlgorithmPriorMilliseconds;
+        member.UserResidualMs = previous.UserResidualMilliseconds;
+        member.ManualDelayMs = previous.FinalDelayMilliseconds;
+        member.PreSuggestionComponents = null;
+        member.AcceptedSuggestion = null;
+        member.DismissedSuggestionId = suggestion.SuggestionId;
+        PrepareMemberForRealign(member);
+        if (CreateBiasGroupMember(member) is { } biasMember)
+        {
+            _biasPriorService.RecordSuggestionEvent(
+                biasMember,
+                suggestion,
+                SyncBiasManualEventKind.SuggestionReverted,
+                member.DelayComponents,
+                DateTimeOffset.UtcNow);
+        }
+        StateChanged?.Invoke();
+        return true;
+    }
+
+    public bool ConfirmCurrentManualAlignment()
+    {
+        var members = _members.Values
+            .Select(CreateBiasGroupMember)
+            .OfType<SyncBiasGroupMember>()
+            .ToArray();
+        return _biasPriorService.RecordAlignmentConfirmation(members, DateTimeOffset.UtcNow);
+    }
+
+    private void PrepareMemberForRealign(MemberRuntime member)
+    {
+        member.LastHardSeekAtUtc = null;
+        member.HardSeekCandidateTicks = 0;
+        member.HardSeekCandidateDirection = 0;
+        member.LastHardSeekEvidenceKey = "";
+        member.ForceRealign = IsEnabled;
     }
 
     public bool ReconcileMemberStreamIdentity(int slotId)
@@ -210,6 +371,12 @@ public sealed class StreamSyncCoordinator
 
         member.CalibratedStreamUrl = nextKey;
         member.ManualDelayMs = 0;
+        member.AlgorithmPriorMs = 0;
+        member.UserResidualMs = 0;
+        member.PendingSuggestion = null;
+        member.PreSuggestionComponents = null;
+        member.AcceptedSuggestion = null;
+        member.DismissedSuggestionId = "";
         member.LastErrorMs = null;
         return true;
     }
@@ -236,6 +403,7 @@ public sealed class StreamSyncCoordinator
             member.LastErrorMs = null;
             member.HardSeekCandidateTicks = 0;
             member.HardSeekCandidateDirection = 0;
+            member.LastHardSeekEvidenceKey = "";
             member.ForceRealign = false;
         }
 
@@ -350,6 +518,7 @@ public sealed class StreamSyncCoordinator
     public SyncGroupViewState CreateViewState(DateTimeOffset? nowOverride = null)
     {
         var now = nowOverride ?? DateTimeOffset.UtcNow;
+        RefreshBiasSuggestions(now);
         var members = _members.Values
             .OrderBy(member => member.SlotId)
             .Select(member => CreateMemberViewState(member, now))
@@ -373,6 +542,59 @@ public sealed class StreamSyncCoordinator
             members.Count(member => member.IsReady && !member.IsTemporarilyExcluded),
             members,
             notice);
+    }
+
+    private void RefreshBiasSuggestions(DateTimeOffset now)
+    {
+        if (!_biasPriorService.IsEnabled)
+        {
+            return;
+        }
+
+        var biasMembers = _members.Values
+            .Select(CreateBiasGroupMember)
+            .OfType<SyncBiasGroupMember>()
+            .ToArray();
+        var suggestions = _biasPriorService.GetCompatibleGroupSuggestions(biasMembers, now);
+        foreach (var member in _members.Values)
+        {
+            if (!suggestions.TryGetValue(member.SlotId, out var suggestion) ||
+                suggestion.SuggestionId.Equals(member.DismissedSuggestionId, StringComparison.Ordinal) ||
+                suggestion.SuggestionId.Equals(
+                    member.AcceptedSuggestion?.SuggestionId,
+                    StringComparison.Ordinal))
+            {
+                member.PendingSuggestion = null;
+                continue;
+            }
+
+            member.PendingSuggestion = suggestion;
+        }
+    }
+
+    private SyncBiasGroupMember? CreateBiasGroupMember(MemberRuntime member)
+    {
+        if (!_targets.TryGetValue(member.SlotId, out var target))
+        {
+            return null;
+        }
+
+        var context = _biasPriorService.CreateContext(
+            target.CurrentUrl,
+            target.SyncQualityBucket,
+            target.LatestTimeline?.CdnHostBucket);
+        if (context is null || string.IsNullOrWhiteSpace(target.SyncBroadcastSessionIdentity))
+        {
+            return null;
+        }
+
+        return new SyncBiasGroupMember(
+            member.SlotId,
+            context,
+            target.SyncBroadcastSessionIdentity,
+            member.ManualDelayMs,
+            member.AlgorithmPriorMs,
+            member.UserResidualMs);
     }
 
     public static SyncCommand CalculateCorrection(double errorMs, double mediaTarget)
@@ -477,8 +699,18 @@ public sealed class StreamSyncCoordinator
             _minimumSafetyDelayMs,
             MaximumEffectiveSafetyDelayMs);
 
-        await Task.WhenAll(controllable.Select(item =>
-            item.Target.ExecuteSyncCommandAsync(new SyncCommand(SyncCommandType.Pause))));
+        var pauseCommands = controllable.Select(item =>
+        {
+            var command = new SyncCommand(SyncCommandType.Pause);
+            return (item.Member, Command: command, Task: item.Target.ExecuteSyncCommandAsync(command));
+        }).ToArray();
+        var pauseResults = await Task.WhenAll(pauseCommands.Select(item => item.Task));
+        for (var index = 0; index < pauseCommands.Length; index++)
+        {
+            pauseCommands[index].Member.LastCommandFailed = !IsCommandVerified(
+                pauseCommands[index].Command,
+                pauseResults[index]);
+        }
         UpdateBadges(now);
         StateChanged?.Invoke();
     }
@@ -514,8 +746,19 @@ public sealed class StreamSyncCoordinator
         }
 
         var healthy = controllable.Where(item => !item.Member.IsTemporarilyExcluded).ToArray();
-        await Task.WhenAll(controllable.Select(item =>
-            item.Target.ExecuteSyncCommandAsync(new SyncCommand(SyncCommandType.Resume))));
+        var resumeCommands = controllable.Select(item =>
+        {
+            var command = new SyncCommand(SyncCommandType.Resume);
+            return (item.Member, Command: command, Task: item.Target.ExecuteSyncCommandAsync(command));
+        }).ToArray();
+        var resumeResults = await Task.WhenAll(resumeCommands.Select(item => item.Task));
+        var resumeFailed = false;
+        for (var index = 0; index < resumeCommands.Length; index++)
+        {
+            var verified = IsCommandVerified(resumeCommands[index].Command, resumeResults[index]);
+            resumeCommands[index].Member.LastCommandFailed = !verified;
+            resumeFailed |= !verified;
+        }
         _recoveryStartedAtUtc = null;
         _pausedForRecovery = false;
 
@@ -526,6 +769,12 @@ public sealed class StreamSyncCoordinator
         }
 
         await AlignMembersAsync(now, healthy, forceSeek: true, resumeAfter: false);
+        if (resumeFailed)
+        {
+            RuntimeState = SyncRuntimeState.Degraded;
+            UpdateBadges(now);
+            StateChanged?.Invoke();
+        }
     }
 
     private async Task AlignMembersAsync(
@@ -544,7 +793,8 @@ public sealed class StreamSyncCoordinator
         var commonEdgeUtcMs = absoluteEdges.Length == 0 ? (double?)null : absoluteEdges.Min();
         var hasEstimatedMember = false;
         var errors = new List<double>();
-        var commands = new List<Task>();
+        var commands = new List<(MemberRuntime Member, SyncCommand Command, Task<SyncCommandResult> Task)>();
+        LatestIntervalShadowResult = EvaluateIntervalShadow(now, active);
 
         foreach (var item in active)
         {
@@ -553,10 +803,12 @@ public sealed class StreamSyncCoordinator
             if (target is null)
             {
                 item.Member.LastErrorMs = null;
+                RecordPairedDecision(now, item, null, null);
                 continue;
             }
 
-            var errorMs = (item.Snapshot.CurrentTime - target.Value) * 1000;
+            var effectiveMediaTime = SyncPlayerMediaClock.GetEffectiveMediaTime(item.Snapshot);
+            var errorMs = (effectiveMediaTime - target.Value) * 1000;
             item.Member.LastErrorMs = errorMs;
             errors.Add(errorMs);
             hasEstimatedMember |= timeline is null;
@@ -565,73 +817,124 @@ public sealed class StreamSyncCoordinator
             {
                 item.Member.HardSeekCandidateTicks = 0;
                 item.Member.HardSeekCandidateDirection = 0;
+                item.Member.LastHardSeekEvidenceKey = "";
                 continue;
             }
 
             var shouldForceSeek = forceSeek || item.Member.ForceRealign;
             item.Member.ForceRealign = false;
+            var hardSeekEligible = IsHardSeekEligible(item, timeline);
 
             SyncCommand command;
-            if (shouldForceSeek && Math.Abs(errorMs) > CorrectionDeadbandMs)
+            if (shouldForceSeek && Math.Abs(errorMs) > CorrectionDeadbandMs && hardSeekEligible)
             {
                 command = new SyncCommand(SyncCommandType.Seek, target.Value);
                 item.Member.HardSeekCandidateTicks = 0;
                 item.Member.HardSeekCandidateDirection = 0;
+                item.Member.LastHardSeekEvidenceKey = "";
             }
             else
             {
                 command = CalculateCorrection(errorMs, target.Value);
                 if (command.Type == SyncCommandType.Seek)
                 {
-                    var direction = Math.Sign(errorMs);
-                    if (item.Member.HardSeekCandidateDirection == direction)
+                    if (!hardSeekEligible || string.IsNullOrWhiteSpace(timeline?.ProgressKeyHash))
                     {
-                        item.Member.HardSeekCandidateTicks++;
-                    }
-                    else
-                    {
-                        item.Member.HardSeekCandidateDirection = direction;
-                        item.Member.HardSeekCandidateTicks = 1;
-                    }
-                    var isConfirmed = item.Member.HardSeekCandidateTicks >= HardSeekConfirmationTicks;
-                    var isCoolingDown = item.Member.LastHardSeekAtUtc is { } lastSeek &&
-                                        now - lastSeek < HardSeekCooldown;
-                    if (!isConfirmed || isCoolingDown)
-                    {
+                        item.Member.HardSeekCandidateTicks = 0;
+                        item.Member.HardSeekCandidateDirection = 0;
+                        item.Member.LastHardSeekEvidenceKey = "";
                         command = new SyncCommand(
                             SyncCommandType.SetRate,
                             CalculateRateCorrection(errorMs));
+                    }
+                    else
+                    {
+                        var direction = Math.Sign(errorMs);
+                        var evidenceKey = $"{timeline.SourceEpoch}:{timeline.ProgressKeyHash}";
+                        if (item.Member.HardSeekCandidateDirection != direction)
+                        {
+                            item.Member.HardSeekCandidateDirection = direction;
+                            item.Member.HardSeekCandidateTicks = 0;
+                            item.Member.LastHardSeekEvidenceKey = "";
+                        }
+
+                        if (!item.Member.LastHardSeekEvidenceKey.Equals(evidenceKey, StringComparison.Ordinal))
+                        {
+                            item.Member.HardSeekCandidateTicks++;
+                            item.Member.LastHardSeekEvidenceKey = evidenceKey;
+                        }
+
+                        var isConfirmed = item.Member.HardSeekCandidateTicks >= HardSeekConfirmationTicks;
+                        var isCoolingDown = item.Member.LastHardSeekAtUtc is { } lastSeek &&
+                                            now - lastSeek < HardSeekCooldown;
+                        if (!isConfirmed || isCoolingDown)
+                        {
+                            command = new SyncCommand(
+                                SyncCommandType.SetRate,
+                                CalculateRateCorrection(errorMs));
+                        }
                     }
                 }
                 else
                 {
                     item.Member.HardSeekCandidateTicks = 0;
                     item.Member.HardSeekCandidateDirection = 0;
+                    item.Member.LastHardSeekEvidenceKey = "";
                 }
             }
 
             if (command.Type == SyncCommandType.Seek)
             {
-                if (!IsSeekTargetValid(item.Snapshot, target.Value))
+                if (!hardSeekEligible ||
+                    !SyncMediaRangePolicy.IsHighConfidenceSeekTargetValid(
+                        item.Snapshot,
+                        target.Value))
                 {
                     item.Member.LastCommandFailed = true;
+                    RecordPairedDecision(now, item, target, null);
                     continue;
                 }
 
-                item.Member.LastHardSeekAtUtc = now;
                 item.Member.HardSeekCandidateTicks = 0;
                 item.Member.HardSeekCandidateDirection = 0;
+                item.Member.LastHardSeekEvidenceKey = "";
             }
 
             item.Member.LastCommandFailed = false;
-            commands.Add(item.Target.ExecuteSyncCommandAsync(command));
+            RecordPairedDecision(now, item, target, command);
+            commands.Add((item.Member, command, item.Target.ExecuteSyncCommandAsync(command)));
         }
 
-        await Task.WhenAll(commands);
+        if (commands.Count > 0)
+        {
+            var results = await Task.WhenAll(commands.Select(item => item.Task));
+            for (var index = 0; index < commands.Count; index++)
+            {
+                var issued = commands[index];
+                var result = results[index];
+                var verified = IsCommandVerified(issued.Command, result);
+                issued.Member.LastCommandFailed = !verified;
+                if (verified && issued.Command.Type == SyncCommandType.Seek)
+                {
+                    issued.Member.LastHardSeekAtUtc = now;
+                }
+            }
+        }
         if (resumeAfter)
         {
-            await Task.WhenAll(active.Select(item =>
-                item.Target.ExecuteSyncCommandAsync(new SyncCommand(SyncCommandType.Resume))));
+            var resumeCommands = active.Select(item =>
+            {
+                var command = new SyncCommand(SyncCommandType.Resume);
+                return (item.Member, Command: command, Task: item.Target.ExecuteSyncCommandAsync(command));
+            }).ToArray();
+            var resumeResults = await Task.WhenAll(resumeCommands.Select(item => item.Task));
+            for (var index = 0; index < resumeCommands.Length; index++)
+            {
+                if (!IsCommandVerified(resumeCommands[index].Command, resumeResults[index]))
+                {
+                    resumeCommands[index].Member.LastCommandFailed = true;
+                }
+            }
         }
 
         var hasExcludedMember = _members.Values.Any(member => member.IsTemporarilyExcluded);
@@ -643,6 +946,116 @@ public sealed class StreamSyncCoordinator
         UpdateBadges(now);
         StateChanged?.Invoke();
     }
+
+    private SyncIntervalPolicyResult EvaluateIntervalShadow(
+        DateTimeOffset now,
+        IReadOnlyList<ControllableMember> active)
+    {
+        var members = active.Select(item =>
+        {
+            var timeline = GetFreshTimeline(item.Target, now);
+            var hasTimeline = timeline is not null;
+            var offset = hasTimeline
+                ? ResolveMediaToUtcOffset(timeline!, item.Snapshot)
+                : double.NaN;
+            return new SyncIntervalMemberInput
+            {
+                SlotId = item.Member.SlotId,
+                PlayableRanges = SyncMediaRangePolicy.GetPlayableRanges(item.Snapshot),
+                CurrentMediaTimeSeconds = SyncPlayerMediaClock.GetEffectiveMediaTime(item.Snapshot),
+                MediaToGroupOffsetMilliseconds = offset,
+                ManualDelayMilliseconds = item.Member.ManualDelayMs,
+                TimelineFresh = hasTimeline,
+                EpochStable = timeline?.IsEpochStable == true,
+                SourceStable = timeline is not null &&
+                               timeline.Source == SyncTimelineSource.ProgramDateTime &&
+                               !string.IsNullOrWhiteSpace(timeline.PlaylistIdentityHash),
+                PlayerHealthy = item.Snapshot.PlayerProgressHealthy && !item.Snapshot.Seeking,
+                HasFullRangeObservation = item.Snapshot.SeekableRanges.Count > 0 &&
+                                          item.Snapshot.BufferedRanges.Count > 0,
+                HardSeekEvidenceEligible = IsHardSeekEligible(item, timeline),
+                // These uncertainty terms deliberately stay unknown until held-out calibration.
+                TimelineUncertaintyMilliseconds = null,
+                BiasUncertaintyMilliseconds = null,
+                ControllabilityUncertaintyMilliseconds = null
+            };
+        }).ToArray();
+        return _intervalControlPolicy.Evaluate(new SyncIntervalPolicyRequest
+        {
+            Members = members,
+            SafetyDelayMilliseconds = _effectiveSafetyDelayMs
+        });
+    }
+
+    private void RecordPairedDecision(
+        DateTimeOffset now,
+        ControllableMember item,
+        double? activeTarget,
+        SyncCommand? activeCommand)
+    {
+        if (!_syncTelemetryRecorder.IsEnabled || LatestIntervalShadowResult is null)
+        {
+            return;
+        }
+
+        var candidate = LatestIntervalShadowResult.Members.FirstOrDefault(
+            member => member.SlotId == item.Member.SlotId);
+        if (candidate is null)
+        {
+            return;
+        }
+
+        var interval = LatestIntervalShadowResult.SelectedCommonInterval;
+        var tickIdentity = $"{now.UtcTicks}:{LatestIntervalShadowResult.TargetGroupTimeMilliseconds}";
+        var timeline = item.Target.LatestTimeline;
+        _syncTelemetryRecorder.RecordDecision(new SyncDecisionTelemetry(
+            _syncTelemetryRecorder.SessionId,
+            item.Member.SlotId,
+            $"{tickIdentity}:{item.Member.SlotId}",
+            Math.Max(0, timeline?.SourceEpoch ?? 0),
+            new SyncTelemetryClockSample(now.ToUniversalTime(), _monotonicTimestampProvider()),
+            new SyncPolicyDecision(
+                "legacy",
+                RuntimeState == SyncRuntimeState.Degraded ? "degraded" : "running",
+                activeTarget,
+                ToTelemetryCommand(activeCommand?.Type),
+                activeCommand?.Value,
+                activeCommand?.Type == SyncCommandType.Seek,
+                "legacy-decision"),
+            new SyncPolicyDecision(
+                "interval-v1",
+                ToTelemetryPolicyState(LatestIntervalShadowResult.State),
+                candidate.TargetMediaTimeSeconds,
+                candidate.ProposedCommand,
+                candidate.ProposedValue,
+                candidate.HardSeekAllowed,
+                candidate.Reason,
+                interval?.StartMilliseconds,
+                interval?.EndMilliseconds,
+                candidate.CombinedUncertaintyMilliseconds),
+            CandidateIsShadowOnly: true,
+            TickId: tickIdentity));
+    }
+
+    private static string ToTelemetryCommand(SyncCommandType? commandType) => commandType switch
+    {
+        SyncCommandType.Seek => "seek",
+        SyncCommandType.SetRate => "rate",
+        SyncCommandType.Pause => "pause",
+        SyncCommandType.Resume => "resume",
+        SyncCommandType.ResetRate => "reset-rate",
+        _ => "none"
+    };
+
+    private static string ToTelemetryPolicyState(SyncIntervalPolicyState state) => state switch
+    {
+        SyncIntervalPolicyState.Shadow => "shadow",
+        SyncIntervalPolicyState.Suppressed => "suppressed",
+        SyncIntervalPolicyState.NoIntersection => "degraded",
+        SyncIntervalPolicyState.Degraded => "degraded",
+        SyncIntervalPolicyState.Disabled => "waiting",
+        _ => "unknown"
+    };
 
     private double? CalculateMediaTarget(
         ControllableMember item,
@@ -656,11 +1069,17 @@ public sealed class StreamSyncCoordinator
             var mediaToUtcOffsetMs = ResolveMediaToUtcOffset(timeline, item.Snapshot);
             var snapshotAgeMs = Math.Max(0, (now - item.Snapshot.ObservedAtUtc).TotalMilliseconds);
             var commonEdgeAtSnapshotUtcMs = commonEdgeUtcMs.Value - snapshotAgeMs;
-            return (commonEdgeAtSnapshotUtcMs - _effectiveSafetyDelayMs - mediaToUtcOffsetMs) / 1000 -
-                   manualDelaySec;
+            var mappedTarget = (commonEdgeAtSnapshotUtcMs - _effectiveSafetyDelayMs - mediaToUtcOffsetMs) / 1000 -
+                               manualDelaySec;
+            return SyncMediaRangePolicy.IsSeekTargetValid(item.Snapshot, mappedTarget, marginSeconds: 0)
+                ? mappedTarget
+                : null;
         }
 
-        return item.Snapshot.SeekableEnd - _effectiveSafetyDelayMs / 1000d - manualDelaySec;
+        var estimatedTarget = item.Snapshot.SeekableEnd!.Value - _effectiveSafetyDelayMs / 1000d - manualDelaySec;
+        return SyncMediaRangePolicy.IsSeekTargetValid(item.Snapshot, estimatedTarget, marginSeconds: 0)
+            ? estimatedTarget
+            : null;
     }
 
     private static double ResolveMediaToUtcOffset(
@@ -745,43 +1164,152 @@ public sealed class StreamSyncCoordinator
             {
                 if (!_targets.TryGetValue(member.SlotId, out var target) ||
                     target.LatestSyncSnapshot is not { } snapshot ||
-                    now - snapshot.ObservedAtUtc > SnapshotFreshness ||
+                    !IsSnapshotFresh(snapshot, now) ||
                     !snapshot.HasVideo ||
                     !snapshot.IsSoop ||
-                    snapshot.SeekableStart is null ||
-                    snapshot.SeekableEnd is null ||
-                    snapshot.SeekableEnd <= snapshot.SeekableStart)
+                    !snapshot.PlayerProgressHealthy ||
+                    snapshot.Seeking)
                 {
                     return null;
                 }
 
+                var seekableRanges = SyncMediaRangePolicy.GetSeekableRanges(snapshot);
+                var currentRange = SyncMediaRangePolicy.FindContainingRange(
+                    seekableRanges,
+                    SyncPlayerMediaClock.GetEffectiveMediaTime(snapshot));
+                if (seekableRanges.Count == 0 || currentRange is null)
+                {
+                    return null;
+                }
+
+                snapshot = snapshot with
+                {
+                    SeekableRanges = seekableRanges,
+                    SeekableStart = seekableRanges[0].StartSeconds,
+                    SeekableEnd = seekableRanges[^1].EndSeconds,
+                    CurrentSeekableRange = currentRange
+                };
                 return new ControllableMember(member, target, snapshot);
             })
             .OfType<ControllableMember>()
             .ToArray();
     }
 
-    private static bool IsSeekTargetValid(SyncMemberSnapshot snapshot, double mediaTarget)
+    private bool IsHardSeekEligible(
+        ControllableMember item,
+        TimelineObservation? timeline) =>
+        timeline is not null &&
+        timeline.Source == SyncTimelineSource.ProgramDateTime &&
+        timeline.IsEpochStable &&
+        timeline.IndependentEvidenceCount >= 2 &&
+        timeline.NetworkCapability == SyncNetworkObservationCapability.CdpCorrelated &&
+        !string.IsNullOrWhiteSpace(timeline.PlaylistIdentityHash) &&
+        !string.IsNullOrWhiteSpace(timeline.ProgressKeyHash) &&
+        IsMonotonicallyFresh(
+            timeline.ObservedMonotonicTicks,
+            timeline.MonotonicFrequency,
+            GetTimelineFreshness(timeline)) &&
+        IsMonotonicallyFresh(
+            item.Snapshot.HostReceivedMonotonicTicks,
+            item.Snapshot.HostMonotonicFrequency,
+            SnapshotFreshness) &&
+        item.Snapshot.MediaClockSource == SyncPlayerClockSource.RequestVideoFrameCallback &&
+        item.Snapshot.SeekableRanges.Count > 0 &&
+        item.Snapshot.BufferedRanges.Count > 0 &&
+        item.Snapshot.PlayerProgressHealthy &&
+        !item.Snapshot.Seeking;
+
+    private static bool IsCommandVerified(SyncCommand command, SyncCommandResult result) =>
+        result.CommandId.Equals(command.CommandId, StringComparison.Ordinal) &&
+        result.WasApplied &&
+        result.WasVerified &&
+        result.Stage == SyncCommandStage.Verified &&
+        command.Type switch
+        {
+            SyncCommandType.Seek => command.Value is { } target &&
+                                    result.ObservedMediaTimeSeconds is { } mediaTime &&
+                                    Math.Abs(mediaTime - target) <= 0.5,
+            SyncCommandType.SetRate => command.Value is { } target &&
+                                       result.ObservedPlaybackRate is { } rate &&
+                                       Math.Abs(rate - target) <= 0.005,
+            SyncCommandType.ResetRate => result.ObservedPlaybackRate is { } rate &&
+                                         Math.Abs(rate - 1) <= 0.005,
+            SyncCommandType.Pause => result.ObservedPaused == true,
+            SyncCommandType.Resume => result.ObservedPaused == false,
+            _ => false
+        };
+
+    private TimelineObservation? GetFreshTimeline(IStreamSyncTarget target, DateTimeOffset now)
     {
-        return snapshot.SeekableStart is { } start &&
-               snapshot.SeekableEnd is { } end &&
-               mediaTarget >= start + 0.05 &&
-               mediaTarget <= end - 0.05;
+        if (target.LatestTimeline is not { } timeline)
+        {
+            return null;
+        }
+
+        var freshness = GetTimelineFreshness(timeline);
+        var hasMonotonicClock = HasCompatibleMonotonicClock(
+            timeline.ObservedMonotonicTicks,
+            timeline.MonotonicFrequency);
+        var monotonicAge = hasMonotonicClock
+            ? GetMonotonicAge(timeline.ObservedMonotonicTicks, timeline.MonotonicFrequency)
+            : null;
+        var isFresh = hasMonotonicClock
+            ? monotonicAge is { } age && age <= freshness
+            : now >= timeline.ObservedAtUtc && now - timeline.ObservedAtUtc <= freshness;
+        return isFresh ? timeline : null;
     }
 
-    private static TimelineObservation? GetFreshTimeline(IStreamSyncTarget target, DateTimeOffset now)
+    private static TimeSpan GetTimelineFreshness(TimelineObservation timeline) =>
+        double.IsFinite(timeline.StaleAfterSeconds) && timeline.StaleAfterSeconds > 0
+            ? TimeSpan.FromSeconds(timeline.StaleAfterSeconds)
+            : TimelineFreshness;
+
+    private bool IsSnapshotFresh(SyncMemberSnapshot snapshot, DateTimeOffset now)
     {
-        return target.LatestTimeline is { } timeline && now - timeline.ObservedAtUtc <= TimelineFreshness
-            ? timeline
+        var hasMonotonicClock = HasCompatibleMonotonicClock(
+            snapshot.HostReceivedMonotonicTicks,
+            snapshot.HostMonotonicFrequency);
+        var monotonicAge = hasMonotonicClock
+            ? GetMonotonicAge(snapshot.HostReceivedMonotonicTicks, snapshot.HostMonotonicFrequency)
             : null;
+        return hasMonotonicClock
+            ? monotonicAge is { } age && age <= SnapshotFreshness
+            : now >= snapshot.ObservedAtUtc && now - snapshot.ObservedAtUtc <= SnapshotFreshness;
     }
+
+    private bool IsMonotonicallyFresh(
+        long observedTicks,
+        long observedFrequency,
+        TimeSpan freshness) =>
+        GetMonotonicAge(observedTicks, observedFrequency) is { } age && age <= freshness;
+
+    private TimeSpan? GetMonotonicAge(long observedTicks, long observedFrequency)
+    {
+        if (!HasCompatibleMonotonicClock(observedTicks, observedFrequency))
+        {
+            return null;
+        }
+
+        var nowTicks = _monotonicTimestampProvider();
+        if (nowTicks < observedTicks)
+        {
+            return null;
+        }
+
+        return TimeSpan.FromSeconds((nowTicks - observedTicks) / (double)_monotonicFrequency);
+    }
+
+    private bool HasCompatibleMonotonicClock(long observedTicks, long observedFrequency) =>
+        observedTicks > 0 &&
+        observedFrequency > 0 &&
+        observedFrequency == _monotonicFrequency;
 
     private SyncMemberViewState CreateMemberViewState(MemberRuntime member, DateTimeOffset now)
     {
         var target = _targets[member.SlotId];
         var snapshot = target.LatestSyncSnapshot;
         var ready = snapshot is not null &&
-                    now - snapshot.ObservedAtUtc <= SnapshotFreshness &&
+                    IsSnapshotFresh(snapshot, now) &&
                     snapshot.HasVideo && snapshot.IsSoop &&
                     snapshot.SeekableStart is not null && snapshot.SeekableEnd is not null;
         var timeline = ready ? GetFreshTimeline(target, now) : null;
@@ -794,7 +1322,9 @@ public sealed class StreamSyncCoordinator
                 ? "복구 대기"
                 : source == SyncTimelineSource.LiveEdgeEstimate
                     ? "추정"
-                    : "절대";
+                    : source == SyncTimelineSource.ProgramDateTime
+                        ? "플랫폼 시각"
+                        : "CDN 추정";
 
         return new SyncMemberViewState(
             member.SlotId,
@@ -806,7 +1336,14 @@ public sealed class StreamSyncCoordinator
             snapshot?.BufferSec,
             member.LastErrorMs,
             member.ManualDelayMs,
-            statusText);
+            statusText,
+            member.AlgorithmPriorMs,
+            member.UserResidualMs,
+            member.PendingSuggestion?.SuggestedDelayMilliseconds,
+            member.PendingSuggestion?.SuggestionId ?? "",
+            member.PendingSuggestion?.IndependentSessionSupport ?? 0,
+            member.PendingSuggestion?.HierarchyLevel ?? SyncBiasHierarchyLevel.None,
+            member.PreSuggestionComponents is not null && member.AcceptedSuggestion is not null);
     }
 
     private void UpdateBadges(DateTimeOffset now)
@@ -846,16 +1383,38 @@ public sealed class StreamSyncCoordinator
 
     private sealed class MemberRuntime
     {
-        public MemberRuntime(int slotId, int manualDelayMs, string calibratedStreamUrl)
+        public MemberRuntime(
+            int slotId,
+            SyncManualDelayComponents delayComponents,
+            string calibratedStreamUrl)
         {
             SlotId = slotId;
-            ManualDelayMs = manualDelayMs;
+            AlgorithmPriorMs = delayComponents.AlgorithmPriorMilliseconds;
+            UserResidualMs = delayComponents.UserResidualMilliseconds;
+            ManualDelayMs = delayComponents.FinalDelayMilliseconds;
             CalibratedStreamUrl = calibratedStreamUrl;
         }
 
         public int SlotId { get; }
 
         public int ManualDelayMs { get; set; }
+
+        public int AlgorithmPriorMs { get; set; }
+
+        public int UserResidualMs { get; set; }
+
+        public SyncManualDelayComponents DelayComponents => new(
+            AlgorithmPriorMs,
+            UserResidualMs,
+            ManualDelayMs);
+
+        public SyncBiasSuggestion? PendingSuggestion { get; set; }
+
+        public SyncBiasSuggestion? AcceptedSuggestion { get; set; }
+
+        public SyncManualDelayComponents? PreSuggestionComponents { get; set; }
+
+        public string DismissedSuggestionId { get; set; } = "";
 
         public string CalibratedStreamUrl { get; set; }
 
@@ -868,6 +1427,8 @@ public sealed class StreamSyncCoordinator
         public int HardSeekCandidateTicks { get; set; }
 
         public int HardSeekCandidateDirection { get; set; }
+
+        public string LastHardSeekEvidenceKey { get; set; } = "";
 
         public bool ForceRealign { get; set; }
 

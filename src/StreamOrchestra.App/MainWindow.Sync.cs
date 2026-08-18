@@ -4,6 +4,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.Win32;
 using StreamOrchestra.App.Models;
 using StreamOrchestra.App.Services;
 using StreamOrchestra.App.Views;
@@ -13,12 +14,23 @@ namespace StreamOrchestra.App;
 public partial class MainWindow
 {
     private StreamSyncCoordinator? _syncCoordinator;
+    private ISyncBiasPriorService _syncBiasPriorService = DisabledSyncBiasPriorService.Instance;
     private bool _isRefreshingSyncUi;
     private DateTimeOffset _lastSyncListRefreshAtUtc;
 
     private void InitializeSyncFeature()
     {
-        _syncCoordinator = new StreamSyncCoordinator(_slots);
+        try
+        {
+            _syncBiasPriorService = SyncBiasPriorService.CreateDefault(_presetStorageService.DataFolder);
+        }
+        catch
+        {
+            _syncBiasPriorService = DisabledSyncBiasPriorService.Instance;
+        }
+        _syncCoordinator = new StreamSyncCoordinator(
+            _slots,
+            biasPriorService: _syncBiasPriorService);
         _syncCoordinator.StateChanged += OnSyncStateChanged;
         _syncCoordinator.LoadPreset(new SyncGroupPreset());
 
@@ -144,6 +156,10 @@ public partial class MainWindow
             SyncStatusDot.Fill = CreateSyncStateBrush(state.RuntimeState);
             SyncStartStopButton.Content = state.IsEnabled ? "정지" : "시작";
             SyncStartStopButton.IsEnabled = state.IsEnabled || state.Members.Count >= 2;
+            SyncConfirmAlignmentButton.IsEnabled = state.Members.Count >= 2 &&
+                                                   _syncBiasPriorService.IsEnabled;
+            SyncExportBiasButton.IsEnabled = _syncBiasPriorService.IsEnabled;
+            SyncDeleteBiasButton.IsEnabled = _syncBiasPriorService.IsEnabled;
             SyncGroupStateText.Text = FormatRuntimeState(state.RuntimeState);
             SyncReadyText.Text = $"준비 {state.ReadyMemberCount}/{state.Members.Count} · 그룹 최대 16개";
             SyncEffectiveDelayText.Text = $"현재 유효 안전 딜레이 {FormatSeconds(state.EffectiveSafetyDelayMs)}";
@@ -219,6 +235,15 @@ public partial class MainWindow
                 FontSize = 10
             });
 
+            content.Children.Add(new TextBlock
+            {
+                Margin = new Thickness(0, 3, 0, 0),
+                Text = $"알고리즘 prior {FormatSeconds(member.AlgorithmPriorMs)} · 사용자 residual {FormatSeconds(member.UserResidualMs)} · 최종 {FormatSeconds(member.ManualDelayMs)}",
+                Foreground = new SolidColorBrush(Color.FromRgb(142, 157, 174)),
+                FontSize = 10,
+                TextWrapping = TextWrapping.Wrap
+            });
+
             var controls = new StackPanel
             {
                 Margin = new Thickness(0, 7, 0, 0),
@@ -273,7 +298,127 @@ public partial class MainWindow
             };
             controls.Children.Add(removeButton);
             content.Children.Add(controls);
+
+            if (member.SuggestedDelayMs is { } suggestedDelay)
+            {
+                _syncCoordinator?.MarkBiasSuggestionShown(member.SlotId);
+                var suggestionPanel = new StackPanel { Margin = new Thickness(0, 7, 0, 0) };
+                suggestionPanel.Children.Add(new TextBlock
+                {
+                    Text = $"로컬 제안 {FormatSeconds(suggestedDelay)} · {FormatBiasHierarchy(member.SuggestionHierarchy)} · 독립 세션 {member.SuggestionSupport}개 (자동 적용 안 됨)",
+                    Foreground = new SolidColorBrush(Color.FromRgb(129, 190, 255)),
+                    FontSize = 10,
+                    TextWrapping = TextWrapping.Wrap
+                });
+                var suggestionButtons = new StackPanel
+                {
+                    Margin = new Thickness(0, 4, 0, 0),
+                    Orientation = Orientation.Horizontal
+                };
+                var accept = CreateSyncSmallButton("제안 수락", "로컬 지연 제안을 이 방송에 적용합니다.");
+                accept.Click += (_, _) => ApplyBiasSuggestionAction(
+                    member.SlotId,
+                    _syncCoordinator?.AcceptBiasSuggestion(member.SlotId) == true,
+                    "로컬 지연 제안을 적용했습니다.");
+                suggestionButtons.Children.Add(accept);
+                var reject = CreateSyncSmallButton("거절", "이 방송 세션의 로컬 지연 제안을 숨깁니다.");
+                reject.Margin = new Thickness(5, 0, 0, 0);
+                reject.Click += (_, _) => ApplyBiasSuggestionAction(
+                    member.SlotId,
+                    _syncCoordinator?.RejectBiasSuggestion(member.SlotId) == true,
+                    "이 세션의 로컬 지연 제안을 거절했습니다.");
+                suggestionButtons.Children.Add(reject);
+                suggestionPanel.Children.Add(suggestionButtons);
+                content.Children.Add(suggestionPanel);
+            }
+
+            if (member.CanRevertSuggestion)
+            {
+                var revert = CreateSyncSmallButton("제안 되돌리기", "수락 전 지연 값으로 되돌립니다.");
+                revert.Margin = new Thickness(0, 7, 0, 0);
+                revert.HorizontalAlignment = HorizontalAlignment.Left;
+                revert.Click += (_, _) => ApplyBiasSuggestionAction(
+                    member.SlotId,
+                    _syncCoordinator?.RevertBiasSuggestion(member.SlotId) == true,
+                    "수락 전 지연 값으로 되돌렸습니다.");
+                content.Children.Add(revert);
+            }
             SyncMembersPanel.Children.Add(container);
+        }
+    }
+
+    private void SyncConfirmAlignmentButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_syncCoordinator?.ConfirmCurrentManualAlignment() == true)
+        {
+            StatusTextBlock.Text = "현재 정렬을 암호화된 온디바이스 학습값으로 저장했습니다.";
+        }
+        else
+        {
+            StatusTextBlock.Text = "방송 2개가 필요하거나 이 방송 세션은 이미 확인되었습니다.";
+        }
+        RefreshSyncUi(rebuildLists: true);
+    }
+
+    private void ApplyBiasSuggestionAction(int slotId, bool changed, string status)
+    {
+        if (!changed)
+        {
+            return;
+        }
+
+        QueueAppStateSave();
+        StatusTextBlock.Text = status;
+        RefreshSyncUi(rebuildLists: true);
+    }
+
+    private void SyncExportBiasButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "동기화 로컬 학습 데이터 내보내기",
+            Filter = "JSON 파일 (*.json)|*.json",
+            FileName = $"stream-orchestra-sync-bias-{DateTime.Now:yyyyMMdd}.json",
+            AddExtension = true,
+            DefaultExt = ".json"
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            _syncBiasPriorService.ExportPrivacySafe(dialog.FileName);
+            StatusTextBlock.Text = "해시 처리된 로컬 학습 데이터를 내보냈습니다.";
+        }
+        catch
+        {
+            StatusTextBlock.Text = "로컬 학습 데이터를 내보내지 못했습니다.";
+        }
+    }
+
+    private void SyncDeleteBiasButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show(
+                this,
+                "이 PC에 저장된 동기화 학습 기록을 모두 삭제할까요? 복구할 수 없습니다.",
+                "동기화 학습 데이터 삭제",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            _syncBiasPriorService.DeleteAll();
+            StatusTextBlock.Text = "로컬 동기화 학습 데이터를 삭제했습니다.";
+            RefreshSyncUi(rebuildLists: true);
+        }
+        catch
+        {
+            StatusTextBlock.Text = "로컬 학습 데이터를 삭제하지 못했습니다.";
         }
     }
 
@@ -405,8 +550,8 @@ public partial class MainWindow
     {
         return source switch
         {
-            SyncTimelineSource.ProgramDateTime => "HLS 절대시각",
-            SyncTimelineSource.CdnDate => "CDN 추정시각",
+            SyncTimelineSource.ProgramDateTime => "플랫폼 HLS 시각",
+            SyncTimelineSource.CdnDate => "CDN 응답 기반 추정",
             SyncTimelineSource.LiveEdgeEstimate => "라이브 엣지 추정",
             _ => "시간축 대기"
         };
@@ -418,6 +563,14 @@ public partial class MainWindow
 
     private static string FormatError(double? errorMs) =>
         errorMs is null ? "--" : $"{errorMs.Value / 1000:+0.00;-0.00;0.00}초";
+
+    private static string FormatBiasHierarchy(SyncBiasHierarchyLevel level) => level switch
+    {
+        SyncBiasHierarchyLevel.ChannelQualityCdn => "채널×화질×CDN",
+        SyncBiasHierarchyLevel.ChannelQuality => "채널×화질",
+        SyncBiasHierarchyLevel.Channel => "채널",
+        _ => "제안"
+    };
 
     private static bool IsSoopStreamUrl(string? url)
     {

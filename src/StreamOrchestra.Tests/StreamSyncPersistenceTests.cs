@@ -29,6 +29,9 @@ public sealed class StreamSyncPersistenceTests : IDisposable
                         {
                             SlotId = 3,
                             ManualDelayMs = 800,
+                            DelayModelVersion = SyncManualDelaySchema.CurrentVersion,
+                            AlgorithmPriorMs = 500,
+                            UserResidualMs = 300,
                             CalibratedStreamUrl = "https://play.sooplive.com/channel?token=secret"
                         }
                     ]
@@ -41,6 +44,8 @@ public sealed class StreamSyncPersistenceTests : IDisposable
         var member = Assert.Single(loaded.Sync.Members);
         Assert.Equal(3, member.SlotId);
         Assert.Equal(800, member.ManualDelayMs);
+        Assert.Equal(500, member.AlgorithmPriorMs);
+        Assert.Equal(300, member.UserResidualMs);
         Assert.Equal("https://play.sooplive.com/channel", member.CalibratedStreamUrl);
     }
 

@@ -2,6 +2,8 @@ namespace StreamOrchestra.App.Models;
 
 public sealed class DiagnosticReport
 {
+    public int SchemaVersion { get; init; } = 2;
+
     public DateTimeOffset GeneratedAt { get; init; } = DateTimeOffset.Now;
 
     public string ProfileRootFolder { get; init; } = "";
@@ -43,4 +45,6 @@ public sealed class DiagnosticReport
     public IReadOnlyList<FeasibilityAuditItem> FeasibilityAudit { get; init; } = [];
 
     public IReadOnlyList<string> FeasibilitySuggestedRecordShapes { get; init; } = [];
+
+    public SyncTelemetrySummary SyncTelemetry { get; init; } = SyncTelemetrySummary.Disabled;
 }

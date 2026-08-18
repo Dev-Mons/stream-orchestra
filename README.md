@@ -70,13 +70,17 @@
 ### SOOP 방송 재생 동기화
 
 - 최상단 **싱크** 버튼을 누르면 현재 로드된 SOOP 방송을 단일 동기화 그룹에 추가하거나 제거할 수 있습니다. 그룹은 2개부터 최대 16개 슬롯까지 지원합니다.
-- 동기화는 HLS `PROGRAM-DATE-TIME`, 세그먼트 PTS와 CDN 응답 시각을 우선 사용합니다. 절대 시간축을 찾지 못한 방송은 라이브 엣지 거리를 맞추는 **추정 모드**로 계속 동작합니다.
-- 방송별로 0.1초씩 앞당기거나 늦춰 송출 장비·인코더 차이를 수동 보정할 수 있습니다. 수동 보정 범위는 ±60초입니다.
+- 동기화는 구조화한 HLS playlist identity·sequence·discontinuity와 timezone이 명시된 `PROGRAM-DATE-TIME`을 **플랫폼 HLS 시각**으로 사용합니다. HTTP `Date`와 검증되지 않은 vendor timestamp를 playlist tail 또는 캡처 시각으로 승격하지 않으며, 안전한 시간축이 없으면 라이브 엣지 거리 추정으로 강등합니다.
+- 플레이어의 전체 buffered/seekable 연속 구간, `requestVideoFrameCallback` 표본, 진행 상태와 명령 결과를 확인합니다. 현재 WebView response-event 경로는 reduced-confidence이므로 hard seek는 evidence gate에서 차단되고 bounded rate 보정만 허용됩니다. CDP correlation은 실제 runtime schema 검증 전 비활성입니다.
+- 방송별로 0.1초씩 앞당기거나 늦춰 송출 장비·인코더 차이를 수동 보정할 수 있습니다. 수동 보정 범위는 ±60초이며, 기존 프리셋의 부호와 단위는 유지됩니다.
 - 안전 딜레이는 버퍼 상태에 따라 자동 조절됩니다. 사용자는 팝업에서 자동 조절이 내려가지 않을 최솟값을 1.5~15초로 지정할 수 있습니다.
-- 최초 정렬 뒤에는 정상 재생을 계속 모니터링하되 작은 오차에는 재탐색하지 않습니다. 큰 오차가 연속 확인되거나 버퍼링으로 실제 동기화가 크게 벗어난 경우에만 그룹을 다시 정렬합니다.
+- 최초 정렬 뒤에는 정상 재생을 계속 모니터링하되 작은 오차에는 재탐색하지 않습니다. source/epoch/stale/range/command 검증을 통과하지 못하면 seek하지 않고 정상 속도 또는 bounded rate로 안전하게 fallback합니다.
 - 그룹 구성, 최소 안전 딜레이와 수동 보정값은 프리셋에 저장되지만, 앱이나 프리셋을 다시 불러온 뒤에는 사용자가 **시작**을 눌러야 합니다.
 - 한 방송이 지속적으로 버퍼링되면 그룹을 잠시 멈추고 안전 딜레이를 늘려 재정렬합니다. 제한 시간 안에 회복하지 못한 방송은 그룹 구성에 남겨 둔 채 일시적으로 제외됩니다.
-- 이 기능은 CDN 게시 시간과 플레이어 라이브 엣지를 정렬합니다. 서로 다른 방송의 촬영·캡처·인코더 자체 지연까지 자동 판별하는 오디오·영상 내용 분석은 포함하지 않습니다.
+- robust offset/drift estimator와 공통 playable-interval controller는 기존 제어와 나란히 계산되는 **shadow 후보**이며 자동 제어에 사용되지 않습니다. 실제 SOOP passive 표본의 calibration·guardrail 검증을 통과하기 전에는 활성화하지 않습니다.
+- **현재 수동 정렬 확인**을 누른 독립 방송 세션만 pairwise 로컬 prior 학습에 사용합니다. 과거 경향은 support와 함께 제안만 표시되며 자동 적용되지 않습니다. 수락·거절·되돌리기가 분리되고, 기록은 Windows 사용자 DPAPI로 암호화되어 `%LOCALAPPDATA%\StreamOrchestra\Data`에 저장됩니다. 팝업에서 해시 처리된 기록을 내보내거나 전부 삭제할 수 있습니다.
+- 이 기능은 HLS/CDN 패키징 시간축과 브라우저 플레이어 위치를 정렬하고 과거 수동 경향을 제안합니다. 외부 공통 timecode나 영상·음성 내용 비교 없이 방송별 촬영·캡처·인코더 지연을 직접 측정할 수 없으므로 동일 장면의 완전한 동기화나 `±N ms` 정확도를 보장하지 않습니다.
+- telemetry는 schema/model version을 가진 privacy-safe DTO와 bounded recorder를 제공하지만 기본은 꺼져 있습니다. cookie·authorization·token·signed query·원본 manifest/URL·영상/음성 payload를 저장하지 않습니다. 개발·운영 검증 절차는 [동기화 검증 가이드](docs/stream-sync-validation.md)를 참고하세요.
 
 ### 프리셋과 세션 저장
 

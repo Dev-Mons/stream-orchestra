@@ -4158,7 +4158,9 @@ public static class FeasibilityStatusCommand
         DiagnosticReport report)
     {
         var path = Path.Combine(outputFolder, HandoffDiagnosticReportFileName);
-        SaveTextFile(path, JsonSerializer.Serialize(report, HandoffJsonOptions) + Environment.NewLine);
+        SaveTextFile(
+            path,
+            new DiagnosticReportService().SerializePrivacySafe(report) + Environment.NewLine);
         return path;
     }
 
