@@ -28,8 +28,10 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     private static readonly Brush SelectedRemoveButtonBackground = new SolidColorBrush(Color.FromArgb(224, 185, 28, 28));
     private static readonly Brush SelectedRemoveButtonBorder = new SolidColorBrush(Color.FromRgb(252, 165, 165));
     private const uint SetWindowPosNoSize = 0x0001;
+    private const uint SetWindowPosNoMove = 0x0002;
     private const uint SetWindowPosNoZOrder = 0x0004;
     private const uint SetWindowPosNoActivate = 0x0010;
+    private static readonly IntPtr HwndNotTopmost = new(-2);
 
     // 웹페이지마다 휠 한 칸에 wheel 이벤트를 1~3개씩 발생시켜, 한 번 스크롤에 볼륨이
     // 20~30%씩 바뀌는 버그가 있었다. 한 번의 물리적 스크롤에서 연달아 들어오는 이벤트
@@ -66,19 +68,11 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     public StreamSlotView(
         SlotConfiguration configuration,
         WebViewProfileService profileService,
-        StreamNavigationService navigationService,
-        ISyncTelemetryRecorder? syncTelemetryRecorder = null)
+        StreamNavigationService navigationService)
     {
         Configuration = configuration;
         _profileService = profileService;
         _navigationService = navigationService;
-        _syncTelemetryRecorder = syncTelemetryRecorder ?? SyncTelemetryRecorder.Disabled;
-        _syncTelemetrySessionOwner = _syncTelemetryRecorder as SyncTelemetrySessionController;
-        if (_syncTelemetrySessionOwner is not null)
-        {
-            _syncTelemetrySessionOwner.EnabledChanged += SyncTelemetryEnabledChanged;
-        }
-
         InitializeComponent();
         _volumeOverlayTimer = new DispatcherTimer
         {
@@ -694,8 +688,6 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
             var restoreUrl = CurrentUrl;
             var oldBrowser = Browser;
             var oldIndex = BrowserHost.Children.IndexOf(oldBrowser);
-            await DisableCdpCorrelationAsync();
-
             try
             {
                 if (oldBrowser.CoreWebView2 is not null)
@@ -1218,6 +1210,25 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
             0,
             0,
             SetWindowPosNoSize | SetWindowPosNoZOrder | SetWindowPosNoActivate);
+    }
+
+    private static void SetPopupNotTopmost(Popup popup)
+    {
+        if (popup.Child is not { } child ||
+            PresentationSource.FromVisual(child) is not HwndSource source ||
+            source.Handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        SetWindowPos(
+            source.Handle,
+            HwndNotTopmost,
+            0,
+            0,
+            0,
+            0,
+            SetWindowPosNoMove | SetWindowPosNoSize | SetWindowPosNoActivate);
     }
 
     [DllImport("user32.dll", SetLastError = true)]

@@ -46,5 +46,4 @@ public sealed class DiagnosticReport
 
     public IReadOnlyList<string> FeasibilitySuggestedRecordShapes { get; init; } = [];
 
-    public SyncTelemetrySummary SyncTelemetry { get; init; } = SyncTelemetrySummary.Disabled;
 }

@@ -13,12 +13,6 @@ public sealed class SyncMemberPreset
 
     public int ManualDelayMs { get; init; }
 
-    public int DelayModelVersion { get; init; }
-
-    public int? AlgorithmPriorMs { get; init; }
-
-    public int? UserResidualMs { get; init; }
-
     public string CalibratedStreamUrl { get; init; } = "";
 }
 
@@ -36,7 +30,6 @@ public enum SyncTimelineSource
 {
     None,
     ProgramDateTime,
-    CdnDate,
     LiveEdgeEstimate
 }
 
@@ -47,25 +40,6 @@ public enum SyncCommandType
     Pause,
     Resume,
     ResetRate
-}
-
-public enum SyncPlayerEventKind
-{
-    Sample,
-    Frame,
-    Waiting,
-    Stalled,
-    Error,
-    Seeking,
-    Seeked,
-    RateChange
-}
-
-public enum SyncNetworkObservationCapability
-{
-    Unknown,
-    WebResourceResponseReduced,
-    CdpCorrelated
 }
 
 public enum SyncPlayerClockSource
@@ -129,15 +103,7 @@ public sealed record SyncMemberSnapshot
 
     public bool Seeking { get; init; }
 
-    public int NetworkState { get; init; }
-
-    public string NetworkBucket { get; init; } = "unknown";
-
-    public SyncPlayerEventKind EventKind { get; init; }
-
     public double? PageSampleMonotonicMilliseconds { get; init; }
-
-    public double? PageEventMonotonicMilliseconds { get; init; }
 
     public long HostReceivedMonotonicTicks { get; init; }
 
@@ -151,23 +117,11 @@ public sealed record SyncMemberSnapshot
 
     public double? ExpectedDisplayMonotonicMilliseconds { get; init; }
 
-    public double? FrameProcessingDurationSeconds { get; init; }
-
-    public long? PresentedFrames { get; init; }
-
-    public long? DroppedVideoFrames { get; init; }
-
-    public long? TotalVideoFrames { get; init; }
-
     public bool PlayerProgressHealthy { get; init; } = true;
 
     public double EffectiveMediaTimeSeconds { get; init; }
 
     public SyncPlayerClockSource MediaClockSource { get; init; }
-
-    public long PlayerEventSequence { get; init; }
-
-    public long LastBufferEventAt { get; init; }
 
     public double ViewportArea { get; init; }
 
@@ -208,13 +162,6 @@ public sealed record TimelineObservation
 
     public int IndependentEvidenceCount { get; init; }
 
-    public SyncNetworkObservationCapability NetworkCapability { get; init; }
-
-    public bool CdpHardSeekGatePassed { get; init; }
-
-    public long? ResponseHeadersMonotonicTicks { get; init; }
-
-    public long? BodyCompletedMonotonicTicks { get; init; }
 }
 
 public sealed record SyncCommand(SyncCommandType Type, double? Value = null)
@@ -277,14 +224,7 @@ public sealed record SyncMemberViewState(
     double? BufferSec,
     double? ErrorMs,
     int ManualDelayMs,
-    string StatusText,
-    int AlgorithmPriorMs = 0,
-    int UserResidualMs = 0,
-    int? SuggestedDelayMs = null,
-    string SuggestionId = "",
-    int SuggestionSupport = 0,
-    SyncBiasHierarchyLevel SuggestionHierarchy = SyncBiasHierarchyLevel.None,
-    bool CanRevertSuggestion = false);
+    string StatusText);
 
 public sealed record SyncGroupViewState(
     SyncRuntimeState RuntimeState,

@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "SOOP MultiSync Lab",
+  "version": "0.2.1",
+  "description": "Synchronize 2-4 SOOP live streams using CDN timing and adaptive group buffering.",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": ["storage", "tabs", "webRequest"],
+  "host_permissions": [
+    "https://play.sooplive.com/*",
+    "https://*.sooplive.com/*",
+    "https://*.sooplivecdn.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SOOP MultiSync Lab",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://play.sooplive.com/*"],
+      "js": ["content.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}

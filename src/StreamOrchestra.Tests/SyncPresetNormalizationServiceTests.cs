@@ -31,39 +31,18 @@ public sealed class SyncPresetNormalizationServiceTests
         var member = Assert.Single(normalized.Members);
         Assert.Equal(2, member.SlotId);
         Assert.Equal(60000, member.ManualDelayMs);
-        Assert.Equal(SyncManualDelaySchema.CurrentVersion, member.DelayModelVersion);
-        Assert.Equal(0, member.AlgorithmPriorMs);
-        Assert.Equal(60000, member.UserResidualMs);
         Assert.Equal("https://play.sooplive.com/channel", member.CalibratedStreamUrl);
     }
 
     [Fact]
-    public void Normalize_MigratesLegacyFinalDelayAndPreservesVersionedComponents()
+    public void Normalize_PreservesManualDelay()
     {
-        var legacy = SyncPresetNormalizationService.Normalize(new SyncGroupPreset
+        var normalized = SyncPresetNormalizationService.Normalize(new SyncGroupPreset
         {
             Members = [new SyncMemberPreset { SlotId = 1, ManualDelayMs = 1200 }]
         });
-        var versioned = SyncPresetNormalizationService.Normalize(new SyncGroupPreset
-        {
-            Members = [new SyncMemberPreset
-            {
-                SlotId = 1,
-                ManualDelayMs = 9999,
-                DelayModelVersion = SyncManualDelaySchema.CurrentVersion,
-                AlgorithmPriorMs = 500,
-                UserResidualMs = 200
-            }]
-        });
 
-        var legacyMember = Assert.Single(legacy.Members);
-        Assert.Equal(0, legacyMember.AlgorithmPriorMs);
-        Assert.Equal(1200, legacyMember.UserResidualMs);
-        Assert.Equal(1200, legacyMember.ManualDelayMs);
-        var versionedMember = Assert.Single(versioned.Members);
-        Assert.Equal(500, versionedMember.AlgorithmPriorMs);
-        Assert.Equal(200, versionedMember.UserResidualMs);
-        Assert.Equal(700, versionedMember.ManualDelayMs);
+        Assert.Equal(1200, Assert.Single(normalized.Members).ManualDelayMs);
     }
 
     [Fact]

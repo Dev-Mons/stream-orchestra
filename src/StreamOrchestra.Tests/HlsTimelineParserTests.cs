@@ -7,7 +7,7 @@ namespace StreamOrchestra.Tests;
 public sealed class HlsTimelineParserTests
 {
     private static readonly DateTimeOffset ObservedAt = DateTimeOffset.Parse("2026-08-18T00:00:30Z");
-    private readonly HlsTimelineParser _parser = new(new SyncTelemetryPrivacy(
+    private readonly HlsTimelineParser _parser = new(new HlsIdentityService(
         Enumerable.Repeat((byte)17, 32).ToArray()));
 
     [Theory]

@@ -12,11 +12,11 @@ public sealed class HlsTimelineParser
     private static readonly Regex ExplicitTimezonePattern = new(
         @"(?:[zZ]|[+-][0-9]{2}:[0-9]{2})\s*$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
-    private readonly SyncTelemetryPrivacy _privacy;
+    private readonly HlsIdentityService _identity;
 
-    public HlsTimelineParser(SyncTelemetryPrivacy? privacy = null)
+    public HlsTimelineParser(HlsIdentityService? identity = null)
     {
-        _privacy = privacy ?? new SyncTelemetryPrivacy();
+        _identity = identity ?? new HlsIdentityService();
     }
 
     public static bool IsHlsPlaylistResource(string? requestUri, string? contentType)
@@ -70,7 +70,7 @@ public sealed class HlsTimelineParser
         }
 
         Uri.TryCreate(request.RequestUri, UriKind.Absolute, out var baseUri);
-        var playlistIdentity = _privacy.CreateUrlIdentity(request.RequestUri);
+        var playlistIdentity = _identity.CreateUrlIdentity(request.RequestUri);
         var variants = new List<HlsVariant>();
         var renditions = new List<HlsMediaRendition>();
         var segments = new List<HlsSegment>();
@@ -114,7 +114,7 @@ public sealed class HlsTimelineParser
                             Bandwidth = ParseLong(Attribute(pendingVariantAttributes, "BANDWIDTH")),
                             ResolutionBucket = NormalizeResolution(Attribute(pendingVariantAttributes, "RESOLUTION")),
                             CodecBucket = BucketCodecs(Attribute(pendingVariantAttributes, "CODECS")),
-                            AudioGroupHash = _privacy.CreateOpaqueIdentity(
+                            AudioGroupHash = _identity.CreateOpaqueIdentity(
                                 "hls-group",
                                 Attribute(pendingVariantAttributes, "AUDIO"))
                         });
@@ -187,8 +187,8 @@ public sealed class HlsTimelineParser
                 renditions.Add(new HlsMediaRendition
                 {
                     Kind = ParseRenditionKind(Attribute(attributes, "TYPE")),
-                    GroupHash = _privacy.CreateOpaqueIdentity("hls-group", Attribute(attributes, "GROUP-ID")),
-                    NameHash = _privacy.CreateOpaqueIdentity("hls-rendition", Attribute(attributes, "NAME")),
+                    GroupHash = _identity.CreateOpaqueIdentity("hls-group", Attribute(attributes, "GROUP-ID")),
+                    NameHash = _identity.CreateOpaqueIdentity("hls-rendition", Attribute(attributes, "NAME")),
                     Resource = string.IsNullOrWhiteSpace(uriText)
                         ? null
                         : CreateResource(baseUri, uriText, null, warnings),
@@ -536,7 +536,7 @@ public sealed class HlsTimelineParser
             .LastOrDefault(segment => segment.DiscontinuitySequence == lastDiscontinuity &&
                                       !string.IsNullOrWhiteSpace(segment.ProgramDateTimeText))
             ?.ProgramDateTimeText;
-        var tailProgramDateTimeHash = _privacy.CreateOpaqueIdentity(
+        var tailProgramDateTimeHash = _identity.CreateOpaqueIdentity(
             "hls-tail-pdt",
             tailProgramDateTime);
         var canonical = string.Join(
@@ -550,7 +550,7 @@ public sealed class HlsTimelineParser
             tailProgramDateTimeHash);
         return new HlsProgressKey
         {
-            PersistenceHash = _privacy.CreateOpaqueIdentity("hls-progress", canonical),
+            PersistenceHash = _identity.CreateOpaqueIdentity("hls-progress", canonical),
             LastMediaSequence = lastMediaSequence,
             LastDiscontinuitySequence = lastDiscontinuity,
             LastPartIndex = lastPartIndex,
@@ -603,7 +603,7 @@ public sealed class HlsTimelineParser
 
         var builder = new UriBuilder(resolved) { Fragment = "" };
         var runtimeUri = builder.Uri.AbsoluteUri;
-        return new HlsResourceReference(runtimeUri, _privacy.CreateUrlIdentity(runtimeUri), byteRange);
+        return new HlsResourceReference(runtimeUri, _identity.CreateUrlIdentity(runtimeUri), byteRange);
     }
 
     private static void ValidatePdtContinuity(

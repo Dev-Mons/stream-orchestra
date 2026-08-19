@@ -256,8 +256,7 @@ public partial class MainWindow : Window
             var slotView = new StreamSlotView(
                 configuration,
                 _profileService,
-                _streamNavigationService,
-                _syncTelemetrySessionController);
+                _streamNavigationService);
             slotView.SlotSelected += SelectSlot;
             slotView.PlaybackStateChanged += _ => QueueAppStateSave();
             slotView.VolumeChanged += _ => QueueAppStateSave();
@@ -1795,12 +1794,6 @@ public partial class MainWindow : Window
     {
         _updateCancellationTokenSource.Cancel();
         _appStateSaveTimer?.Stop();
-        _syncTelemetrySessionController.StopSession();
-        _syncTelemetrySessionController.DeleteCompletedSession();
-        foreach (var slot in _slots)
-        {
-            slot.DisposeSyncTelemetryResources();
-        }
     }
 
     private async void ApplyQualityPolicyButton_Click(object sender, RoutedEventArgs e)
@@ -2133,11 +2126,6 @@ public partial class MainWindow : Window
 
         DiagnosticsTextBlock.Text =
             $"WebView2 {snapshot.WebViewProcessCount} proc | {cpuText} | WS {snapshot.WebViewWorkingSetMegabytes:F0} MB | Private {snapshot.WebViewPrivateMemoryMegabytes:F0} MB";
-
-        if (SyncPopup.IsOpen)
-        {
-            RefreshSyncTelemetryUi();
-        }
     }
 
     // ===== 커스텀 타이틀바(WindowChrome) 창 제어 =====

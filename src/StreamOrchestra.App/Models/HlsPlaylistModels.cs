@@ -38,6 +38,12 @@ public enum HlsEpochResetReason
     SequenceRollback
 }
 
+public sealed record SyncUrlIdentity(
+    string SchemeBucket,
+    string HostBucket,
+    string PathBucket,
+    string PersistenceHash);
+
 public sealed record HlsByteRange(long Length, long? Offset)
 {
     public bool IsValid => Length > 0 && Offset is null or >= 0;
@@ -46,8 +52,8 @@ public sealed record HlsByteRange(long Length, long? Offset)
 }
 
 /// <summary>
-/// RuntimeUri is retained only in memory so WebView responses can be correlated. PersistenceIdentity is
-/// the only form allowed in diagnostics or telemetry.
+/// RuntimeUri is retained only in memory while the playlist is parsed. PersistenceIdentity is used for
+/// internal comparisons without retaining signed query strings.
 /// </summary>
 public sealed record HlsResourceReference(
     [property: JsonIgnore] string RuntimeUri,

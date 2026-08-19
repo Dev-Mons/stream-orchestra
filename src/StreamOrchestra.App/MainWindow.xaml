@@ -489,7 +489,7 @@
                                Margin="0,5,0,0"
                                Foreground="#AEB8C4"
                                FontSize="10"
-                               Text="모드 · 기존 제어 활성 / estimator·interval shadow / 로컬 prior suggestion-only / closed-loop disabled / CDP 진단 opt-in 전용 / hard seek gate 잠김"
+                               Text="라이브 엣지 기준 자동 보정 · 수동 지연은 즉시 위치 이동"
                                TextWrapping="Wrap" />
 
                     <Grid Margin="0,10,0,0">
@@ -523,56 +523,6 @@
 
                     <Separator Margin="0,12,0,10"
                                Background="#354150" />
-                    <TextBlock Text="진단 수집 (명시적 opt-in)"
-                               Foreground="#F3F6FA"
-                               FontSize="12"
-                               FontWeight="Bold" />
-                    <TextBlock x:Name="SyncTelemetryStatusText"
-                               Margin="0,5,0,0"
-                               Foreground="#8FC7FF"
-                               FontSize="11"
-                               Text="꺼짐 · 사용자가 시작하기 전에는 수집하지 않음"
-                               TextWrapping="Wrap" />
-                    <TextBlock Margin="0,5,0,0"
-                               Foreground="#AEB8C4"
-                               FontSize="10"
-                               Text="목적별 HMAC 식별자, passive CDP request lifecycle bucket과 HLS/player·추정·결정 상태만 파일럿 세션에서 카테고리별 최대 8,192개까지 메모리에 보관합니다. 연계 키는 Windows 사용자 보호로 저장되고 삭제 시 회전합니다. cookie·token·원본 URL/manifest/header/body·영상·음성은 수집하지 않으며 자동 업로드/저장도 하지 않습니다."
-                               TextWrapping="Wrap" />
-                    <TextBlock Margin="0,5,0,0"
-                               Foreground="#D5B56D"
-                               FontSize="10"
-                               Text="유효 파일럿 단위: 공개 SOOP 플레이어 2개 이상을 같은 그룹에서 총 17분 이상 유지합니다. 처음 2분은 warm-up으로 분석에서 제외되며, 짧은 수집본도 내보낼 수 있지만 primary 표본에는 포함되지 않습니다."
-                               TextWrapping="Wrap" />
-                    <WrapPanel Margin="0,7,0,0">
-                        <Button x:Name="SyncTelemetryStartStopButton"
-                                MinHeight="25"
-                                Padding="7,2"
-                                Content="수집 시작"
-                                ToolTip="수집 항목과 보관 정책을 확인하고 이번 진단 세션을 시작하거나 종료합니다."
-                                AutomationProperties.Name="동기화 진단 수집 시작 또는 종료"
-                                Click="SyncTelemetryStartStopButton_Click" />
-                        <Button x:Name="SyncTelemetryExportButton"
-                                Margin="5,0,0,0"
-                                MinHeight="25"
-                                Padding="7,2"
-                                Content="수집본 내보내기"
-                                IsEnabled="False"
-                                ToolTip="종료한 세션의 privacy-safe JSON을 사용자가 고른 위치에 저장합니다."
-                                AutomationProperties.Name="종료한 동기화 진단 수집본 내보내기"
-                                Click="SyncTelemetryExportButton_Click" />
-                        <Button x:Name="SyncTelemetryDeleteButton"
-                                Margin="5,0,0,0"
-                                MinHeight="25"
-                                Padding="7,2"
-                                Content="수집본 삭제"
-                                IsEnabled="False"
-                                ToolTip="종료 세션 수집본과 세션 간 연계용 HMAC 키를 삭제해 이후 식별자를 회전합니다."
-                                AutomationProperties.Name="종료한 동기화 진단 수집본 삭제"
-                                Click="SyncTelemetryDeleteButton_Click" />
-                    </WrapPanel>
-
-                    <Separator Margin="0,12,0,10"
-                               Background="#354150" />
                     <TextBlock Text="동기화 그룹"
                                Foreground="#F3F6FA"
                                FontSize="12"
@@ -582,28 +532,6 @@
                                   VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="SyncMembersPanel" />
                     </ScrollViewer>
-                    <Button x:Name="SyncConfirmAlignmentButton"
-                            Margin="0,7,0,0"
-                            MinHeight="27"
-                            Padding="8,3"
-                            Content="현재 수동 정렬 확인"
-                            ToolTip="현재 보정으로 방송이 정렬됐음을 명시적으로 확인해 로컬 제안 학습에 사용합니다."
-                            AutomationProperties.Name="현재 수동 정렬을 로컬 학습값으로 확인"
-                            Click="SyncConfirmAlignmentButton_Click" />
-                    <StackPanel Margin="0,5,0,0" Orientation="Horizontal">
-                        <Button x:Name="SyncExportBiasButton"
-                                MinHeight="25"
-                                Padding="7,2"
-                                Content="학습 데이터 내보내기"
-                                Click="SyncExportBiasButton_Click" />
-                        <Button x:Name="SyncDeleteBiasButton"
-                                Margin="5,0,0,0"
-                                MinHeight="25"
-                                Padding="7,2"
-                                Content="학습 데이터 삭제"
-                                Click="SyncDeleteBiasButton_Click" />
-                    </StackPanel>
-
                     <Separator Margin="0,12,0,10"
                                Background="#354150" />
                     <TextBlock Text="추가 가능한 SOOP 방송"

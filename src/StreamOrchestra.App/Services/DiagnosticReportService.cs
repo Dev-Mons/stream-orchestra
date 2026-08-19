@@ -20,22 +20,17 @@ public sealed class DiagnosticReportService
     private readonly ExternalBrowserLaunchPlanService _externalBrowserLaunchPlanService;
     private readonly ExternalBrowserLaunchScriptService _externalBrowserLaunchScriptService;
     private readonly FeasibilityAuditService _feasibilityAuditService;
-    private readonly ISyncTelemetryRecorder _syncTelemetryRecorder;
-    private readonly SyncTelemetryPrivacy _telemetryPrivacy;
 
     public DiagnosticReportService(
         ExternalBrowserDiscoveryService? externalBrowserDiscoveryService = null,
         ExternalBrowserLaunchPlanService? externalBrowserLaunchPlanService = null,
         ExternalBrowserLaunchScriptService? externalBrowserLaunchScriptService = null,
-        FeasibilityAuditService? feasibilityAuditService = null,
-        ISyncTelemetryRecorder? syncTelemetryRecorder = null)
+        FeasibilityAuditService? feasibilityAuditService = null)
     {
         _externalBrowserDiscoveryService = externalBrowserDiscoveryService;
         _externalBrowserLaunchPlanService = externalBrowserLaunchPlanService ?? new ExternalBrowserLaunchPlanService();
         _externalBrowserLaunchScriptService = externalBrowserLaunchScriptService ?? new ExternalBrowserLaunchScriptService();
         _feasibilityAuditService = feasibilityAuditService ?? new FeasibilityAuditService();
-        _syncTelemetryRecorder = syncTelemetryRecorder ?? SyncTelemetryRecorder.Disabled;
-        _telemetryPrivacy = new SyncTelemetryPrivacy();
     }
 
     public DiagnosticReport CreateReport(
@@ -92,8 +87,7 @@ public sealed class DiagnosticReportService
                 FeasibilityProfileGroupEvidenceService.HasConflictingSameAccountLabels(feasibilityResults),
             FeasibilityDecision = feasibilityDecision,
             FeasibilityAudit = feasibilityAudit,
-            FeasibilitySuggestedRecordShapes = _feasibilityAuditService.CreateSuggestedRecordShapes(feasibilityAudit),
-            SyncTelemetry = _syncTelemetryRecorder.CreateSummary()
+            FeasibilitySuggestedRecordShapes = _feasibilityAuditService.CreateSuggestedRecordShapes(feasibilityAudit)
         };
     }
 
@@ -167,45 +161,6 @@ public sealed class DiagnosticReportService
         return root.ToJsonString(SerializerOptions);
     }
 
-    public string? SaveSyncTelemetrySnapshot(string dataFolder)
-    {
-        if (!_syncTelemetryRecorder.IsEnabled)
-        {
-            return null;
-        }
-
-        var snapshot = _syncTelemetryRecorder.CreateSnapshot();
-        Directory.CreateDirectory(dataFolder);
-        var path = Path.Combine(
-            dataFolder,
-            $"sync-telemetry-{snapshot.GeneratedAtUtc:yyyyMMdd-HHmmss}.json");
-        SavePrivacySafeJson(path, snapshot);
-        return path;
-    }
-
-    public string ExportSyncTelemetrySnapshot(
-        SyncTelemetrySnapshot snapshot,
-        string destinationPath)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
-        if (!snapshot.IsEnabled)
-        {
-            throw new ArgumentException("An enabled telemetry snapshot is required.", nameof(snapshot));
-        }
-
-        if (string.IsNullOrWhiteSpace(destinationPath))
-        {
-            throw new ArgumentException("A destination path is required.", nameof(destinationPath));
-        }
-
-        var path = Path.GetFullPath(destinationPath);
-        var directory = Path.GetDirectoryName(path) ??
-                        throw new ArgumentException("A destination directory is required.", nameof(destinationPath));
-        Directory.CreateDirectory(directory);
-        SavePrivacySafeJson(path, snapshot);
-        return path;
-    }
-
     public string? SaveExternalBrowserFallbackScript(DiagnosticReport report, string dataFolder)
     {
         if (report.ExternalBrowserFallbackPlan is not { CanLaunch: true } plan)
@@ -264,7 +219,7 @@ public sealed class DiagnosticReportService
                 break;
 
             case JsonValue jsonValue when jsonValue.TryGetValue<string>(out var text):
-                jsonValue.ReplaceWith(_telemetryPrivacy.SanitizeDiagnosticText(text));
+                jsonValue.ReplaceWith(DiagnosticTextSanitizer.Sanitize(text));
                 break;
         }
     }

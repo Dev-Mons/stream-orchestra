@@ -12,13 +12,13 @@ public sealed class StreamSyncCoordinatorTests
     [InlineData(500, SyncCommandType.SetRate, 0.99)]
     [InlineData(-500, SyncCommandType.SetRate, 1.01)]
     [InlineData(1000, SyncCommandType.SetRate, 0.98)]
-    [InlineData(1500, SyncCommandType.Seek, 50)]
-    public void CalculateCorrection_UsesDeadbandProportionalRateAndHardSeek(
+    [InlineData(1500, SyncCommandType.SetRate, 0.98)]
+    public void CalculateCorrection_UsesDeadbandAndProportionalRate(
         double errorMs,
         SyncCommandType expectedType,
         double expectedValue)
     {
-        var command = StreamSyncCoordinator.CalculateCorrection(errorMs, mediaTarget: 50);
+        var command = StreamSyncCoordinator.CalculateCorrection(errorMs);
 
         Assert.Equal(expectedType, command.Type);
         Assert.Equal(expectedValue, command.Value!.Value, precision: 3);
@@ -55,82 +55,53 @@ public sealed class StreamSyncCoordinatorTests
     }
 
     [Fact]
-    public void BiasSuggestionIsNotAppliedUntilAcceptedAndKeepsResidualSeparate()
+    public async Task Tick_UserDelayImmediatelySeeksInDegradedModeWithoutUnlockingAutomaticSeek()
     {
         var now = DateTimeOffset.UtcNow;
         var first = CreateTarget(1, now, currentTime: 197);
         var second = CreateTarget(2, now, currentTime: 197);
-        var bias = new FakeBiasPriorService();
-        var coordinator = new StreamSyncCoordinator(
-            [first, second],
-            biasPriorService: bias);
+        first.Timeline = null;
+        second.Timeline = null;
+        var coordinator = new StreamSyncCoordinator([first, second]);
         coordinator.AddMember(1);
         coordinator.AddMember(2);
+        await coordinator.StartAsync();
+        first.Commands.Clear();
 
-        var beforeAcceptance = coordinator.CreateViewState(now);
-        Assert.All(beforeAcceptance.Members, member => Assert.Equal(0, member.ManualDelayMs));
-        Assert.Equal(500, beforeAcceptance.Members.Single(member => member.SlotId == 1).SuggestedDelayMs);
+        Assert.True(coordinator.SetManualDelay(1, 3000));
+        await coordinator.TickAsync(now.AddMilliseconds(500));
 
-        Assert.True(coordinator.MarkBiasSuggestionShown(1));
-        Assert.True(coordinator.AcceptBiasSuggestion(1));
-        var accepted = Assert.Single(coordinator.CapturePreset().Members.Where(member => member.SlotId == 1));
-        Assert.Equal(500, accepted.AlgorithmPriorMs);
-        Assert.Equal(0, accepted.UserResidualMs);
-        Assert.Equal(500, accepted.ManualDelayMs);
+        var userSeek = Assert.Single(first.Commands.Where(command => command.Type == SyncCommandType.Seek));
+        Assert.Equal(192, userSeek.Value!.Value, precision: 3);
 
-        Assert.True(coordinator.SetManualDelay(1, 700));
-        var adjusted = Assert.Single(coordinator.CapturePreset().Members.Where(member => member.SlotId == 1));
-        Assert.Equal(500, adjusted.AlgorithmPriorMs);
-        Assert.Equal(200, adjusted.UserResidualMs);
-        Assert.Equal(700, adjusted.ManualDelayMs);
+        first.Commands.Clear();
+        var nextObservedAt = now.AddSeconds(1);
+        first.Snapshot = AdvanceSnapshot(first.Snapshot!, 198, 201, nextObservedAt);
+        second.Snapshot = AdvanceSnapshot(second.Snapshot!, 198, 201, nextObservedAt);
+        await coordinator.TickAsync(nextObservedAt);
 
-        Assert.True(coordinator.RevertBiasSuggestion(1));
-        var reverted = Assert.Single(coordinator.CapturePreset().Members.Where(member => member.SlotId == 1));
-        Assert.Equal(0, reverted.AlgorithmPriorMs);
-        Assert.Equal(0, reverted.UserResidualMs);
-        Assert.Equal(0, reverted.ManualDelayMs);
-
-        coordinator.CreateViewState(now);
-        Assert.True(coordinator.RejectBiasSuggestion(2));
-        Assert.True(coordinator.ConfirmCurrentManualAlignment());
-        Assert.Contains(SyncBiasManualEventKind.SuggestionShown, bias.Events);
-        Assert.Contains(SyncBiasManualEventKind.SuggestionAccepted, bias.Events);
-        Assert.Contains(SyncBiasManualEventKind.SuggestionReverted, bias.Events);
-        Assert.Contains(SyncBiasManualEventKind.SuggestionRejected, bias.Events);
-        Assert.Equal(2, bias.ConfirmedMembers.Count);
+        Assert.DoesNotContain(first.Commands, command => command.Type == SyncCommandType.Seek);
+        Assert.Contains(first.Commands, command =>
+            command.Type == SyncCommandType.SetRate && command.Value == 0.98);
     }
 
     [Fact]
-    public async Task Tick_RecordsLegacyAndIntervalDecisionsAsAPairedShadowOnlyTrace()
+    public async Task Start_UserDelayPresetImmediatelySeeksInDegradedMode()
     {
         var now = DateTimeOffset.UtcNow;
         var first = CreateTarget(1, now, currentTime: 197);
         var second = CreateTarget(2, now, currentTime: 197);
-        var recorder = SyncTelemetryRecorder.CreateEnabled(new SyncTelemetryRecorderOptions
-        {
-            SessionId = "interval-shadow-session",
-            IdentityKey = Enumerable.Repeat((byte)31, 32).ToArray()
-        });
-        var coordinator = new StreamSyncCoordinator(
-            [first, second],
-            syncTelemetryRecorder: recorder);
+        first.Timeline = null;
+        second.Timeline = null;
+        var coordinator = new StreamSyncCoordinator([first, second]);
         coordinator.AddMember(1);
         coordinator.AddMember(2);
+        Assert.True(coordinator.SetManualDelay(1, 3000));
 
-        await coordinator.StartAsync();
+        Assert.True(await coordinator.StartAsync());
 
-        Assert.NotNull(coordinator.LatestIntervalShadowResult);
-        Assert.True(coordinator.LatestIntervalShadowResult!.IsShadowOnly);
-        var decisions = recorder.CreateSnapshot().Decisions;
-        Assert.Equal(2, decisions.Count);
-        Assert.All(decisions, decision =>
-        {
-            Assert.Equal("legacy", decision.ExistingController.PolicyId);
-            Assert.Equal("interval-v1", decision.CandidateController.PolicyId);
-            Assert.True(decision.CandidateIsShadowOnly);
-            Assert.Equal("low-confidence", decision.CandidateController.Reason);
-            Assert.False(decision.CandidateController.HardSeekAllowed);
-        });
+        var userSeek = Assert.Single(first.Commands.Where(command => command.Type == SyncCommandType.Seek));
+        Assert.Equal(192, userSeek.Value!.Value, precision: 3);
     }
 
     [Fact]
@@ -229,84 +200,11 @@ public sealed class StreamSyncCoordinatorTests
     }
 
     [Fact]
-    public async Task Tick_RequiresPersistentLargeDriftBeforeHardSeek()
-    {
-        var now = DateTimeOffset.UtcNow;
-        var first = CreateTarget(1, now, currentTime: 197);
-        var second = CreateTarget(2, now, currentTime: 197);
-        var coordinator = new StreamSyncCoordinator([first, second]);
-        coordinator.AddMember(1);
-        coordinator.AddMember(2);
-        await coordinator.StartAsync();
-        first.Commands.Clear();
-
-        for (var tick = 1; tick <= 2; tick++)
-        {
-            var observedAt = now.AddMilliseconds(tick * 500);
-            first.Snapshot = AdvanceSnapshot(
-                first.Snapshot!, 199 + tick * 0.5, 200 + tick * 0.5, observedAt);
-            second.Snapshot = AdvanceSnapshot(
-                second.Snapshot!, 197 + tick * 0.5, 200 + tick * 0.5, observedAt);
-            first.Timeline = first.Timeline! with { ProgressKeyHash = $"hard-seek-first-{tick}" };
-            second.Timeline = second.Timeline! with { ProgressKeyHash = $"hard-seek-second-{tick}" };
-            await coordinator.TickAsync(observedAt);
-        }
-
-        Assert.DoesNotContain(first.Commands, command => command.Type == SyncCommandType.Seek);
-
-        var thirdObservedAt = now.AddMilliseconds(1500);
-        first.Snapshot = AdvanceSnapshot(first.Snapshot!, 200.5, 201.5, thirdObservedAt);
-        second.Snapshot = AdvanceSnapshot(second.Snapshot!, 198.5, 201.5, thirdObservedAt);
-        first.Timeline = first.Timeline! with { ProgressKeyHash = "first-progress-3" };
-        second.Timeline = second.Timeline! with { ProgressKeyHash = "second-progress-3" };
-        await coordinator.TickAsync(thirdObservedAt);
-
-        Assert.Contains(first.Commands, command => command.Type == SyncCommandType.Seek);
-    }
-
-    [Fact]
-    public async Task Tick_DoesNotCountRepeatedPlaylistProjectionAsIndependentSeekEvidence()
-    {
-        var now = DateTimeOffset.UtcNow;
-        var first = CreateTarget(1, now, currentTime: 197);
-        var second = CreateTarget(2, now, currentTime: 197);
-        var coordinator = new StreamSyncCoordinator([first, second]);
-        coordinator.AddMember(1);
-        coordinator.AddMember(2);
-        await coordinator.StartAsync();
-        first.Commands.Clear();
-
-        for (var tick = 1; tick <= 6; tick++)
-        {
-            var observedAt = now.AddMilliseconds(tick * 500);
-            first.Snapshot = AdvanceSnapshot(
-                first.Snapshot!, 199 + tick * 0.5, 200 + tick * 0.5, observedAt);
-            second.Snapshot = AdvanceSnapshot(
-                second.Snapshot!, 197 + tick * 0.5, 200 + tick * 0.5, observedAt);
-            await coordinator.TickAsync(observedAt);
-        }
-
-        Assert.DoesNotContain(first.Commands, command => command.Type == SyncCommandType.Seek);
-    }
-
-    [Theory]
-    [InlineData(false, SyncNetworkObservationCapability.CdpCorrelated, SyncTimelineSource.ProgramDateTime)]
-    [InlineData(true, SyncNetworkObservationCapability.WebResourceResponseReduced, SyncTimelineSource.ProgramDateTime)]
-    [InlineData(true, SyncNetworkObservationCapability.CdpCorrelated, SyncTimelineSource.CdnDate)]
-    public async Task Tick_BlocksHardSeekForUnstableOrReducedTimeline(
-        bool isEpochStable,
-        SyncNetworkObservationCapability capability,
-        SyncTimelineSource source)
+    public async Task Tick_LargeDriftUsesRateCorrectionWithoutAutomaticSeek()
     {
         var now = DateTimeOffset.UtcNow;
         var first = CreateTarget(1, now, currentTime: 199);
         var second = CreateTarget(2, now, currentTime: 197);
-        first.Timeline = first.Timeline! with
-        {
-            IsEpochStable = isEpochStable,
-            NetworkCapability = capability,
-            Source = source
-        };
         var coordinator = new StreamSyncCoordinator([first, second]);
         coordinator.AddMember(1);
         coordinator.AddMember(2);
@@ -314,72 +212,8 @@ public sealed class StreamSyncCoordinatorTests
         await coordinator.StartAsync();
 
         Assert.DoesNotContain(first.Commands, command => command.Type == SyncCommandType.Seek);
-        Assert.Contains(first.Commands, command => command.Type == SyncCommandType.SetRate);
-    }
-
-    [Fact]
-    public async Task Tick_BlocksHardSeekUntilCdpCoverageGateIsExplicitlyPassed()
-    {
-        var now = DateTimeOffset.UtcNow;
-        var first = CreateTarget(1, now, currentTime: 199);
-        var second = CreateTarget(2, now, currentTime: 197);
-        first.Timeline = first.Timeline! with { CdpHardSeekGatePassed = false };
-        var coordinator = new StreamSyncCoordinator([first, second]);
-        coordinator.AddMember(1);
-        coordinator.AddMember(2);
-
-        await coordinator.StartAsync();
-
-        Assert.DoesNotContain(first.Commands, command => command.Type == SyncCommandType.Seek);
-        Assert.Contains(first.Commands, command => command.Type == SyncCommandType.SetRate);
-    }
-
-    [Theory]
-    [InlineData(15000, true)]
-    [InlineData(15001, false)]
-    public async Task Tick_UsesMonotonicTargetDurationFreshnessForHardSeek(
-        long ageMilliseconds,
-        bool expectsSeek)
-    {
-        const long frequency = 1000;
-        const long monotonicNow = 100000;
-        var now = DateTimeOffset.UtcNow;
-        var first = CreateTarget(1, now, currentTime: 199);
-        var second = CreateTarget(2, now, currentTime: 197);
-        first.Snapshot = first.Snapshot! with
-        {
-            HostReceivedMonotonicTicks = monotonicNow,
-            HostMonotonicFrequency = frequency
-        };
-        second.Snapshot = second.Snapshot! with
-        {
-            HostReceivedMonotonicTicks = monotonicNow,
-            HostMonotonicFrequency = frequency
-        };
-        first.Timeline = first.Timeline! with
-        {
-            ObservedMonotonicTicks = monotonicNow - ageMilliseconds,
-            MonotonicFrequency = frequency,
-            StaleAfterSeconds = 15
-        };
-        second.Timeline = second.Timeline! with
-        {
-            ObservedMonotonicTicks = monotonicNow - ageMilliseconds,
-            MonotonicFrequency = frequency,
-            StaleAfterSeconds = 15
-        };
-        var coordinator = new StreamSyncCoordinator(
-            [first, second],
-            () => monotonicNow,
-            frequency);
-        coordinator.AddMember(1);
-        coordinator.AddMember(2);
-
-        await coordinator.StartAsync();
-
-        Assert.Equal(
-            expectsSeek,
-            first.Commands.Any(command => command.Type == SyncCommandType.Seek));
+        Assert.Contains(first.Commands, command =>
+            command.Type == SyncCommandType.SetRate && command.Value == 0.98);
     }
 
     [Fact]
@@ -705,9 +539,7 @@ public sealed class StreamSyncCoordinatorTests
                 ProgressKeyHash = $"progress-{slotId}-0",
                 SourceEpoch = 1,
                 IsEpochStable = true,
-                IndependentEvidenceCount = 3,
-                NetworkCapability = SyncNetworkObservationCapability.CdpCorrelated,
-                CdpHardSeekGatePassed = true
+                IndependentEvidenceCount = 3
             }
         };
     }
@@ -761,10 +593,6 @@ public sealed class StreamSyncCoordinatorTests
 
         public string SyncDisplayName => CurrentStreamName;
 
-        public string SyncQualityBucket => "1080p";
-
-        public string SyncBroadcastSessionIdentity => $"broadcast-{SlotId}";
-
         public SyncMemberSnapshot? Snapshot { get; set; }
 
         public TimelineObservation? Timeline { get; set; }
@@ -813,64 +641,4 @@ public sealed class StreamSyncCoordinatorTests
         }
     }
 
-    private sealed class FakeBiasPriorService : ISyncBiasPriorService
-    {
-        public bool IsEnabled => true;
-
-        public List<SyncBiasManualEventKind> Events { get; } = [];
-
-        public IReadOnlyList<SyncBiasGroupMember> ConfirmedMembers { get; private set; } = [];
-
-        public SyncBiasContext? CreateContext(
-            string? channelIdentity,
-            string? qualityBucket,
-            string? cdnBucket) => new(
-            $"channel-{channelIdentity?.Split('/').LastOrDefault()}",
-            qualityBucket ?? "unknown",
-            cdnBucket ?? "unknown");
-
-        public IReadOnlyDictionary<int, SyncBiasSuggestion> GetCompatibleGroupSuggestions(
-            IReadOnlyList<SyncBiasGroupMember> members,
-            DateTimeOffset nowUtc) => members.Count < 2
-            ? new Dictionary<int, SyncBiasSuggestion>()
-            : members.ToDictionary(member => member.SlotId, member => new SyncBiasSuggestion
-            {
-                SuggestionId = $"suggestion-{member.SlotId}",
-                SuggestedDelayMilliseconds = member.SlotId == 1 ? 500 : -500,
-                HierarchyLevel = SyncBiasHierarchyLevel.Channel,
-                ComponentId = "component",
-                IndependentSessionSupport = 3,
-                IsSuggestionOnly = true
-            });
-
-        public bool RecordAlignmentConfirmation(
-            IReadOnlyList<SyncBiasGroupMember> members,
-            DateTimeOffset occurredAtUtc)
-        {
-            ConfirmedMembers = members;
-            Events.Add(SyncBiasManualEventKind.AlignmentConfirmed);
-            return members.Count >= 2;
-        }
-
-        public void RecordSuggestionEvent(
-            SyncBiasGroupMember member,
-            SyncBiasSuggestion suggestion,
-            SyncBiasManualEventKind eventKind,
-            SyncManualDelayComponents components,
-            DateTimeOffset occurredAtUtc) => Events.Add(eventKind);
-
-        public void RecordUserAdjustment(
-            SyncBiasGroupMember member,
-            SyncManualDelayComponents previous,
-            SyncManualDelayComponents current,
-            DateTimeOffset occurredAtUtc) => Events.Add(SyncBiasManualEventKind.UserAdjusted);
-
-        public void DeleteAll()
-        {
-        }
-
-        public void ExportPrivacySafe(string destinationPath)
-        {
-        }
-    }
 }

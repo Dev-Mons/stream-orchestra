@@ -12,10 +12,6 @@ public interface IStreamSyncTarget
 
     string SyncDisplayName { get; }
 
-    string SyncQualityBucket { get; }
-
-    string SyncBroadcastSessionIdentity { get; }
-
     SyncMemberSnapshot? LatestSyncSnapshot { get; }
 
     TimelineObservation? LatestTimeline { get; }

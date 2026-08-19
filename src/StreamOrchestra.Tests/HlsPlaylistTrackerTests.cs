@@ -6,7 +6,7 @@ namespace StreamOrchestra.Tests;
 public sealed class HlsPlaylistTrackerTests
 {
     private const long Frequency = 1000;
-    private readonly HlsTimelineParser _parser = new(new SyncTelemetryPrivacy(
+    private readonly HlsTimelineParser _parser = new(new HlsIdentityService(
         Enumerable.Repeat((byte)29, 32).ToArray()));
 
     [Fact]

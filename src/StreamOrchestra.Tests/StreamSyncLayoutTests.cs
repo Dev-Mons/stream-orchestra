@@ -15,36 +15,8 @@ public sealed class StreamSyncLayoutTests
         Assert.Equal("SyncStartStopButton_Click", Attribute(FindByName(document, "SyncStartStopButton"), "Click"));
         Assert.NotNull(FindByName(document, "SyncMembersPanel"));
         Assert.NotNull(FindByName(document, "SyncAvailablePanel"));
-        Assert.Equal(
-            "SyncConfirmAlignmentButton_Click",
-            Attribute(FindByName(document, "SyncConfirmAlignmentButton"), "Click"));
-        Assert.Equal(
-            "SyncExportBiasButton_Click",
-            Attribute(FindByName(document, "SyncExportBiasButton"), "Click"));
-        Assert.Equal(
-            "SyncDeleteBiasButton_Click",
-            Attribute(FindByName(document, "SyncDeleteBiasButton"), "Click"));
-        Assert.Equal(
-            "SyncTelemetryStartStopButton_Click",
-            Attribute(FindByName(document, "SyncTelemetryStartStopButton"), "Click"));
-        Assert.Equal(
-            "SyncTelemetryExportButton_Click",
-            Attribute(FindByName(document, "SyncTelemetryExportButton"), "Click"));
-        Assert.Equal(
-            "SyncTelemetryDeleteButton_Click",
-            Attribute(FindByName(document, "SyncTelemetryDeleteButton"), "Click"));
-        Assert.Equal("False", Attribute(FindByName(document, "SyncTelemetryExportButton"), "IsEnabled"));
-        Assert.Equal("False", Attribute(FindByName(document, "SyncTelemetryDeleteButton"), "IsEnabled"));
         Assert.Contains(
-            "사용자가 시작하기 전에는 수집하지 않음",
-            Attribute(FindByName(document, "SyncTelemetryStatusText"), "Text"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "closed-loop disabled",
-            Attribute(FindByName(document, "SyncControlModeText"), "Text"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "hard seek gate 잠김",
+            "수동 지연은 즉시 위치 이동",
             Attribute(FindByName(document, "SyncControlModeText"), "Text"),
             StringComparison.Ordinal);
 
@@ -59,22 +31,14 @@ public sealed class StreamSyncLayoutTests
         Assert.Contains("Text = member.StreamName", code, StringComparison.Ordinal);
         Assert.Contains("Text = slot.SyncDisplayName", code, StringComparison.Ordinal);
         Assert.DoesNotContain("슬롯 {member.SlotId}", code, StringComparison.Ordinal);
-        Assert.Contains("자동 적용 안 됨", code, StringComparison.Ordinal);
-        Assert.Contains("AlgorithmPriorMs", code, StringComparison.Ordinal);
-        Assert.Contains("SyncTelemetrySessionController", code, StringComparison.Ordinal);
-        Assert.Contains("MessageBoxButton.YesNo", code, StringComparison.Ordinal);
-        Assert.Contains("자동 업로드와 자동 파일 저장은 없으며", code, StringComparison.Ordinal);
-        Assert.Contains("HMAC 키만 현재 Windows 사용자 보호로 로컬에 남고", code, StringComparison.Ordinal);
-        Assert.Contains("_syncTelemetryIdentityKeyStore?.Exists", code, StringComparison.Ordinal);
-        Assert.Contains("passive CDP request lifecycle bucket", code, StringComparison.Ordinal);
-        Assert.Contains("총 17분 이상", code, StringComparison.Ordinal);
-        Assert.Contains("처음 2분은 warm-up", code, StringComparison.Ordinal);
-
-        Assert.Contains(
-            document.Descendants(),
-            element => Attribute(element, "Text")?.Contains(
-                "유효 파일럿 단위",
-                StringComparison.Ordinal) == true);
+        Assert.DoesNotContain("학습 데이터", document.ToString(), StringComparison.Ordinal);
+        Assert.Contains("SyncPopup.Closed +=", code, StringComparison.Ordinal);
+        Assert.Contains("Deactivated += (_, _) => SyncPopup.IsOpen = false", code, StringComparison.Ordinal);
+        Assert.Contains("SetSyncBadgePresentationEnabled(true)", code, StringComparison.Ordinal);
+        Assert.Contains("SyncPopup.IsOpen = shouldOpen", code, StringComparison.Ordinal);
+        Assert.Contains("QueueSyncControlPopupToFront", code, StringComparison.Ordinal);
+        Assert.Contains("SyncPopupHwndTopmost", code, StringComparison.Ordinal);
+        Assert.Contains("SetSyncControlPopupWindowPos", code, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -98,32 +62,41 @@ public sealed class StreamSyncLayoutTests
         Assert.Contains("requestVideoFrameCallback", bridgeCode, StringComparison.Ordinal);
         Assert.Contains("new WeakMap()", bridgeCode, StringComparison.Ordinal);
         Assert.Contains("sourceVideo !== selectedVideo", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("playerEventSequence: state.eventSequence", bridgeCode, StringComparison.Ordinal);
         Assert.Contains("frameAgeMilliseconds", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("getVideoPlaybackQuality", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("navigator.connection?.effectiveType", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("networkBucket,", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("NormalizeNetworkBucket(message.NetworkBucket)", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("snapshot.NetworkBucket", bridgeCode, StringComparison.Ordinal);
-        Assert.DoesNotContain("navigator.connection?.downlink", bridgeCode, StringComparison.Ordinal);
-        Assert.DoesNotContain("navigator.connection?.rtt", bridgeCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("getVideoPlaybackQuality", bridgeCode, StringComparison.Ordinal);
+        Assert.DoesNotContain("navigator.connection", bridgeCode, StringComparison.Ordinal);
         Assert.Contains("[\"waiting\", \"stalled\", \"error\", \"seeking\", \"seeked\", \"ratechange\"]", bridgeCode, StringComparison.Ordinal);
         Assert.Contains("stream-sync-command-result", bridgeCode, StringComparison.Ordinal);
         Assert.Contains("seeked-timeout", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("WebResourceResponseReduced", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("Network.enable", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("Network.disable", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("Network.requestWillBeSent", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("Network.responseReceived", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("Network.loadingFinished", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("Network.loadingFailed", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("SyncNetworkObservationCapability.CdpCorrelated", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("CdpHardSeekGatePassed = false", bridgeCode, StringComparison.Ordinal);
-        Assert.Contains("SyncPlayerEventKind.RateChange", bridgeCode, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "snapshot.EventKind != SyncPlayerEventKind.Sample",
-            bridgeCode,
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("Network.enable", bridgeCode, StringComparison.Ordinal);
+        Assert.Contains("_isSyncBadgePresentationEnabled", bridgeCode, StringComparison.Ordinal);
+        Assert.Contains("SetSyncBadgePresentationEnabled", bridgeCode, StringComparison.Ordinal);
+        Assert.Contains("SetPopupNotTopmost(SyncStatusPopup)", bridgeCode, StringComparison.Ordinal);
+        Assert.Contains("QueueSyncBadgeZOrderCorrection", bridgeCode, StringComparison.Ordinal);
+
+        var slotCode = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+        Assert.Contains("HwndNotTopmost", slotCode, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("rate-assigned", "rate-assigned")]
+    [InlineData("seek-assigned", "seek-assigned")]
+    [InlineData("pause-requested", "pause-requested")]
+    [InlineData("resume-requested", "resume-requested")]
+    [InlineData("reset-rate-assigned", "reset-rate-assigned")]
+    [InlineData(" RATE-ASSIGNED ", "rate-assigned")]
+    [InlineData("unexpected-outcome", "command-failed")]
+    [InlineData(null, "command-failed")]
+    public void StreamSlotView_PreservesAppliedCommandSuccessOutcomes(
+        string? outcome,
+        string expected)
+    {
+        var method = typeof(StreamOrchestra.App.Views.StreamSlotView).GetMethod(
+            "NormalizeCommandOutcome",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        Assert.NotNull(method);
+        Assert.Equal(expected, method!.Invoke(null, [outcome]));
     }
 
     private static XElement FindByName(XDocument document, string name)

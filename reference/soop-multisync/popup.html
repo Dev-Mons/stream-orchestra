@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SOOP MultiSync</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>SOOP MultiSync</h1>
+        <p>CDN 기준 그룹 동기화 실험판</p>
+      </div>
+      <button id="toggle" class="toggle">시작</button>
+    </header>
+
+    <section class="controls">
+      <label>
+        안전 딜레이
+        <input id="safety" type="range" min="1500" max="15000" step="100" value="7000">
+        <span id="safetyText">7.0초</span>
+      </label>
+    </section>
+
+    <section class="discovery">
+      <div class="section-title">
+        <strong>감지된 SOOP 방송</strong>
+        <button id="addAll" class="small">모두 추가</button>
+      </div>
+      <div id="available" class="available"></div>
+    </section>
+
+    <div id="notice" role="status"></div>
+    <section id="members" class="members"></section>
+
+    <footer>
+      <span id="count">0/4</span>
+      <span>공통 신호가 없으면 CDN 기준을 유지합니다.</span>
+    </footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
