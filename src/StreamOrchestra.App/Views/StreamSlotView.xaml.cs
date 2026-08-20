@@ -1580,8 +1580,10 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       box-sizing: border-box !important;
     }
 
-    body.screen_mode #webplayer video,
-    body.fullScreen_mode #webplayer video {
+    /* SOOP also keeps a hidden #pipMedia dummy video next to #livePlayer. Never promote every
+       video here: forcing that dummy to display makes it cover the live stream with black. */
+    body.screen_mode #webplayer video#livePlayer,
+    body.fullScreen_mode #webplayer video#livePlayer {
       display: block !important;
       width: 100% !important;
       height: 100% !important;

@@ -389,6 +389,17 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
+    public void CodeBehind_DoesNotForceHiddenSoopPipMediaVisible()
+    {
+        var text = GetPlaybackViewportScript();
+
+        Assert.Contains("body.screen_mode #webplayer video#livePlayer", text);
+        Assert.Contains("body.fullScreen_mode #webplayer video#livePlayer", text);
+        Assert.DoesNotContain("body.screen_mode #webplayer video,", text);
+        Assert.Contains("hidden #pipMedia dummy video", text);
+    }
+
+    [Fact]
     public void CodeBehind_RetriesSoopFullscreenUntilLatePlayerControlsExist()
     {
         var text = GetPlaybackViewportScript();
