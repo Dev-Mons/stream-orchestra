@@ -118,7 +118,8 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="2"
+        <Grid x:Name="BrowserHost"
+              Grid.Row="2"
               Background="#05070A">
             <wv2:WebView2 x:Name="Browser" />
             <Border x:Name="InitializationOverlay"

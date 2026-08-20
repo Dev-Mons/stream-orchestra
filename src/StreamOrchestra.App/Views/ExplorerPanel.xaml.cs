@@ -11,6 +11,8 @@ public partial class ExplorerPanel : UserControl
 {
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
+    private readonly SemaphoreSlim _initializationGate = new(1, 1);
+    private readonly SemaphoreSlim _processRecoveryGate = new(1, 1);
     private bool _isInitialized;
     private Point? _dragStartPoint;
     private string? _linkDragScriptId;
@@ -62,47 +64,168 @@ public partial class ExplorerPanel : UserControl
 
     private async Task EnsureInitializedAsync()
     {
-        if (_isInitialized)
+        await _initializationGate.WaitAsync();
+        try
         {
-            return;
+            if (_isInitialized)
+            {
+                return;
+            }
+
+            InitializationOverlay.Visibility = Visibility.Visible;
+            InitializationTextBlock.Text = "Initializing SOOP explorer...";
+
+            var environment = await _profileService.GetEnvironmentAsync(_profileService.ExplorerGroup);
+            await Browser.EnsureCoreWebView2Async(environment);
+            var coreWebView = Browser.CoreWebView2;
+            await InstallLinkDragScriptAsync(coreWebView);
+            await InstallSoopSidebarSortScriptAsync(coreWebView);
+
+            AttachCoreWebViewEvents(coreWebView);
+            _isInitialized = true;
         }
-
-        InitializationOverlay.Visibility = Visibility.Visible;
-        InitializationTextBlock.Text = "Initializing SOOP explorer...";
-
-        var environment = await _profileService.GetEnvironmentAsync(_profileService.ExplorerGroup);
-        await Browser.EnsureCoreWebView2Async(environment);
-        await InstallLinkDragScriptAsync();
-        await InstallSoopSidebarSortScriptAsync();
-
-        Browser.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
-        Browser.CoreWebView2.SourceChanged += CoreWebView2_SourceChanged;
-        Browser.CoreWebView2.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
-        Browser.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
-        Browser.CoreWebView2.NewWindowRequested += CoreWebView2_NewWindowRequested;
-        _isInitialized = true;
+        finally
+        {
+            _initializationGate.Release();
+        }
     }
 
-    private async Task InstallLinkDragScriptAsync()
+    private async Task InstallLinkDragScriptAsync(CoreWebView2 coreWebView)
     {
-        if (_linkDragScriptId is not null || Browser.CoreWebView2 is null)
+        if (_linkDragScriptId is not null)
         {
             return;
         }
 
-        _linkDragScriptId = await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+        _linkDragScriptId = await coreWebView.AddScriptToExecuteOnDocumentCreatedAsync(
             CreateLinkDragScript());
     }
 
-    private async Task InstallSoopSidebarSortScriptAsync()
+    private async Task InstallSoopSidebarSortScriptAsync(CoreWebView2 coreWebView)
     {
-        if (_soopSidebarSortScriptId is not null || Browser.CoreWebView2 is null)
+        if (_soopSidebarSortScriptId is not null)
         {
             return;
         }
 
-        _soopSidebarSortScriptId = await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+        _soopSidebarSortScriptId = await coreWebView.AddScriptToExecuteOnDocumentCreatedAsync(
             SoopSidebarSortScriptService.CreateScript());
+    }
+
+    private void AttachCoreWebViewEvents(CoreWebView2 coreWebView)
+    {
+        coreWebView.NavigationCompleted += CoreWebView2_NavigationCompleted;
+        coreWebView.SourceChanged += CoreWebView2_SourceChanged;
+        coreWebView.DocumentTitleChanged += CoreWebView2_DocumentTitleChanged;
+        coreWebView.WebMessageReceived += CoreWebView2_WebMessageReceived;
+        coreWebView.NewWindowRequested += CoreWebView2_NewWindowRequested;
+        coreWebView.ProcessFailed += CoreWebView2_ProcessFailed;
+    }
+
+    private void DetachCoreWebViewEvents(CoreWebView2 coreWebView)
+    {
+        coreWebView.NavigationCompleted -= CoreWebView2_NavigationCompleted;
+        coreWebView.SourceChanged -= CoreWebView2_SourceChanged;
+        coreWebView.DocumentTitleChanged -= CoreWebView2_DocumentTitleChanged;
+        coreWebView.WebMessageReceived -= CoreWebView2_WebMessageReceived;
+        coreWebView.NewWindowRequested -= CoreWebView2_NewWindowRequested;
+        coreWebView.ProcessFailed -= CoreWebView2_ProcessFailed;
+    }
+
+    private void CoreWebView2_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+    {
+        var action = WebViewRecoveryPolicy.GetAction(e.ProcessFailedKind);
+        if (action == WebViewRecoveryAction.None)
+        {
+            return;
+        }
+
+        var details =
+            $"Explorer WebView2 process failure: Kind={e.ProcessFailedKind}, " +
+            $"Reason={e.Reason}, ExitCode={e.ExitCode}, Url={CurrentUrl}";
+        InitializationOverlay.Visibility = Visibility.Visible;
+        InitializationTextBlock.Text = action == WebViewRecoveryAction.Recreate
+            ? "Explorer browser process stopped. Recreating..."
+            : "Explorer renderer stopped. Reloading...";
+
+        // Let WebView2 finish raising ProcessFailed before replacing or reloading the control.
+        Dispatcher.BeginInvoke(new Action(() => _ = RecoverFromProcessFailureAsync(action, details)));
+    }
+
+    private async Task RecoverFromProcessFailureAsync(WebViewRecoveryAction action, string details)
+    {
+        if (!await _processRecoveryGate.WaitAsync(0))
+        {
+            return;
+        }
+
+        try
+        {
+            if (action == WebViewRecoveryAction.Recreate)
+            {
+                await RecreateBrowserAsync();
+            }
+            else
+            {
+                try
+                {
+                    Browser.CoreWebView2.Reload();
+                }
+                catch (InvalidOperationException)
+                {
+                    await RecreateBrowserAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowInitializationError(ex);
+            System.Diagnostics.Trace.WriteLine($"[{DateTimeOffset.Now:O}] {details}; RecoveryError={ex}");
+        }
+        finally
+        {
+            _processRecoveryGate.Release();
+        }
+    }
+
+    private async Task RecreateBrowserAsync()
+    {
+        var restoreUrl = CurrentUrl;
+        var oldBrowser = Browser;
+        var oldIndex = BrowserHost.Children.IndexOf(oldBrowser);
+
+        try
+        {
+            if (oldBrowser.CoreWebView2 is { } oldCoreWebView)
+            {
+                DetachCoreWebViewEvents(oldCoreWebView);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // A crashed browser process can leave CoreWebView2 inaccessible.
+        }
+
+        BrowserHost.Children.Remove(oldBrowser);
+        oldBrowser.Dispose();
+
+        Browser = new Microsoft.Web.WebView2.Wpf.WebView2();
+        BrowserHost.Children.Insert(Math.Max(0, oldIndex), Browser);
+        _isInitialized = false;
+        _linkDragScriptId = null;
+        _soopSidebarSortScriptId = null;
+
+        await EnsureInitializedAsync();
+        Browser.CoreWebView2.Navigate(restoreUrl);
+    }
+
+    private async Task RecoverFromInteractionFailureAsync(Exception ex)
+    {
+        InitializationOverlay.Visibility = Visibility.Visible;
+        InitializationTextBlock.Text = "Explorer browser is unavailable. Recreating...";
+        await RecoverFromProcessFailureAsync(
+            WebViewRecoveryAction.Recreate,
+            $"Explorer browser interaction failed at {CurrentUrl}: {ex}");
     }
 
     private static string CreateLinkDragScript()
@@ -242,12 +365,18 @@ public partial class ExplorerPanel : UserControl
 
     private void CoreWebView2_SourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
     {
-        UpdateCurrentLocation(Browser.Source?.ToString());
+        if (sender is CoreWebView2 coreWebView)
+        {
+            UpdateCurrentLocation(coreWebView.Source);
+        }
     }
 
     private void CoreWebView2_DocumentTitleChanged(object? sender, object e)
     {
-        CurrentTitle = Browser.CoreWebView2.DocumentTitle.Trim();
+        if (sender is CoreWebView2 coreWebView)
+        {
+            CurrentTitle = coreWebView.DocumentTitle.Trim();
+        }
     }
 
     private void CoreWebView2_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -296,23 +425,48 @@ public partial class ExplorerPanel : UserControl
         {
             await NavigateAsync(ExplorerUrlTextBox.Text);
         }
+        catch (InvalidOperationException ex)
+        {
+            await RecoverFromInteractionFailureAsync(ex);
+        }
         catch (Exception ex)
         {
             ShowInitializationError(ex);
         }
     }
 
-    private void BackButton_Click(object sender, RoutedEventArgs e)
+    private async void BackButton_Click(object sender, RoutedEventArgs e)
     {
-        if (Browser.CoreWebView2?.CanGoBack == true)
+        try
         {
-            Browser.CoreWebView2.GoBack();
+            if (Browser.CoreWebView2?.CanGoBack == true)
+            {
+                Browser.CoreWebView2.GoBack();
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            await RecoverFromInteractionFailureAsync(ex);
         }
     }
 
-    private void RefreshButton_Click(object sender, RoutedEventArgs e)
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
-        Browser.CoreWebView2?.Reload();
+        try
+        {
+            if (Browser.CoreWebView2 is { } coreWebView)
+            {
+                coreWebView.Reload();
+            }
+            else
+            {
+                await NavigateAsync(CurrentUrl);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            await RecoverFromInteractionFailureAsync(ex);
+        }
     }
 
     private void ExplorerDragSource_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

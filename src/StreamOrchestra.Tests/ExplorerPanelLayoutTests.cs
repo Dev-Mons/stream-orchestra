@@ -82,6 +82,32 @@ public sealed class ExplorerPanelLayoutTests
         Assert.Contains("NewWindowRequested", text);
     }
 
+    [Fact]
+    public void CodeBehind_RecoversExplorerAfterWebViewProcessFailure()
+    {
+        var text = LoadExplorerPanelCodeBehind();
+
+        Assert.Contains("coreWebView.ProcessFailed += CoreWebView2_ProcessFailed", text);
+        Assert.Contains("WebViewRecoveryPolicy.GetAction", text);
+        Assert.Contains("RecreateBrowserAsync", text);
+        Assert.Contains("RecoverFromInteractionFailureAsync", text);
+    }
+
+    private static string LoadExplorerPanelCodeBehind()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "Views",
+            "ExplorerPanel.xaml.cs"));
+
+        return File.ReadAllText(path);
+    }
+
     private static XDocument LoadExplorerPanelDocument()
     {
         var path = Path.GetFullPath(Path.Combine(
