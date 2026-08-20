@@ -44,6 +44,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     private readonly WebViewProfileService _profileService;
     private readonly StreamNavigationService _navigationService;
     private readonly DispatcherTimer _volumeOverlayTimer;
+    private readonly DispatcherTimer _playbackViewportResizeTimer;
     private readonly SemaphoreSlim _initializationGate = new(1, 1);
     private readonly SemaphoreSlim _navigationGate = new(1, 1);
     private readonly SemaphoreSlim _processRecoveryGate = new(1, 1);
@@ -84,11 +85,20 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
             _lastVolumePopupAnchor = null;
             _volumeOverlayTimer.Stop();
         };
+        _playbackViewportResizeTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(100)
+        };
+        _playbackViewportResizeTimer.Tick += async (_, _) =>
+        {
+            _playbackViewportResizeTimer.Stop();
+            await NotifyPlaybackViewportSizeChangedAsync();
+        };
 
         ProfilePathTextBlock.Text = Configuration.ProfileGroup.UserDataFolder;
 
         Loaded += StreamSlotView_Loaded;
-        SlotBorder.SizeChanged += (_, _) => RefreshOpenOverlayPlacement(force: false);
+        SlotBorder.SizeChanged += SlotBorder_SizeChanged;
         SlotBorder.LayoutUpdated += (_, _) => RefreshOpenOverlayPlacement(force: false);
     }
 
@@ -1260,6 +1270,18 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         }
     }
 
+    private void SlotBorder_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        RefreshOpenOverlayPlacement(force: false);
+        if (!_isInitialized || !IsSoopUrl(CurrentUrl))
+        {
+            return;
+        }
+
+        _playbackViewportResizeTimer.Stop();
+        _playbackViewportResizeTimer.Start();
+    }
+
     private async Task EnsurePlaybackViewportAsync()
     {
         try
@@ -1290,6 +1312,39 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         catch
         {
             // Ignore transient script execution failures during navigation or process recovery.
+        }
+    }
+
+    private async Task NotifyPlaybackViewportSizeChangedAsync()
+    {
+        try
+        {
+            if (!_isInitialized || !IsSoopUrl(CurrentUrl))
+            {
+                return;
+            }
+
+            var coreWebView = Browser.CoreWebView2;
+            if (coreWebView is null)
+            {
+                return;
+            }
+
+            await coreWebView.ExecuteScriptAsync(
+                """
+(() => {
+  if (typeof window.__streamOrchestraHandleHostResize !== "function") {
+    return false;
+  }
+
+  window.__streamOrchestraHandleHostResize();
+  return true;
+})()
+""");
+        }
+        catch
+        {
+            // Ignore transient script execution failures while WebView2 is resizing or navigating.
         }
     }
 
@@ -1401,6 +1456,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       max-width: 100vw !important;
       max-height: 100vh !important;
       object-fit: contain !important;
+      object-position: center center !important;
     }
 
     .stream-orchestra-hidden {
@@ -1434,12 +1490,49 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       inset: 0 !important;
       width: 100vw !important;
       height: 100vh !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      max-width: none !important;
+      max-height: none !important;
       margin: 0 !important;
-      z-index: 1000 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      display: flex !important;
+      flex-direction: row !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+      z-index: 2147483000 !important;
       background: #000 !important;
     }
 
-    body.stream-orchestra-immersive-mode #webplayer #webplayer_contents,
+    body.stream-orchestra-immersive-mode .stream-orchestra-viewport-root .stream-orchestra-player-layer {
+      width: 100% !important;
+      height: 100% !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      max-width: none !important;
+      max-height: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      box-sizing: border-box !important;
+    }
+
+    body.stream-orchestra-immersive-mode .stream-orchestra-viewport-root .stream-orchestra-playback-video {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      max-width: none !important;
+      max-height: none !important;
+      margin: auto !important;
+      object-fit: contain !important;
+      object-position: center center !important;
+    }
+
+    body.stream-orchestra-immersive-mode .stream-orchestra-viewport-root #webplayer_contents,
+    body.stream-orchestra-immersive-mode #webplayer.stream-orchestra-viewport-root #webplayer_contents,
     body.screen_mode #webplayer #webplayer_contents,
     body.fullScreen_mode #webplayer #webplayer_contents {
       position: fixed !important;
@@ -1451,33 +1544,58 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       margin: 0 !important;
       display: flex !important;
       flex-direction: row !important;
-      z-index: 1000 !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
       background: #000 !important;
     }
 
-    body.stream-orchestra-immersive-mode #webplayer #webplayer_contents #player_area,
+    body.stream-orchestra-immersive-mode .stream-orchestra-viewport-root #player_area,
+    body.stream-orchestra-immersive-mode #webplayer.stream-orchestra-viewport-root #player_area,
     body.screen_mode #webplayer #webplayer_contents #player_area,
     body.fullScreen_mode #webplayer #webplayer_contents #player_area {
       flex: 1 1 auto !important;
       min-width: 0 !important;
+      min-height: 0 !important;
       width: auto !important;
       height: 100vh !important;
+      max-width: none !important;
+      max-height: none !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
       background: #000 !important;
     }
 
-    body.stream-orchestra-immersive-mode #webplayer #player,
-    body.stream-orchestra-immersive-mode #webplayer video {
+    body.screen_mode #webplayer #player_area .htmlplayer_wrap,
+    body.screen_mode #webplayer #player_area .htmlplayer_content,
+    body.screen_mode #webplayer #player,
+    body.fullScreen_mode #webplayer #player_area .htmlplayer_wrap,
+    body.fullScreen_mode #webplayer #player_area .htmlplayer_content,
+    body.fullScreen_mode #webplayer #player {
       width: 100% !important;
       height: 100% !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
       max-width: none !important;
       max-height: none !important;
+      box-sizing: border-box !important;
     }
 
-    body.stream-orchestra-immersive-mode #webplayer video {
+    body.screen_mode #webplayer video,
+    body.fullScreen_mode #webplayer video {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      max-width: none !important;
+      max-height: none !important;
+      margin: auto !important;
       object-fit: contain !important;
+      object-position: center center !important;
     }
 
-    body.stream-orchestra-immersive-mode #webplayer #webplayer_contents .wrapping.side,
+    body.stream-orchestra-immersive-mode .stream-orchestra-viewport-root .wrapping.side,
+    body.stream-orchestra-immersive-mode #webplayer.stream-orchestra-viewport-root #webplayer_contents .wrapping.side,
     body.screen_mode #webplayer #webplayer_contents .wrapping.side,
     body.fullScreen_mode #webplayer #webplayer_contents .wrapping.side {
       display: none !important;
@@ -1778,10 +1896,14 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     let soopDomRefreshTimer = 0;
     let soopViewportSatisfied = false;
     let lastScreenModeClickAt = 0;
+    let nativeScreenModeRequestedAt = 0;
+    let nativeScreenModeTarget = null;
     let lastFullscreenClickAt = 0;
     let observedDocumentRoot = null;
     let observedBody = null;
     let observedPlayerRoot = null;
+    let viewportResizeObserver = null;
+    let observedViewportResizeRoot = null;
     const observedChromeElements = new WeakSet();
 
     const hideElements = () => {
@@ -1843,21 +1965,31 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     };
 
     const findSoopPlaybackVideo = () => {
-      const videos = Array.from(
-        document.querySelectorAll("video#livePlayer, #livePlayer video, #webplayer video"));
+      let videos = Array.from(document.querySelectorAll(
+        "video#livePlayer, #livePlayer video, #webplayer video, #player_area video, .htmlplayer_wrap video"));
+      if (videos.length === 0) {
+        videos = Array.from(document.querySelectorAll("video"));
+      }
+
       return videos.find(video => isVisibleElement(video) && !video.paused) ||
         videos.find(isVisibleElement) ||
         videos[0] ||
         null;
     };
 
+    // Keep the native hover controls inside the promoted stacking context by preferring
+    // the outer player shell over the narrower video-only containers.
     const getSoopViewportRoot = (video = findSoopPlaybackVideo()) =>
-      video?.closest("#player_area") ||
-      video?.closest("#player") ||
+      video?.closest("#webplayer") ||
       video?.closest("#webplayer_contents") ||
-      document.querySelector("#webplayer #player_area") ||
-      document.querySelector("#webplayer #player") ||
-      document.querySelector("#webplayer #webplayer_contents");
+      video?.closest("#player_area") ||
+      video?.closest(".htmlplayer_wrap") ||
+      video?.closest(".htmlplayer_content") ||
+      video?.closest("#player") ||
+      Array.from(document.querySelectorAll("#webplayer")).find(element => element.querySelector("video")) ||
+      Array.from(document.querySelectorAll("#webplayer_contents")).find(element => element.querySelector("video")) ||
+      video?.parentElement ||
+      null;
 
     const isSoopViewportSatisfied = () => {
       const video = findSoopPlaybackVideo();
@@ -1879,17 +2011,25 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
 
       const rect = playerRoot.getBoundingClientRect();
       const videoRect = video.getBoundingClientRect();
+      const videoStyle = window.getComputedStyle(video);
       const tolerance = Math.max(2, Math.min(8, Math.min(viewportWidth, viewportHeight) * 0.01));
-      const videoSpansViewport =
-        videoRect.width >= viewportWidth - (tolerance * 2) ||
-        videoRect.height >= viewportHeight - (tolerance * 2);
-      return videoSpansViewport &&
-        rect.left <= tolerance &&
-        rect.top <= tolerance &&
-        rect.right >= viewportWidth - tolerance &&
-        rect.bottom >= viewportHeight - tolerance &&
-        rect.width >= viewportWidth - (tolerance * 2) &&
-        rect.height >= viewportHeight - (tolerance * 2);
+      // A one-axis match accepts a top-aligned 16:9 element in a taller slot. Require the
+      // element box to match all four viewport edges; object-fit then centers the pixels.
+      const fillsViewport = candidateRect =>
+        Math.abs(candidateRect.left) <= tolerance &&
+        Math.abs(candidateRect.top) <= tolerance &&
+        Math.abs(candidateRect.right - viewportWidth) <= tolerance &&
+        Math.abs(candidateRect.bottom - viewportHeight) <= tolerance &&
+        Math.abs(candidateRect.width - viewportWidth) <= tolerance * 2 &&
+        Math.abs(candidateRect.height - viewportHeight) <= tolerance * 2;
+      const videoFillsViewport = fillsViewport(videoRect);
+      const objectPosition = String(videoStyle.objectPosition || "").toLowerCase();
+      const videoUsesCenteredContain =
+        videoStyle.objectFit === "contain" &&
+        (objectPosition.includes("center") || objectPosition === "50% 50%");
+      return videoFillsViewport &&
+        videoUsesCenteredContain &&
+        fillsViewport(rect);
     };
 
     const isSoopPlaybackModeActive = () => isSoopViewportSatisfied();
@@ -1901,31 +2041,71 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         return false;
       }
 
+      for (const previousRoot of document.querySelectorAll(".stream-orchestra-viewport-root")) {
+        if (previousRoot !== playerRoot) {
+          previousRoot.classList.remove("stream-orchestra-viewport-root");
+        }
+      }
+
+      for (const previousVideo of document.querySelectorAll(".stream-orchestra-playback-video")) {
+        if (previousVideo !== video) {
+          previousVideo.classList.remove("stream-orchestra-playback-video");
+        }
+      }
+
+      for (const previousLayer of playerRoot.querySelectorAll(".stream-orchestra-player-layer")) {
+        previousLayer.classList.remove("stream-orchestra-player-layer");
+      }
+
       document.body.classList.add(immersiveModeClass);
       playerRoot.classList.add("stream-orchestra-viewport-root");
+      video.classList.add("stream-orchestra-playback-video");
+
+      let playerLayer = video.parentElement;
+      while (playerLayer && playerLayer !== playerRoot &&
+             playerLayer !== document.body && playerLayer !== document.documentElement) {
+        playerLayer.classList.add("stream-orchestra-player-layer");
+        playerLayer = playerLayer.parentElement;
+      }
+
       return isSoopViewportSatisfied();
     };
 
-    const clickScreenModeButton = () => {
-      if (document.body?.classList.contains("screen_mode") ||
-          document.body?.classList.contains("fullScreen_mode") ||
-          document.fullscreenElement) {
-        return true;
+    const isNativePlaybackModeActive = () =>
+      Boolean(document.body?.classList.contains("screen_mode") ||
+        document.body?.classList.contains("fullScreen_mode") ||
+        document.fullscreenElement);
+
+    const clickScreenModeButton = video => {
+      if (isNativePlaybackModeActive()) {
+        return "active";
+      }
+
+      const now = Date.now();
+      if (nativeScreenModeTarget === video && nativeScreenModeRequestedAt > 0) {
+        return now - nativeScreenModeRequestedAt < 1500 ? "pending" : "timed-out";
       }
 
       const button = findFirstButton(screenModeButtonSelectors);
       if (!button) {
-        return false;
+        return "unavailable";
       }
 
-      const now = Date.now();
       if (now - lastScreenModeClickAt < 1000) {
-        return false;
+        return "pending";
       }
 
       lastScreenModeClickAt = now;
-      button.click();
-      return true;
+      nativeScreenModeRequestedAt = now;
+      nativeScreenModeTarget = video;
+      try {
+        button.click();
+        return "requested";
+      } catch {
+        nativeScreenModeRequestedAt = 0;
+        nativeScreenModeTarget = null;
+        return "failed";
+      }
     };
 
     const clickFullscreenButton = () => {
@@ -1944,8 +2124,12 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       }
 
       lastFullscreenClickAt = now;
-      button.click();
-      return true;
+      try {
+        button.click();
+        return true;
+      } catch {
+        return false;
+      }
     };
 
     const clearSoopFullscreenRetry = () => {
@@ -1958,7 +2142,8 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     };
 
     const requestSoopFullscreenViewport = () => {
-      if (!findSoopPlaybackVideo()) {
+      const video = findSoopPlaybackVideo();
+      if (!video) {
         soopViewportSatisfied = false;
         return false;
       }
@@ -1970,9 +2155,22 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         return true;
       }
 
-      const screenModeRequested = clickScreenModeButton();
+      const screenModeRequest = clickScreenModeButton(video);
+      // SOOP applies the body mode class and rebuilds its controls asynchronously. Give that
+      // transition time to settle before installing the deterministic CSS fallback.
+      const waitingForNativeMode =
+        (screenModeRequest === "requested" || screenModeRequest === "pending") &&
+        !isNativePlaybackModeActive() &&
+        Date.now() - nativeScreenModeRequestedAt < 1500;
+      if (waitingForNativeMode) {
+        soopViewportSatisfied = false;
+        return false;
+      }
+
       const fallbackApplied = applyKnownSoopViewportFallback();
-      if (!screenModeRequested && !fallbackApplied) {
+      if ((screenModeRequest === "unavailable" || screenModeRequest === "timed-out" ||
+           screenModeRequest === "failed") &&
+          !fallbackApplied) {
         clickFullscreenButton();
       }
 
@@ -1999,7 +2197,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     };
 
     const wireMediaPlayback = () => {
-      for (const video of document.querySelectorAll("video#livePlayer, #livePlayer video, #webplayer video")) {
+      for (const video of document.querySelectorAll("video")) {
         if (video.__streamOrchestraSoopPlaybackWired) {
           continue;
         }
@@ -2039,6 +2237,15 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       if (playerRoot && playerRoot !== observedPlayerRoot) {
         observer.observe(playerRoot, { attributes: true, attributeFilter: ["class", "hidden"] });
         observedPlayerRoot = playerRoot;
+      }
+
+      if (viewportResizeObserver && playerRoot !== observedViewportResizeRoot) {
+        viewportResizeObserver.disconnect();
+        if (playerRoot) {
+          viewportResizeObserver.observe(playerRoot);
+        }
+
+        observedViewportResizeRoot = playerRoot;
       }
 
       for (const selector of hideSelectors) {
@@ -2095,11 +2302,22 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       soopDomRefreshTimer = window.setTimeout(refreshSoopViewport, 100);
     };
 
+    const invalidatePlaybackViewport = () => {
+      // A WebView host resize does not necessarily mutate the DOM, so invalidate the cached
+      // geometry explicitly and re-measure after the new viewport has settled.
+      soopViewportSatisfied = false;
+      scheduleSoopDomRefresh();
+      scheduleSoopFullscreenRetry();
+    };
+
     observer = new MutationObserver(mutations => {
       if (Array.from(mutations || []).some(mutationTouchesSoopPlayback)) {
         scheduleSoopDomRefresh();
       }
     });
+    viewportResizeObserver = typeof ResizeObserver === "function"
+      ? new ResizeObserver(invalidatePlaybackViewport)
+      : null;
 
     window.__streamOrchestraEnsurePlaybackViewport = () => {
       soopFullscreenRetryCount = 0;
@@ -2111,6 +2329,13 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       scheduleSoopFullscreenRetry();
     };
 
+    window.__streamOrchestraHandleHostResize = () => {
+      invalidatePlaybackViewport();
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(window.__streamOrchestraEnsurePlaybackViewport);
+      });
+    };
+
     attachSoopObserver();
     hideElements();
     wireMediaPlayback();
@@ -2120,6 +2345,8 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       window.__streamOrchestraEnsurePlaybackViewport();
     }, { once: true });
     document.addEventListener("fullscreenchange", window.__streamOrchestraEnsurePlaybackViewport);
+    window.addEventListener("resize", invalidatePlaybackViewport, { passive: true });
+    window.visualViewport?.addEventListener("resize", invalidatePlaybackViewport, { passive: true });
   }
 
   function installSoopPlaybackLimitDetector() {
