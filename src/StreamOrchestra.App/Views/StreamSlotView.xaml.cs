@@ -773,6 +773,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
                     previousTime is not null &&
                     snapshot.CurrentTime > previousTime.Value + 0.05)
                 {
+                    await EnsurePlaybackViewportAsync();
                     return;
                 }
 
@@ -910,6 +911,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         Browser.CoreWebView2.IsMuted = false;
         _isMuted = false;
         _ = ApplyVolumeToWebPageAsync();
+        _ = EnsurePlaybackViewportAsync();
     }
 
     private async void CoreWebView2_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
@@ -1258,6 +1260,39 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         }
     }
 
+    private async Task EnsurePlaybackViewportAsync()
+    {
+        try
+        {
+            if (!IsSoopUrl(CurrentUrl))
+            {
+                return;
+            }
+
+            var coreWebView = Browser.CoreWebView2;
+            if (coreWebView is null)
+            {
+                return;
+            }
+
+            await coreWebView.ExecuteScriptAsync(
+                """
+(() => {
+  if (typeof window.__streamOrchestraEnsurePlaybackViewport !== "function") {
+    return false;
+  }
+
+  window.__streamOrchestraEnsurePlaybackViewport();
+  return true;
+})()
+""");
+        }
+        catch
+        {
+            // Ignore transient script execution failures during navigation or process recovery.
+        }
+    }
+
     private void SlotBorder_DragOver(object sender, DragEventArgs e)
     {
         e.Effects = IsAcceptableDrop(e.Data)
@@ -1394,6 +1429,17 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       min-width: auto !important;
     }
 
+    body.stream-orchestra-immersive-mode .stream-orchestra-viewport-root {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+      z-index: 1000 !important;
+      background: #000 !important;
+    }
+
+    body.stream-orchestra-immersive-mode #webplayer #webplayer_contents,
     body.screen_mode #webplayer #webplayer_contents,
     body.fullScreen_mode #webplayer #webplayer_contents {
       position: fixed !important;
@@ -1405,9 +1451,11 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       margin: 0 !important;
       display: flex !important;
       flex-direction: row !important;
+      z-index: 1000 !important;
       background: #000 !important;
     }
 
+    body.stream-orchestra-immersive-mode #webplayer #webplayer_contents #player_area,
     body.screen_mode #webplayer #webplayer_contents #player_area,
     body.fullScreen_mode #webplayer #webplayer_contents #player_area {
       flex: 1 1 auto !important;
@@ -1417,6 +1465,19 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       background: #000 !important;
     }
 
+    body.stream-orchestra-immersive-mode #webplayer #player,
+    body.stream-orchestra-immersive-mode #webplayer video {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+      max-height: none !important;
+    }
+
+    body.stream-orchestra-immersive-mode #webplayer video {
+      object-fit: contain !important;
+    }
+
+    body.stream-orchestra-immersive-mode #webplayer #webplayer_contents .wrapping.side,
     body.screen_mode #webplayer #webplayer_contents .wrapping.side,
     body.fullScreen_mode #webplayer #webplayer_contents .wrapping.side {
       display: none !important;
@@ -1672,7 +1733,10 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       return;
     }
 
+    const immersiveModeClass = "stream-orchestra-immersive-mode";
     const hideSelectors = [
+      "#serviceHeader",
+      "#serviceLnb",
       "#header",
       ".header",
       ".top_area",
@@ -1686,17 +1750,39 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     ];
 
     const fullscreenButtonSelectors = [
+      "#player .btn_fullScreen_mode",
+      "#webplayer .btn_fullScreen_mode",
       ".btn_fullScreen_mode"
     ];
 
     const screenModeButtonSelectors = [
+      "#player .btn_screen_mode",
+      "#webplayer .btn_screen_mode",
       ".btn_screen_mode"
     ];
 
+    const relevantDomSelector = [
+      "#webplayer",
+      "#webplayer_contents",
+      "#player_area",
+      "#player",
+      "#livePlayer",
+      "#stream-orchestra-playback-viewport",
+      "video",
+      ...hideSelectors,
+      ...screenModeButtonSelectors,
+      ...fullscreenButtonSelectors
+    ].join(", ");
     let soopFullscreenRetryCount = 0;
     let soopFullscreenRetryTimer = 0;
+    let soopDomRefreshTimer = 0;
+    let soopViewportSatisfied = false;
     let lastScreenModeClickAt = 0;
     let lastFullscreenClickAt = 0;
+    let observedDocumentRoot = null;
+    let observedBody = null;
+    let observedPlayerRoot = null;
+    const observedChromeElements = new WeakSet();
 
     const hideElements = () => {
       for (const selector of hideSelectors) {
@@ -1711,24 +1797,119 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       element !== document.documentElement &&
       element !== document.body;
 
+    const isVisibleElement = element => {
+      if (!isUsableElement(element) || element.disabled) {
+        return false;
+      }
+
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
+        return false;
+      }
+
+      const rect = element.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+      const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+      return rect.width > 0 &&
+        rect.height > 0 &&
+        rect.right > 0 &&
+        rect.bottom > 0 &&
+        rect.left < viewportWidth &&
+        rect.top < viewportHeight;
+    };
+
     const findFirstButton = selectors => {
       for (const selector of selectors) {
-        const button = document.querySelector(selector);
-        if (isUsableElement(button)) {
-          return button;
+        for (const button of document.querySelectorAll(selector)) {
+          if (isVisibleElement(button)) {
+            return button;
+          }
         }
       }
 
       return null;
     };
 
-    const isSoopPlaybackModeActive = () =>
-      Boolean(document.body?.classList.contains("screen_mode") ||
-        document.body?.classList.contains("fullScreen_mode") ||
-        document.fullscreenElement);
+    const hasVisiblePageChrome = () => {
+      for (const selector of hideSelectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (isVisibleElement(element)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    };
+
+    const findSoopPlaybackVideo = () => {
+      const videos = Array.from(
+        document.querySelectorAll("video#livePlayer, #livePlayer video, #webplayer video"));
+      return videos.find(video => isVisibleElement(video) && !video.paused) ||
+        videos.find(isVisibleElement) ||
+        videos[0] ||
+        null;
+    };
+
+    const getSoopViewportRoot = (video = findSoopPlaybackVideo()) =>
+      video?.closest("#player_area") ||
+      video?.closest("#player") ||
+      video?.closest("#webplayer_contents") ||
+      document.querySelector("#webplayer #player_area") ||
+      document.querySelector("#webplayer #player") ||
+      document.querySelector("#webplayer #webplayer_contents");
+
+    const isSoopViewportSatisfied = () => {
+      const video = findSoopPlaybackVideo();
+      const playerRoot = getSoopViewportRoot(video);
+      if (!video || !playerRoot) {
+        return false;
+      }
+
+      const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+      const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+      if (viewportWidth <= 0 || viewportHeight <= 0) {
+        return false;
+      }
+
+      const style = window.getComputedStyle(playerRoot);
+      if (style.display === "none" || style.visibility === "hidden" || hasVisiblePageChrome()) {
+        return false;
+      }
+
+      const rect = playerRoot.getBoundingClientRect();
+      const videoRect = video.getBoundingClientRect();
+      const tolerance = Math.max(2, Math.min(8, Math.min(viewportWidth, viewportHeight) * 0.01));
+      const videoSpansViewport =
+        videoRect.width >= viewportWidth - (tolerance * 2) ||
+        videoRect.height >= viewportHeight - (tolerance * 2);
+      return videoSpansViewport &&
+        rect.left <= tolerance &&
+        rect.top <= tolerance &&
+        rect.right >= viewportWidth - tolerance &&
+        rect.bottom >= viewportHeight - tolerance &&
+        rect.width >= viewportWidth - (tolerance * 2) &&
+        rect.height >= viewportHeight - (tolerance * 2);
+    };
+
+    const isSoopPlaybackModeActive = () => isSoopViewportSatisfied();
+
+    const applyKnownSoopViewportFallback = () => {
+      const video = findSoopPlaybackVideo();
+      const playerRoot = getSoopViewportRoot(video);
+      if (!document.body || !video || !playerRoot) {
+        return false;
+      }
+
+      document.body.classList.add(immersiveModeClass);
+      playerRoot.classList.add("stream-orchestra-viewport-root");
+      return isSoopViewportSatisfied();
+    };
 
     const clickScreenModeButton = () => {
-      if (document.body?.classList.contains("screen_mode")) {
+      if (document.body?.classList.contains("screen_mode") ||
+          document.body?.classList.contains("fullScreen_mode") ||
+          document.fullscreenElement) {
         return true;
       }
 
@@ -1767,36 +1948,65 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       return true;
     };
 
-    const requestSoopFullscreenViewport = () => {
-      if (!document.querySelector("video")) {
+    const clearSoopFullscreenRetry = () => {
+      if (soopFullscreenRetryTimer === 0) {
         return;
       }
 
-      clickScreenModeButton();
-      clickFullscreenButton();
+      window.clearTimeout(soopFullscreenRetryTimer);
+      soopFullscreenRetryTimer = 0;
+    };
+
+    const requestSoopFullscreenViewport = () => {
+      if (!findSoopPlaybackVideo()) {
+        soopViewportSatisfied = false;
+        return false;
+      }
+
+      hideElements();
+      if (isSoopViewportSatisfied()) {
+        soopViewportSatisfied = true;
+        clearSoopFullscreenRetry();
+        return true;
+      }
+
+      const screenModeRequested = clickScreenModeButton();
+      const fallbackApplied = applyKnownSoopViewportFallback();
+      if (!screenModeRequested && !fallbackApplied) {
+        clickFullscreenButton();
+      }
+
+      soopViewportSatisfied = isSoopViewportSatisfied();
+      if (soopViewportSatisfied) {
+        clearSoopFullscreenRetry();
+      }
+
+      return soopViewportSatisfied;
     };
 
     const scheduleSoopFullscreenRetry = () => {
-      if (isSoopPlaybackModeActive() || soopFullscreenRetryCount >= 120 || soopFullscreenRetryTimer !== 0) {
+      if (!findSoopPlaybackVideo() || soopViewportSatisfied || soopFullscreenRetryTimer !== 0) {
         return;
       }
 
+      const retryDelay = soopFullscreenRetryCount < 120 ? 250 : 2000;
       soopFullscreenRetryTimer = window.setTimeout(() => {
         soopFullscreenRetryTimer = 0;
-        soopFullscreenRetryCount += 1;
+        soopFullscreenRetryCount = Math.min(120, soopFullscreenRetryCount + 1);
         requestSoopFullscreenViewport();
         scheduleSoopFullscreenRetry();
-      }, 250);
+      }, retryDelay);
     };
 
     const wireMediaPlayback = () => {
-      for (const video of document.querySelectorAll("video")) {
+      for (const video of document.querySelectorAll("video#livePlayer, #livePlayer video, #webplayer video")) {
         if (video.__streamOrchestraSoopPlaybackWired) {
           continue;
         }
 
         video.__streamOrchestraSoopPlaybackWired = true;
         video.addEventListener("play", () => {
+          soopFullscreenRetryCount = 0;
           requestSoopFullscreenViewport();
           scheduleSoopFullscreenRetry();
         }, { passive: true });
@@ -1807,26 +2017,109 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       }
     };
 
-    hideElements();
-    wireMediaPlayback();
-    const observer = new MutationObserver(() => {
+    let observer = null;
+
+    const attachSoopObserver = () => {
+      if (!observer) {
+        return;
+      }
+
+      const documentRoot = document.documentElement || document.body;
+      if (documentRoot && documentRoot !== observedDocumentRoot) {
+        observer.observe(documentRoot, { childList: true, subtree: true });
+        observedDocumentRoot = documentRoot;
+      }
+
+      if (document.body && document.body !== observedBody) {
+        observer.observe(document.body, { attributes: true, attributeFilter: ["class", "hidden"] });
+        observedBody = document.body;
+      }
+
+      const playerRoot = getSoopViewportRoot();
+      if (playerRoot && playerRoot !== observedPlayerRoot) {
+        observer.observe(playerRoot, { attributes: true, attributeFilter: ["class", "hidden"] });
+        observedPlayerRoot = playerRoot;
+      }
+
+      for (const selector of hideSelectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (observedChromeElements.has(element)) {
+            continue;
+          }
+
+          observer.observe(element, { attributes: true, attributeFilter: ["class", "hidden"] });
+          observedChromeElements.add(element);
+        }
+      }
+    };
+
+    const nodeTouchesSoopPlayback = node => {
+      if (node?.nodeType !== 1) {
+        return false;
+      }
+
+      return Boolean(node.matches?.(relevantDomSelector) || node.querySelector?.(relevantDomSelector));
+    };
+
+    const mutationTouchesSoopPlayback = mutation => {
+      if (mutation.type === "attributes") {
+        return true;
+      }
+
+      return Array.from(mutation.addedNodes || []).some(nodeTouchesSoopPlayback) ||
+        Array.from(mutation.removedNodes || []).some(nodeTouchesSoopPlayback);
+    };
+
+    const refreshSoopViewport = () => {
+      soopDomRefreshTimer = 0;
+      installStyle();
+      attachSoopObserver();
       hideElements();
       wireMediaPlayback();
-      if (document.querySelector("video")) {
+      soopViewportSatisfied = isSoopPlaybackModeActive();
+      if (soopViewportSatisfied) {
+        clearSoopFullscreenRetry();
+      }
+
+      if (!soopViewportSatisfied && findSoopPlaybackVideo()) {
+        requestSoopFullscreenViewport();
         scheduleSoopFullscreenRetry();
       }
+    };
+
+    const scheduleSoopDomRefresh = () => {
+      if (soopDomRefreshTimer !== 0) {
+        return;
+      }
+
+      soopDomRefreshTimer = window.setTimeout(refreshSoopViewport, 100);
+    };
+
+    observer = new MutationObserver(mutations => {
+      if (Array.from(mutations || []).some(mutationTouchesSoopPlayback)) {
+        scheduleSoopDomRefresh();
+      }
     });
-    const target = document.documentElement || document.body;
-    if (target) {
-      observer.observe(target, { childList: true, subtree: true });
-    }
-    window.addEventListener("DOMContentLoaded", () => {
+
+    window.__streamOrchestraEnsurePlaybackViewport = () => {
+      soopFullscreenRetryCount = 0;
+      installStyle();
+      attachSoopObserver();
       hideElements();
       wireMediaPlayback();
       requestSoopFullscreenViewport();
       scheduleSoopFullscreenRetry();
+    };
+
+    attachSoopObserver();
+    hideElements();
+    wireMediaPlayback();
+    window.__streamOrchestraEnsurePlaybackViewport();
+    window.addEventListener("DOMContentLoaded", () => {
+      attachSoopObserver();
+      window.__streamOrchestraEnsurePlaybackViewport();
     }, { once: true });
-    document.addEventListener("fullscreenchange", requestSoopFullscreenViewport);
+    document.addEventListener("fullscreenchange", window.__streamOrchestraEnsurePlaybackViewport);
   }
 
   function installSoopPlaybackLimitDetector() {

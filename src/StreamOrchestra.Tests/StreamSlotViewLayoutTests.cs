@@ -292,20 +292,38 @@ public sealed class StreamSlotViewLayoutTests
 
         Assert.Contains("#webplayer #player_info", text);
         Assert.Contains("\"#player_info\"", text);
+        Assert.Contains("\"#serviceHeader\"", text);
+        Assert.Contains("\"#serviceLnb\"", text);
     }
 
     [Fact]
-    public void CodeBehind_UsesSoopNativePlayerModesWithoutCustomFullscreenFallback()
+    public void CodeBehind_MeasuresAndEnforcesSoopPlaybackViewport()
     {
         var path = GetAppViewPath("StreamSlotView.xaml.cs");
         var text = File.ReadAllText(path);
 
         Assert.Contains("requestSoopFullscreenViewport", text);
+        Assert.Contains("isSoopViewportSatisfied", text);
+        Assert.Contains("getSoopViewportRoot", text);
+        Assert.Contains("getBoundingClientRect()", text);
+        Assert.Contains("videoSpansViewport", text);
+        Assert.Contains("hasVisiblePageChrome()", text);
+        Assert.Contains("applyKnownSoopViewportFallback", text);
+        Assert.Contains("stream-orchestra-immersive-mode", text);
+        Assert.Contains("playerRoot.classList.add(\"stream-orchestra-viewport-root\")", text);
         Assert.Contains("fullscreenchange", text);
         Assert.Contains("addEventListener(\"play\"", text);
-        Assert.DoesNotContain("stream-orchestra-soop-fullscreen", text);
         Assert.DoesNotContain("findLargestVisibleVideoAncestor", text);
         Assert.DoesNotContain("hideNonPlayerSiblings", text);
+
+        var resolverStart = text.IndexOf("const getSoopViewportRoot", StringComparison.Ordinal);
+        Assert.True(resolverStart >= 0);
+        var resolverEnd = text.IndexOf("const isSoopViewportSatisfied", resolverStart, StringComparison.Ordinal);
+        Assert.True(resolverEnd > resolverStart);
+        var resolver = text[resolverStart..resolverEnd];
+        Assert.True(
+            resolver.IndexOf("#player_area", StringComparison.Ordinal) <
+            resolver.IndexOf("#webplayer_contents", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -317,6 +335,19 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains(".btn_screen_mode", text);
         Assert.Contains(".btn_fullScreen_mode", text);
         Assert.Contains("clickScreenModeButton", text);
+        Assert.Contains("#player .btn_screen_mode", text);
+        Assert.Contains("isVisibleElement", text);
+        Assert.Contains("if (!screenModeRequested && !fallbackApplied)", text);
+        Assert.Contains("document.body?.classList.contains(\"fullScreen_mode\")", text);
+
+        var requestStart = text.IndexOf("const requestSoopFullscreenViewport", StringComparison.Ordinal);
+        Assert.True(requestStart >= 0);
+        var requestEnd = text.IndexOf("const scheduleSoopFullscreenRetry", requestStart, StringComparison.Ordinal);
+        Assert.True(requestEnd > requestStart);
+        var request = text[requestStart..requestEnd];
+        Assert.True(
+            request.IndexOf("if (isSoopViewportSatisfied())", StringComparison.Ordinal) <
+            request.IndexOf("clickScreenModeButton()", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -325,6 +356,10 @@ public sealed class StreamSlotViewLayoutTests
         var path = GetAppViewPath("StreamSlotView.xaml.cs");
         var text = File.ReadAllText(path);
 
+        Assert.Contains("body.stream-orchestra-immersive-mode .stream-orchestra-viewport-root", text);
+        Assert.Contains("z-index: 1000", text);
+        Assert.Contains("body.stream-orchestra-immersive-mode #webplayer video", text);
+        Assert.Contains("max-width: none !important", text);
         Assert.Contains("body.screen_mode #webplayer #webplayer_contents", text);
         Assert.Contains("body.fullScreen_mode #webplayer #webplayer_contents", text);
         Assert.Contains("body.fullScreen_mode #webplayer #webplayer_contents .wrapping.side", text);
@@ -340,6 +375,27 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("soopFullscreenRetryCount", text);
         Assert.Contains("setTimeout", text);
         Assert.Contains("isSoopPlaybackModeActive", text);
+        Assert.Contains("const retryDelay = soopFullscreenRetryCount < 120 ? 250 : 2000;", text);
+        Assert.DoesNotContain("soopFullscreenRetryCount >= 120", text);
+        Assert.Contains("attachSoopObserver", text);
+        Assert.Contains("observer.observe(document.body, { attributes: true", text);
+        Assert.Contains("mutationTouchesSoopPlayback", text);
+        Assert.Contains("...hideSelectors", text);
+        Assert.DoesNotContain("mutation.type === \"attributes\" || !soopViewportSatisfied", text);
+        Assert.Contains("scheduleSoopDomRefresh", text);
+        Assert.Contains("clearSoopFullscreenRetry", text);
+        Assert.Contains("window.__streamOrchestraEnsurePlaybackViewport", text);
+    }
+
+    [Fact]
+    public void CodeBehind_RechecksSoopViewportAfterNavigationAndPlaybackReady()
+    {
+        var path = GetAppViewPath("StreamSlotView.xaml.cs");
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("_ = EnsurePlaybackViewportAsync();", text);
+        Assert.Contains("await EnsurePlaybackViewportAsync();", text);
+        Assert.Contains("typeof window.__streamOrchestraEnsurePlaybackViewport", text);
     }
 
     [Fact]
