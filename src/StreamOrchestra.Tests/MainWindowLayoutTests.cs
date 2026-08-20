@@ -323,6 +323,25 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
+    public void SettingsMenu_ProvidesGroupScopedBrowserDataReset()
+    {
+        var document = LoadMainWindowDocument();
+        var settingsMenu = FindMenuItem(document, "설정");
+        var browserDataItem = FindMenuItem(document, "브라우저 데이터 초기화...");
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+
+        Assert.Equal("BrowserDataButton_Click", GetAttribute(browserDataItem, "Click"));
+        Assert.Contains(settingsMenu.Descendants(), element => element == browserDataItem);
+        Assert.Contains("new BrowserDataResetDialog", codeBehind);
+        Assert.Contains("CreateBrowserDataGroupOptions", codeBehind);
+        Assert.Contains("_webViewBrowsingDataService.ClearAsync", codeBehind);
+        Assert.Contains("ReloadBrowserGroupAfterDataClearAsync", codeBehind);
+        Assert.DoesNotContain("_presetStorageService.Save", codeBehind[
+            codeBehind.IndexOf("private async void BrowserDataButton_Click", StringComparison.Ordinal)..
+            codeBehind.IndexOf("private void RecordingButton_Click", StringComparison.Ordinal)]);
+    }
+
+    [Fact]
     public void CodeBehind_AutoSavesStateChangesWithoutDependingOnWindowClosing()
     {
         var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());

@@ -36,6 +36,8 @@ public partial class ExplorerPanel : UserControl
 
     public string CurrentTitle { get; private set; } = "";
 
+    public bool IsBrowserInitialized => _isInitialized;
+
     public event Action? HostDragStarted;
 
     public event Action? HostDragCompleted;
@@ -60,6 +62,12 @@ public partial class ExplorerPanel : UserControl
 
         await EnsureInitializedAsync();
         Browser.CoreWebView2.Navigate(CurrentUrl);
+    }
+
+    public async Task ReloadAsync()
+    {
+        await EnsureInitializedAsync();
+        Browser.CoreWebView2.Reload();
     }
 
     private async Task EnsureInitializedAsync()
@@ -454,14 +462,7 @@ public partial class ExplorerPanel : UserControl
     {
         try
         {
-            if (Browser.CoreWebView2 is { } coreWebView)
-            {
-                coreWebView.Reload();
-            }
-            else
-            {
-                await NavigateAsync(CurrentUrl);
-            }
+            await ReloadAsync();
         }
         catch (InvalidOperationException ex)
         {

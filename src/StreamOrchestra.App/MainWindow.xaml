@@ -266,6 +266,10 @@
                         <MenuItem Header="단축키"
                                   Foreground="#111827"
                                   Click="ShortcutSettingsButton_Click" />
+                        <MenuItem x:Name="BrowserDataMenuItem"
+                                  Header="브라우저 데이터 초기화..."
+                                  Foreground="#111827"
+                                  Click="BrowserDataButton_Click" />
                         <MenuItem Header="프리셋"
                                   Foreground="#111827">
                             <ComboBox x:Name="WorkspaceComboBox"

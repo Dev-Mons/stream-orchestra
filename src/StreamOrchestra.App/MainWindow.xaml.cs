@@ -31,6 +31,7 @@ public partial class MainWindow : Window
         new BitmapImage(new Uri("pack://application:,,,/Assets/sidebar-open.png"));
 
     private readonly WebViewProfileService _profileService = new();
+    private readonly WebViewBrowsingDataService _webViewBrowsingDataService = new();
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
     private readonly PresetStorageService _presetStorageService = new();
     private readonly LayoutPresetService _layoutPresetService;
@@ -66,6 +67,7 @@ public partial class MainWindow : Window
     private readonly HashSet<string> _recoveringSoopLimitGroups = new(StringComparer.OrdinalIgnoreCase);
     private LayoutCardMode _layoutCardMode = LayoutCardMode.Add;
     private bool _isExplorerPanelVisible = true;
+    private bool _isBrowserDataClearInProgress;
     private bool _isUpdateOperationInProgress;
     private bool _isAppStateAutoSaveReady;
     private GridLength _lastExplorerColumnWidth = new(360);
@@ -475,6 +477,144 @@ public partial class MainWindow : Window
         // 키를 캡처할 때마다 즉시 적용·저장한다(다이얼로그는 변경만 통지).
         dialog.ShortcutsChanged += ApplyShortcutSettings;
         dialog.ShowDialog();
+    }
+
+    private async void BrowserDataButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isBrowserDataClearInProgress)
+        {
+            return;
+        }
+
+        var groupOptions = CreateBrowserDataGroupOptions();
+        var initialGroupId = _selectedSlot?.ProfileGroupId ??
+            GetVisibleSlotViews().FirstOrDefault()?.ProfileGroupId ??
+            _profileService.ExplorerGroup.Id;
+        var dialog = new BrowserDataResetDialog(groupOptions, initialGroupId)
+        {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var selectedGroup = dialog.SelectedGroup;
+        var options = dialog.Options;
+        _isBrowserDataClearInProgress = true;
+        BrowserDataMenuItem.IsEnabled = false;
+        var dataCleared = false;
+        try
+        {
+            StatusTextBlock.Text = $"{selectedGroup.DisplayName} 브라우저 데이터를 초기화하는 중입니다...";
+            var environment = await _profileService.GetEnvironmentAsync(selectedGroup.Group);
+            await _webViewBrowsingDataService.ClearAsync(environment, options);
+            dataCleared = true;
+
+            var (reloadedCount, reloadFailureCount) = await ReloadBrowserGroupAfterDataClearAsync(selectedGroup.Group);
+            var reloadSummary = reloadFailureCount == 0
+                ? $"관련 화면 {reloadedCount}개를 다시 불러왔습니다."
+                : $"화면 {reloadedCount}개를 다시 불러왔고 {reloadFailureCount}개는 새로고침에 실패했습니다.";
+            StatusTextBlock.Text = $"{selectedGroup.DisplayName} 브라우저 데이터 초기화 완료. {reloadSummary}";
+            UpdateDiagnostics();
+
+            var loginNotice = options.ClearSiteData
+                ? "쿠키 및 사이트 데이터가 삭제되어 이 그룹의 로그인은 풀릴 수 있습니다."
+                : "사이트 로그인 정보는 삭제하지 않았습니다.";
+            MessageBox.Show(
+                this,
+                $"{selectedGroup.DisplayName}의 선택한 브라우저 데이터를 초기화했습니다.\n\n" +
+                $"{loginNotice}\n{reloadSummary}\n\n" +
+                "레이아웃, 프리셋, 단축키 설정은 변경하지 않았습니다.",
+                "브라우저 데이터 초기화 완료",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            var action = dataCleared
+                ? "브라우저 데이터는 초기화했지만 관련 화면을 다시 불러오지 못했습니다."
+                : "브라우저 데이터를 초기화하지 못했습니다.";
+            StatusTextBlock.Text = $"{selectedGroup.DisplayName}: {action} {ex.Message}";
+            Trace.WriteLine(
+                $"[{DateTimeOffset.Now:O}] Browser data clear failed: Group={selectedGroup.Group.Id}, " +
+                $"DataCleared={dataCleared}, Error={ex}");
+            MessageBox.Show(
+                this,
+                $"{action}\n\n{ex.Message}",
+                "브라우저 데이터 초기화 오류",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            BrowserDataMenuItem.IsEnabled = true;
+            _isBrowserDataClearInProgress = false;
+        }
+    }
+
+    private IReadOnlyList<BrowserDataGroupOption> CreateBrowserDataGroupOptions()
+    {
+        var options = new List<BrowserDataGroupOption>
+        {
+            new(_profileService.ExplorerGroup, "탐색 패널")
+        };
+        var groupsById = _profileService.Groups.ToDictionary(
+            group => group.Id,
+            StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < SlotProfileGroupMapping.GroupIds.Count; index++)
+        {
+            var groupId = SlotProfileGroupMapping.GroupIds[index];
+            var startSlotId = index * SlotProfileGroupMapping.SlotsPerProfileGroup + 1;
+            var endSlotId = Math.Min(
+                SlotProfileGroupMapping.MaxSlotCount,
+                startSlotId + SlotProfileGroupMapping.SlotsPerProfileGroup - 1);
+            options.Add(new BrowserDataGroupOption(
+                groupsById[groupId],
+                $"Group {groupId} (슬롯 {startSlotId}~{endSlotId})"));
+        }
+
+        return options;
+    }
+
+    private async Task<(int ReloadedCount, int FailureCount)> ReloadBrowserGroupAfterDataClearAsync(ProfileGroup group)
+    {
+        if (group.Id.Equals(_profileService.ExplorerGroup.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_explorerPanel is null || !_explorerPanel.IsBrowserInitialized)
+            {
+                return (0, 0);
+            }
+
+            await _explorerPanel.ReloadAsync();
+            return (1, 0);
+        }
+
+        var reloadedCount = 0;
+        var failureCount = 0;
+        foreach (var slot in _slots
+                     .Where(slot => slot.ProfileGroupId.Equals(group.Id, StringComparison.OrdinalIgnoreCase))
+                     .Where(slot => slot.IsBrowserInitialized)
+                     .Where(slot => !slot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(slot => slot.SlotId))
+        {
+            try
+            {
+                await slot.ReloadAsync();
+                reloadedCount++;
+            }
+            catch (Exception ex)
+            {
+                failureCount++;
+                Trace.WriteLine(
+                    $"[{DateTimeOffset.Now:O}] Browser data clear reload failed: " +
+                    $"Group={group.Id}, Slot={slot.SlotId}, Error={ex}");
+            }
+        }
+
+        return (reloadedCount, failureCount);
     }
 
     private void RecordingButton_Click(object sender, RoutedEventArgs e)
