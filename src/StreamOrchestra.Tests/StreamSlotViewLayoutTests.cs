@@ -285,6 +285,16 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
+    public void CodeBehind_HidesSoopBroadcasterProfileInsidePlaybackViewport()
+    {
+        var path = GetAppViewPath("StreamSlotView.xaml.cs");
+        var text = File.ReadAllText(path);
+
+        Assert.Contains("#webplayer #player_info", text);
+        Assert.Contains("\"#player_info\"", text);
+    }
+
+    [Fact]
     public void CodeBehind_UsesSoopNativePlayerModesWithoutCustomFullscreenFallback()
     {
         var path = GetAppViewPath("StreamSlotView.xaml.cs");

@@ -1383,6 +1383,13 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       display: block !important;
     }
 
+    #webplayer #player_info {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
     .popout_chat #chatting_area {
       min-width: auto !important;
     }
@@ -1673,6 +1680,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       ".global_header",
       ".live_header",
       ".player_header",
+      "#player_info",
       ".title_wrap",
       ".title_area"
     ];
