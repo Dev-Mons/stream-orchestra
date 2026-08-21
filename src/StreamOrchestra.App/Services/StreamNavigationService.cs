@@ -46,13 +46,17 @@ public sealed class StreamNavigationService
             return normalizedUrl;
         }
 
-        var lastSegment = uri.Segments
+        var pathSegments = uri.Segments
             .Select(segment => segment.Trim('/'))
-            .LastOrDefault(segment => !string.IsNullOrWhiteSpace(segment));
+            .Where(segment => !string.IsNullOrWhiteSpace(segment))
+            .Select(Uri.UnescapeDataString)
+            .ToArray();
+        var lastSegment = pathSegments.LastOrDefault(segment => !IsNumericIdentifier(segment))
+            ?? pathSegments.LastOrDefault();
 
-        return string.IsNullOrWhiteSpace(lastSegment)
+        return string.IsNullOrWhiteSpace(lastSegment) || IsNumericIdentifier(lastSegment)
             ? uri.Host
-            : Uri.UnescapeDataString(lastSegment);
+            : lastSegment;
     }
 
     public string CreateDisplayName(string? url, string? documentTitle)
@@ -76,13 +80,20 @@ public sealed class StreamNavigationService
         var normalized = NormalizeDocumentTitle(value);
         if (normalized.Equals("SOOP", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("embed", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("main", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("player", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("about:blank", StringComparison.OrdinalIgnoreCase) ||
             LooksLikeUrl(normalized))
         {
             return false;
         }
 
-        return normalized.Length < 6 || !normalized.All(char.IsDigit);
+        return !IsNumericIdentifier(normalized);
+    }
+
+    private static bool IsNumericIdentifier(string value)
+    {
+        return value.Length > 0 && value.All(char.IsDigit);
     }
 
     private static string NormalizeDocumentTitle(string? documentTitle)

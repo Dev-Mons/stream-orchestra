@@ -109,6 +109,20 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
+    public void CodeBehind_UsesTopLevelSoopMetadataForStoredStreamName()
+    {
+        var script = GetPlaybackViewportScript();
+        var codeBehind = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+
+        Assert.Contains("const isTopLevelDocument = window === window.top", script);
+        Assert.Contains("meta[property=\"og:title\"]", script);
+        Assert.Contains("document.querySelector(\"#infoTitle\")", script);
+        Assert.Contains("type: \"stream-title-metadata\"", script);
+        Assert.Contains("metadataSource.Equals(CurrentUrl", codeBehind);
+        Assert.Contains("UpdateCurrentLocation(CurrentUrl, message.Title!.Trim())", codeBehind);
+    }
+
+    [Fact]
     public void CodeBehind_AcceptsExplorerUrlDropsOnSlots()
     {
         var slotPath = Path.GetFullPath(Path.Combine(
@@ -285,13 +299,20 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
-    public void CodeBehind_HidesSoopBroadcasterProfileInsidePlaybackViewport()
+    public void CodeBehind_ShowsSoopNativeBroadcasterProfileOverlayOnPlayerHover()
     {
         var path = GetAppViewPath("StreamSlotView.xaml.cs");
         var text = File.ReadAllText(path);
 
-        Assert.Contains("#webplayer #player_info", text);
-        Assert.Contains("\"#player_info\"", text);
+        Assert.DoesNotContain("#webplayer #player_info", text);
+        Assert.DoesNotContain("\"#player_info\"", text);
+        Assert.Contains("body.screen_mode #webplayer #player:hover #player_info", text);
+        Assert.Contains("body.stream-orchestra-immersive-mode #webplayer #player:hover #player_info", text);
+        Assert.Contains("#player_info .detail_info", text);
+        Assert.Contains("display: flex !important", text);
+        Assert.Contains("stream-orchestra-broadcast-info-hover", text);
+        Assert.Contains("document.addEventListener(\"pointerover\"", text);
+        Assert.Contains("document.addEventListener(\"pointerout\"", text);
         Assert.Contains("\"#serviceHeader\"", text);
         Assert.Contains("\"#serviceLnb\"", text);
     }

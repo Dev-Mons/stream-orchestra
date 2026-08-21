@@ -54,6 +54,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     private bool _isMuted;
     private int _volumePercent = InitialVolumePercent;
     private bool _hasExplicitStreamName;
+    private bool _hasPageStreamTitle;
     private string _preferredQualityKey = "master";
     private string? _playbackViewportScriptId;
     private string? _qualityObserverScriptId;
@@ -155,6 +156,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         try
         {
             _hasExplicitStreamName = _navigationService.IsMeaningfulDisplayName(streamName);
+            _hasPageStreamTitle = false;
             UpdateCurrentLocation(
                 normalizedUrl,
                 _hasExplicitStreamName ? streamName!.Trim() : _navigationService.CreateDisplayName(normalizedUrl));
@@ -229,6 +231,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         try
         {
             _hasExplicitStreamName = false;
+            _hasPageStreamTitle = false;
             UpdateCurrentLocation("about:blank", "Empty");
             if (!_isInitialized)
             {
@@ -886,6 +889,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
             return;
         }
 
+        _hasPageStreamTitle = false;
         var displayName = _hasExplicitStreamName
             ? CurrentStreamName
             : _navigationService.CreateDisplayName(normalizedUrl);
@@ -894,7 +898,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
 
     private void CoreWebView2_DocumentTitleChanged(object? sender, object e)
     {
-        if (_hasExplicitStreamName)
+        if (_hasExplicitStreamName || _hasPageStreamTitle)
         {
             return;
         }
@@ -966,6 +970,20 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         if (message.Type.Equals("slot-wheel", StringComparison.OrdinalIgnoreCase))
         {
             ApplyWheelVolume(message.DeltaY, message.CtrlKey);
+            return;
+        }
+
+        if (message.Type.Equals("stream-title-metadata", StringComparison.OrdinalIgnoreCase))
+        {
+            var metadataSource = _navigationService.NormalizeUrl(message.Source ?? "");
+            if (IsSoopUrl(CurrentUrl) &&
+                metadataSource.Equals(CurrentUrl, StringComparison.OrdinalIgnoreCase) &&
+                _navigationService.IsMeaningfulDisplayName(message.Title))
+            {
+                _hasPageStreamTitle = true;
+                UpdateCurrentLocation(CurrentUrl, message.Title!.Trim());
+            }
+
             return;
         }
 
@@ -1474,11 +1492,26 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       display: block !important;
     }
 
-    #webplayer #player_info {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
+    body.screen_mode #webplayer #player:hover #player_info,
+    body.fullScreen_mode #webplayer #player:hover #player_info,
+    body.stream-orchestra-immersive-mode #webplayer #player:hover #player_info,
+    body.screen_mode #webplayer #player.stream-orchestra-broadcast-info-hover #player_info,
+    body.fullScreen_mode #webplayer #player.stream-orchestra-broadcast-info-hover #player_info,
+    body.stream-orchestra-immersive-mode #webplayer #player.stream-orchestra-broadcast-info-hover #player_info {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      z-index: 2147483600 !important;
       pointer-events: none !important;
+    }
+
+    body.screen_mode #webplayer #player:hover #player_info .detail_info,
+    body.fullScreen_mode #webplayer #player:hover #player_info .detail_info,
+    body.stream-orchestra-immersive-mode #webplayer #player:hover #player_info .detail_info,
+    body.screen_mode #webplayer #player.stream-orchestra-broadcast-info-hover #player_info .detail_info,
+    body.fullScreen_mode #webplayer #player.stream-orchestra-broadcast-info-hover #player_info .detail_info,
+    body.stream-orchestra-immersive-mode #webplayer #player.stream-orchestra-broadcast-info-hover #player_info .detail_info {
+      display: flex !important;
     }
 
     .popout_chat #chatting_area {
@@ -1623,8 +1656,62 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     root.appendChild(style);
   }
 
+  let lastReportedStreamTitle = "";
+  let streamTitleMetadataObserver = null;
+  const isTopLevelDocument = window === window.top;
+
+  function reportStreamTitleMetadata() {
+    if (!isTopLevelDocument) {
+      return;
+    }
+
+    const title = [
+      document.querySelector('meta[property="og:title"]')?.content,
+      document.querySelector('meta[name="twitter:title"]')?.content,
+      typeof window.szBroadTitle === "string" ? window.szBroadTitle : "",
+      document.querySelector("#broadTitle")?.textContent,
+      document.querySelector("#infoTitle")?.textContent
+    ].find(value => typeof value === "string" && value.trim().length > 0)?.trim() || "";
+    if (!title || title === lastReportedStreamTitle) {
+      return;
+    }
+
+    lastReportedStreamTitle = title;
+    window.chrome?.webview?.postMessage({
+      type: "stream-title-metadata",
+      title,
+      source: location.href
+    });
+  }
+
+  function observeStreamTitleMetadata() {
+    if (!isTopLevelDocument || streamTitleMetadataObserver) {
+      return;
+    }
+
+    const target = document.documentElement || document.head;
+    if (!target) {
+      return;
+    }
+
+    streamTitleMetadataObserver = new MutationObserver(reportStreamTitleMetadata);
+    streamTitleMetadataObserver.observe(target, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["content"]
+    });
+  }
+
   installStyle();
-  window.addEventListener("DOMContentLoaded", installStyle, { once: true });
+  window.addEventListener("DOMContentLoaded", () => {
+    installStyle();
+    reportStreamTitleMetadata();
+    observeStreamTitleMetadata();
+  }, { once: true });
+  reportStreamTitleMetadata();
+  observeStreamTitleMetadata();
   applySoopImmersiveMode();
   installSoopPlaybackLimitDetector();
 
@@ -1854,6 +1941,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     }
 
     const immersiveModeClass = "stream-orchestra-immersive-mode";
+    const broadcastInfoHoverClass = "stream-orchestra-broadcast-info-hover";
     const hideSelectors = [
       "#serviceHeader",
       "#serviceLnb",
@@ -1864,7 +1952,6 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
       ".global_header",
       ".live_header",
       ".player_header",
-      "#player_info",
       ".title_wrap",
       ".title_area"
     ];
@@ -1907,6 +1994,28 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     let viewportResizeObserver = null;
     let observedViewportResizeRoot = null;
     const observedChromeElements = new WeakSet();
+
+    const findBroadcastInfoPlayer = target => {
+      const element = target?.nodeType === Node.ELEMENT_NODE
+        ? target
+        : target?.parentElement;
+      return element?.closest?.("#webplayer #player") || null;
+    };
+
+    document.addEventListener("pointerover", event => {
+      findBroadcastInfoPlayer(event.target)?.classList.add(broadcastInfoHoverClass);
+    }, true);
+    document.addEventListener("pointerout", event => {
+      const player = findBroadcastInfoPlayer(event.target);
+      if (player && (!event.relatedTarget || !player.contains(event.relatedTarget))) {
+        player.classList.remove(broadcastInfoHoverClass);
+      }
+    }, true);
+    window.addEventListener("blur", () => {
+      for (const player of document.querySelectorAll(`.${broadcastInfoHoverClass}`)) {
+        player.classList.remove(broadcastInfoHoverClass);
+      }
+    }, true);
 
     const hideElements = () => {
       for (const selector of hideSelectors) {
@@ -2617,6 +2726,10 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         public string Url { get; init; } = "";
 
         public string? StreamName { get; init; }
+
+        public string? Title { get; init; }
+
+        public string? Source { get; init; }
 
         public string? Direction { get; init; }
 

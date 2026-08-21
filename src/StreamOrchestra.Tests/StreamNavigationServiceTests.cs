@@ -36,6 +36,8 @@ public sealed class StreamNavigationServiceTests
     [InlineData("https://www.sooplive.co.kr", "www.sooplive.co.kr")]
     [InlineData("https://www.sooplive.co.kr/streamer123", "streamer123")]
     [InlineData("www.sooplive.co.kr/streamer%20123", "streamer 123")]
+    [InlineData("https://play.sooplive.com/devil0108/296529529", "devil0108")]
+    [InlineData("https://example.com/296529529", "example.com")]
     public void CreateDisplayName_DerivesReadableNameFromUrl(string? input, string expected)
     {
         var service = new StreamNavigationService();
@@ -67,8 +69,11 @@ public sealed class StreamNavigationServiceTests
     [InlineData("방송국 이름", true)]
     [InlineData("BJ_1234", true)]
     [InlineData("296247067", false)]
+    [InlineData("123", false)]
     [InlineData("SOOP", false)]
     [InlineData("embed", false)]
+    [InlineData("main", false)]
+    [InlineData("player", false)]
     [InlineData("https://play.sooplive.com/296247067", false)]
     public void IsMeaningfulDisplayName_RejectsBroadcastIdsAndGenericPlayerNames(
         string value,
