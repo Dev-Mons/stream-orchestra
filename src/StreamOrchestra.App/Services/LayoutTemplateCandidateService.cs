@@ -9,6 +9,21 @@ namespace StreamOrchestra.App.Services;
 /// </summary>
 public sealed class LayoutTemplateCandidateService
 {
+    /// <summary>직접 전환용 후보: 슬롯 수와 이름 순으로 정렬된 모든 템플릿.</summary>
+    public IReadOnlyList<LayoutPreset> GetAllTemplates(IReadOnlyList<LayoutPreset> templates)
+    {
+        if (templates.Count == 0)
+        {
+            return [];
+        }
+
+        // 직접 전환의 실제 용량은 렌더러가 사용하는 Slots.Count가 기준이다.
+        return templates
+            .OrderBy(template => template.Slots.Count)
+            .ThenBy(template => template.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     /// <summary>화면 추가용 후보: 현재 보이는 슬롯 수 + 1개짜리 템플릿.</summary>
     public IReadOnlyList<LayoutPreset> GetCandidates(
         IReadOnlyList<LayoutPreset> templates,

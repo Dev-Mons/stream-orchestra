@@ -6,6 +6,46 @@ namespace StreamOrchestra.Tests;
 public sealed class LayoutTemplateCandidateServiceTests
 {
     [Fact]
+    public void GetAllTemplates_ReturnsEveryTemplateOrderedByCountThenName()
+    {
+        var service = new LayoutTemplateCandidateService();
+        var templates = new[]
+        {
+            CreateTemplate("layout_5b", 5),
+            CreateTemplate("layout_4", 4),
+            CreateTemplate("layout_5a", 5)
+        };
+
+        var candidates = service.GetAllTemplates(templates);
+
+        Assert.Equal(["layout_4", "layout_5a", "layout_5b"], candidates.Select(template => template.Id));
+    }
+
+    [Fact]
+    public void GetAllTemplates_OrdersByRenderedSlotCountWhenLegacySlotCountDiffers()
+    {
+        var service = new LayoutTemplateCandidateService();
+        var legacy = WithSlots(
+            CreateTemplate("legacy", 5),
+            [new LayoutSlot { SlotId = 1, X = 0, Y = 0, W = 1, H = 1 }]);
+        var two = CreateTemplate("two", 2);
+
+        var candidates = service.GetAllTemplates([two, legacy]);
+
+        Assert.Equal(["legacy", "two"], candidates.Select(template => template.Id));
+
+        static LayoutPreset WithSlots(LayoutPreset source, IReadOnlyList<LayoutSlot> slots) => new()
+        {
+            Id = source.Id,
+            Name = source.Name,
+            SlotCount = source.SlotCount,
+            GridColumns = 1,
+            GridRows = 1,
+            Slots = slots
+        };
+    }
+
+    [Fact]
     public void GetCandidates_WithFourVisibleSlots_ReturnsOnlyFiveSlotTemplates()
     {
         var service = new LayoutTemplateCandidateService();

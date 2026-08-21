@@ -9,7 +9,7 @@ public enum ShortcutAction
     /// <summary>화면 교체 모드(드래그 오버레이 표시).</summary>
     Swap,
 
-    /// <summary>레이아웃 전환 카드 표시.</summary>
+    /// <summary>전체 레이아웃 직접 선택기 열기/닫기.</summary>
     Switch,
 
     /// <summary>왼쪽 탐색(사이드바) 패널 열기/닫기 토글.</summary>

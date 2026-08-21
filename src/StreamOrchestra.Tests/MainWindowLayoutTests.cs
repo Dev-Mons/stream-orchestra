@@ -69,6 +69,38 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
+    public void TopToolbar_ProvidesOneClickDirectLayoutPicker()
+    {
+        var document = LoadMainWindowDocument();
+        var button = FindElementByName(document, "LayoutPickerButton");
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+        var presenter = File.ReadAllText(Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "StreamOrchestra.App",
+            "Views",
+            "LayoutCardPresenter.cs")));
+
+        Assert.Equal("Left", GetAttribute(button, "DockPanel.Dock"));
+        Assert.Equal("레이아웃 선택", GetAttribute(button, "Content"));
+        Assert.Equal("LayoutPickerButton_Click", GetAttribute(button, "Click"));
+        Assert.Equal("원하는 화면 수와 레이아웃을 바로 선택", GetAttribute(button, "ToolTip"));
+
+        Assert.Contains("ToggleDirectLayoutPicker", codeBehind);
+        Assert.Contains("GetAllTemplates(_layouts)", codeBehind);
+        Assert.Contains("ApplyDirectLayoutAsync", codeBehind);
+        Assert.Contains("LayoutTransitionPlanner", codeBehind);
+        Assert.Contains("LayoutTransitionCoordinator", codeBehind);
+        Assert.Contains("RunLayoutTransitionAsync", codeBehind);
+        Assert.Contains("resolvedKey == Key.Escape", codeBehind);
+        Assert.Contains("candidates.GroupBy(template => template.Slots.Count)", presenter);
+        Assert.Contains("방송 {playingCount - targetCount}개 종료", presenter);
+    }
+
+    [Fact]
     public void TopToolbar_ProvidesRefreshButtonLeftOfMuteAllButton()
     {
         var document = LoadMainWindowDocument();
@@ -184,7 +216,7 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("CardChosen += LayoutCardPresenter_CardChosen", codeBehind);
         Assert.Contains("SlotSwapRequested += SlotView_SlotSwapRequested", codeBehind);
 
-        // 키 홀드 기반 화면 제거/교체/전환 흐름이 단축키 설정을 통해 배선되어 있다.
+        // 키 기반 화면 제거/교체/직접 전환 흐름이 단축키 설정을 통해 배선되어 있다.
         Assert.Contains("RemoveSlotRequested += SlotView_RemoveSlotRequested", codeBehind);
         Assert.Contains("KeyStateChanged += OnSlotKeyStateChanged", codeBehind);
         Assert.Contains("_shortcutSettings.GetAction(virtualKey)", codeBehind);

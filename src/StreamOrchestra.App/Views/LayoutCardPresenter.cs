@@ -18,7 +18,7 @@ public enum LayoutCardMode
     /// <summary>슬롯 제거 버튼으로 화면을 줄일(N → N-1) 때.</summary>
     Remove,
 
-    /// <summary>왼쪽 Alt 키로 현재 화면 수(N)를 유지한 채 레이아웃만 전환할 때.</summary>
+    /// <summary>전체 레이아웃 중 하나를 직접 선택해 화면 수와 배치를 함께 전환할 때.</summary>
     Switch
 }
 
@@ -26,7 +26,8 @@ public enum LayoutCardMode
 /// 영상 영역 상단에 레이아웃 카드 리스트를 띄운다.
 /// - 추가(Add): 탐색 패널에서 채널 드래그가 시작되면 N+1 템플릿 카드를 노출하고, 카드 위에 드롭하면 전환한다.
 /// - 제거(Remove): 슬롯 제거 버튼을 누르면 N-1 템플릿 카드를 노출하고, 카드를 클릭하면 전환한다.
-/// 두 경우 모두 첫 번째에는 "아무것도 안 함"(취소) 카드가 항상 들어간다(<see cref="CardChosen"/>의 template이 null).
+/// 직접 전환(Switch)은 모든 템플릿을 화면 수별로 묶어 한 번에 표시한다.
+/// 모든 모드의 첫 번째에는 "아무것도 안 함"(취소) 카드가 들어간다(<see cref="CardChosen"/>의 template이 null).
 /// </summary>
 public sealed class LayoutCardPresenter
 {
@@ -44,6 +45,7 @@ public sealed class LayoutCardPresenter
     private readonly Popup _popup;
     private readonly Border _root;
     private readonly StackPanel _cardPanel;
+    private readonly ScrollViewer _cardScroller;
     private readonly TextBlock _title;
     private readonly TextBlock _emptyMessage;
     private FrameworkElement? _placementTarget;
@@ -74,17 +76,23 @@ public sealed class LayoutCardPresenter
             Margin = new Thickness(4, 0, 0, 6)
         };
 
-        var cardScroller = new ScrollViewer
+        _cardScroller = new ScrollViewer
         {
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = _cardPanel
         };
 
-        var contentPanel = new StackPanel { Margin = new Thickness(10, 8, 10, 10) };
+        var contentPanel = new Grid { Margin = new Thickness(10, 8, 10, 10) };
+        contentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        contentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        contentPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(_title, 0);
+        Grid.SetRow(_emptyMessage, 1);
+        Grid.SetRow(_cardScroller, 2);
         contentPanel.Children.Add(_title);
         contentPanel.Children.Add(_emptyMessage);
-        contentPanel.Children.Add(cardScroller);
+        contentPanel.Children.Add(_cardScroller);
 
         _root = new Border
         {
@@ -113,27 +121,46 @@ public sealed class LayoutCardPresenter
 
     public bool IsOpen => _popup.IsOpen;
 
-    public void Show(IReadOnlyList<LayoutPreset> candidates, FrameworkElement placementTarget, LayoutCardMode mode)
+    public void Show(
+        IReadOnlyList<LayoutPreset> candidates,
+        FrameworkElement placementTarget,
+        LayoutCardMode mode,
+        string? selectedLayoutId = null,
+        int? currentPlayingCount = null,
+        string? preferredStreamName = null)
     {
         _cardPanel.Children.Clear();
 
         _title.Text = mode switch
         {
             LayoutCardMode.Remove => "삭제 후 전환할 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)",
-            LayoutCardMode.Switch => "현재 화면 수에 맞는 레이아웃을 선택하세요. ('아무것도 안 함'을 누르면 취소)",
+            LayoutCardMode.Switch => string.IsNullOrWhiteSpace(preferredStreamName)
+                ? "원하는 레이아웃을 바로 선택하세요. 화면을 줄이면 앞쪽 방송부터 유지됩니다. (ESC: 취소)"
+                : $"원하는 레이아웃을 바로 선택하세요. 화면을 줄이면 '{preferredStreamName}' 방송을 우선 유지합니다. (ESC: 취소)",
             _ => "채널을 카드 위에 드롭하면 레이아웃이 전환됩니다."
         };
 
-        // 첫 번째 카드는 항상 "아무것도 안 함"(취소) 카드.
-        _cardPanel.Children.Add(CreateCancelCard());
+        ConfigureCardLayout(mode);
 
         _emptyMessage.Visibility = candidates.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
+        _emptyMessage.Text = mode == LayoutCardMode.Switch
+            ? "선택할 수 있는 레이아웃이 없습니다. 설정 → 레이아웃에서 먼저 생성하세요."
+            : "현재 화면 수에 맞는 레이아웃 템플릿이 없습니다.";
 
-        foreach (var template in candidates)
+        if (mode == LayoutCardMode.Switch)
         {
-            _cardPanel.Children.Add(CreateCard(template));
+            BuildDirectSelectionCards(candidates, selectedLayoutId, currentPlayingCount);
+        }
+        else
+        {
+            // 첫 번째 카드는 항상 "아무것도 안 함"(취소) 카드.
+            _cardPanel.Children.Add(CreateCancelCard());
+            foreach (var template in candidates)
+            {
+                _cardPanel.Children.Add(CreateCard(template));
+            }
         }
 
         SetPlacementTarget(placementTarget);
@@ -143,8 +170,7 @@ public sealed class LayoutCardPresenter
         RefreshPlacement(force: true);
         QueueRefreshPlacement();
 
-        // 전환(Switch)은 왼쪽 Alt 홀드로 동작하므로 팝업에 포커스를 주면
-        // 메인 윈도우가 Alt 키 해제 이벤트를 받지 못한다. 이 모드에서는 포커스를 옮기지 않는다.
+        // 직접 전환은 메인 창이 ESC와 전환 단축키를 계속 받도록 포커스를 옮기지 않는다.
         if (mode != LayoutCardMode.Switch &&
             _cardPanel.Children.Count > 0 && _cardPanel.Children[0] is Button firstCard)
         {
@@ -162,6 +188,58 @@ public sealed class LayoutCardPresenter
     public void RefreshPlacement()
     {
         RefreshPlacement(force: true);
+    }
+
+    private void ConfigureCardLayout(LayoutCardMode mode)
+    {
+        var isDirectSelection = mode == LayoutCardMode.Switch;
+        _cardPanel.Orientation = isDirectSelection
+            ? Orientation.Vertical
+            : Orientation.Horizontal;
+        _cardScroller.HorizontalScrollBarVisibility = isDirectSelection
+            ? ScrollBarVisibility.Disabled
+            : ScrollBarVisibility.Auto;
+        _cardScroller.VerticalScrollBarVisibility = isDirectSelection
+            ? ScrollBarVisibility.Auto
+            : ScrollBarVisibility.Disabled;
+    }
+
+    private void BuildDirectSelectionCards(
+        IReadOnlyList<LayoutPreset> candidates,
+        string? selectedLayoutId,
+        int? currentPlayingCount)
+    {
+        var cancelRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        cancelRow.Children.Add(CreateCancelCard());
+        _cardPanel.Children.Add(cancelRow);
+
+        foreach (var group in candidates.GroupBy(template => template.Slots.Count))
+        {
+            var section = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+            section.Children.Add(new TextBlock
+            {
+                Text = $"{group.Key}화면 레이아웃",
+                Foreground = PrimaryText,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Margin = new Thickness(4, 0, 0, 6)
+            });
+
+            var cards = new WrapPanel { Orientation = Orientation.Horizontal };
+            foreach (var template in group)
+            {
+                var isSelected = !string.IsNullOrWhiteSpace(selectedLayoutId) &&
+                    template.Id.Equals(selectedLayoutId, StringComparison.OrdinalIgnoreCase);
+                cards.Children.Add(CreateCard(template, isSelected, currentPlayingCount));
+            }
+
+            section.Children.Add(cards);
+            _cardPanel.Children.Add(section);
+        }
     }
 
     private Button CreateCancelCard()
@@ -199,7 +277,10 @@ public sealed class LayoutCardPresenter
         return card;
     }
 
-    private Button CreateCard(LayoutPreset template)
+    private Button CreateCard(
+        LayoutPreset template,
+        bool isSelected = false,
+        int? currentPlayingCount = null)
     {
         var content = new StackPanel { Width = 150 };
 
@@ -223,16 +304,46 @@ public sealed class LayoutCardPresenter
             Margin = new Thickness(0, 6, 0, 0)
         });
 
+        var displayedSlotCount = currentPlayingCount is null
+            ? template.EffectiveSlotCount
+            : template.Slots.Count;
         content.Children.Add(new TextBlock
         {
-            Text = $"슬롯 {template.EffectiveSlotCount}개",
+            Text = $"슬롯 {displayedSlotCount}개",
             Foreground = SecondaryText,
             FontSize = 11,
             Margin = new Thickness(0, 2, 0, 0)
         });
 
+        if (currentPlayingCount is { } playingCount)
+        {
+            var targetCount = template.Slots.Count;
+            var differenceText = playingCount > targetCount
+                ? $"방송 {playingCount - targetCount}개 종료"
+                : playingCount < targetCount
+                    ? $"빈 화면 {targetCount - playingCount}개 추가"
+                    : "모든 방송 유지";
+            content.Children.Add(new TextBlock
+            {
+                Text = differenceText,
+                Foreground = playingCount > targetCount
+                    ? new SolidColorBrush(Color.FromRgb(244, 197, 106))
+                    : SecondaryText,
+                FontSize = 10,
+                Margin = new Thickness(0, 3, 0, 0)
+            });
+        }
+
         var card = CreateCardShell(tag: template, content: content, background: CardBackground);
-        card.ToolTip = $"{template.Name} · 슬롯 {template.EffectiveSlotCount}개";
+        if (isSelected)
+        {
+            card.BorderBrush = CardBorderHighlight;
+            card.BorderThickness = new Thickness(2);
+        }
+
+        card.ToolTip = isSelected
+            ? $"{template.Name} · 슬롯 {displayedSlotCount}개 · 현재 레이아웃"
+            : $"{template.Name} · 슬롯 {displayedSlotCount}개";
         WireCard(card, template);
         return card;
     }
@@ -325,6 +436,7 @@ public sealed class LayoutCardPresenter
         }
 
         _root.Width = Math.Max(1, _placementTarget.ActualWidth);
+        _root.MaxHeight = Math.Max(220, _placementTarget.ActualHeight * 0.72);
 
         var bounds = GetScreenBounds(_placementTarget);
         if (!force && !HasBoundsChanged(_lastPlacementBounds, bounds))

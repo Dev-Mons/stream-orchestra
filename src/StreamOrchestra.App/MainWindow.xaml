@@ -149,6 +149,23 @@
                            Stretch="Uniform" />
                 </Button>
 
+                <Button x:Name="LayoutPickerButton"
+                        DockPanel.Dock="Left"
+                        MinWidth="132"
+                        Height="28"
+                        Margin="0,0,8,0"
+                        Padding="10,3"
+                        VerticalAlignment="Center"
+                        WindowChrome.IsHitTestVisibleInChrome="True"
+                        Background="#223044"
+                        BorderBrush="#2D3642"
+                        BorderThickness="1"
+                        Foreground="#F3F6FA"
+                        Content="레이아웃 선택"
+                        ToolTip="원하는 화면 수와 레이아웃을 바로 선택"
+                        AutomationProperties.Name="전체 레이아웃 선택"
+                        Click="LayoutPickerButton_Click" />
+
                 <!-- 창 제어 버튼: 닫기가 가장 바깥쪽(우측 끝) 모서리에 오도록 먼저 선언 -->
                 <Button x:Name="CloseButton"
                         DockPanel.Dock="Right"

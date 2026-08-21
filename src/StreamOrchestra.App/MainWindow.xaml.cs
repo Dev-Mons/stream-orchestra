@@ -40,6 +40,8 @@ public partial class MainWindow : Window
     private readonly SlotSwapService _slotSwapService = new();
     private readonly SlotRemovalSelectionService _slotRemovalSelectionService = new();
     private readonly LayoutTemplateCandidateService _layoutTemplateCandidateService = new();
+    private readonly LayoutTransitionPlanner _layoutTransitionPlanner = new();
+    private readonly LayoutTransitionCoordinator _layoutTransitionCoordinator = new();
     private readonly AppWindowPlacementService _appWindowPlacementService = new();
     private readonly WorkspaceSlotVisibilityService _workspaceSlotVisibilityService = new();
     private readonly WorkspacePresetNormalizationService _workspacePresetNormalizationService;
@@ -124,6 +126,10 @@ public partial class MainWindow : Window
         {
             SetRemoveModeActive(false);
             SetSwapModeActive(false);
+            if (_layoutCardMode == LayoutCardMode.Switch)
+            {
+                HideSwitchLayoutCards();
+            }
         };
 
         // 상태 메시지가 갱신될 때마다 좌측 토스트를 잠깐 띄운다.
@@ -144,6 +150,16 @@ public partial class MainWindow : Window
 
     private void HandleShortcutKeyEvent(KeyEventArgs e, bool pressed, bool isRepeat)
     {
+        var resolvedKey = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (pressed && !isRepeat && resolvedKey == Key.Escape &&
+            _layoutCardMode == LayoutCardMode.Switch && _layoutCardPresenter.IsOpen)
+        {
+            HideSwitchLayoutCards();
+            StatusTextBlock.Text = "레이아웃 선택을 취소했습니다.";
+            e.Handled = true;
+            return;
+        }
+
         // 텍스트 입력란(예: 탐색 URL 창)에 포커스가 있으면 임의 키 단축키가 입력을 가로채지 않도록 무시한다.
         if (Keyboard.FocusedElement is TextBoxBase)
         {
@@ -182,16 +198,10 @@ public partial class MainWindow : Window
                 SetSwapModeActive(pressed);
                 break;
             case ShortcutAction.Switch:
-                if (pressed)
+                // 직접 선택기는 홀드가 아니라 한 번 눌러 열고, 선택·ESC·재입력으로 닫는다.
+                if (pressed && !isRepeat)
                 {
-                    if (!isRepeat)
-                    {
-                        ShowSwitchLayoutCards();
-                    }
-                }
-                else if (_layoutCardMode == LayoutCardMode.Switch)
-                {
-                    HideSwitchLayoutCards();
+                    ToggleDirectLayoutPicker();
                 }
 
                 break;
@@ -293,6 +303,8 @@ public partial class MainWindow : Window
         {
             ShowEmptyLayoutState();
         }
+
+        UpdateLayoutPickerButton();
     }
 
     private LayoutPreset? ResolveInitialLayout(string? layoutId)
@@ -332,6 +344,7 @@ public partial class MainWindow : Window
         StopPlaybackForHiddenSlots([]);
 
         StatusTextBlock.Text = "사용자 지정 레이아웃이 없습니다. 설정 → 레이아웃에서 레이아웃을 생성하세요.";
+        UpdateLayoutPickerButton();
         QueueAppStateSave();
     }
 
@@ -386,7 +399,7 @@ public partial class MainWindow : Window
         RefreshWorkspaceComboBox();
     }
 
-    private void ApplyLayout(LayoutPreset layout)
+    private void ApplyLayout(LayoutPreset layout, bool stopHiddenPlayback = true)
     {
         _selectedLayout = layout;
         SlotsGrid.Children.Clear();
@@ -398,9 +411,13 @@ public partial class MainWindow : Window
         SlotsGrid.Children.Add(content);
 
         // 새 레이아웃에서 사라진 슬롯은 화면에서 빠지므로 재생을 즉시 중지한다.
-        StopPlaybackForHiddenSlots(layout.Slots.Select(slot => slot.SlotId).ToHashSet());
+        if (stopHiddenPlayback)
+        {
+            StopPlaybackForHiddenSlots(layout.Slots.Select(slot => slot.SlotId).ToHashSet());
+        }
 
         StatusTextBlock.Text = $"Layout applied: {layout.Name} ({layout.GridColumns}x{layout.GridRows}, {layout.EffectiveSlotCount} visible slots)";
+        UpdateLayoutPickerButton();
         QueueAppStateSave();
     }
 
@@ -433,7 +450,8 @@ public partial class MainWindow : Window
     {
         _selectedLayout = layout;
         RefreshLayoutSelector();
-        ApplyLayout(layout);
+        // 숨은 슬롯을 기다려 정리할 때는 ApplyLayout의 fire-and-forget 정리를 중복 실행하지 않는다.
+        ApplyLayout(layout, stopHiddenPlayback: !clearHiddenSlots);
         EnsureSelectedSlotVisible(layout);
 
         if (clearHiddenSlots)
@@ -852,6 +870,26 @@ public partial class MainWindow : Window
         StatusTextBlock.Text = _isExplorerPanelVisible ? "Explorer panel shown." : "Explorer panel hidden.";
     }
 
+    private void LayoutPickerButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleDirectLayoutPicker();
+    }
+
+    private void UpdateLayoutPickerButton()
+    {
+        if (_selectedLayout is not { } layout)
+        {
+            LayoutPickerButton.Content = "레이아웃 선택";
+            LayoutPickerButton.ToolTip = "설정 → 레이아웃에서 레이아웃을 먼저 생성하세요.";
+            LayoutPickerButton.IsEnabled = false;
+            return;
+        }
+
+        LayoutPickerButton.Content = $"{layout.Slots.Count}화면 · {layout.Name}";
+        LayoutPickerButton.ToolTip = "원하는 화면 수와 레이아웃을 바로 선택";
+        LayoutPickerButton.IsEnabled = !_layoutTransitionCoordinator.IsRunning;
+    }
+
     private async void SlotView_StreamUrlDropRequested(StreamSlotView targetSlot, string url, string? streamName)
     {
         await LoadDroppedStreamIntoSlotAsync(targetSlot, url, streamName);
@@ -1072,9 +1110,8 @@ public partial class MainWindow : Window
         UpdateDiagnostics();
     }
 
-    // 왼쪽 Alt 카드 선택: 현재 화면 수(N)를 유지한 채 같은 슬롯 수의 다른 레이아웃으로 전환한다.
-    // 현재 채널을 슬롯 순서대로 새 템플릿 슬롯에 다시 채운다.
-    private async Task ApplySwitchAsync(LayoutPreset template)
+    // 직접 선택한 임의 크기의 레이아웃으로 전환한다. 축소 시 선택 방송을 우선 보존한다.
+    private async Task ApplyDirectLayoutAsync(LayoutPreset template)
     {
         if (_selectedLayout is not { } currentLayout)
         {
@@ -1087,17 +1124,51 @@ public partial class MainWindow : Window
             return;
         }
 
-        var streams = currentLayout.Slots
-            .Select(visibleSlot => visibleSlot.SlotId)
-            .OrderBy(slotId => slotId)
-            .Select(slotId => _slots.First(candidate => candidate.SlotId == slotId))
-            .Select(candidate => (candidate.CurrentUrl, candidate.CurrentStreamName))
+        var currentSlots = currentLayout.Slots
+            .Select(layoutSlot => _slots.First(candidate => candidate.SlotId == layoutSlot.SlotId))
+            .Select(slot => slot.CreateRuntimeState())
             .ToArray();
+        var plan = _layoutTransitionPlanner.CreatePlan(
+            currentLayout,
+            template,
+            currentSlots,
+            _selectedSlot?.SlotId);
 
-        await RefillTemplateSlotsAsync(template, streams);
+        await ApplyLayoutTransitionPlanAsync(plan);
 
-        StatusTextBlock.Text = $"'{template.Name}' 레이아웃으로 전환했습니다.";
+        StatusTextBlock.Text = plan.ClosedStreamCount > 0
+            ? $"'{template.Name}' 레이아웃으로 바로 전환했습니다. 방송 {plan.ClosedStreamCount}개를 종료했습니다."
+            : $"'{template.Name}' 레이아웃으로 바로 전환했습니다. 방송 {plan.RetainedStreamCount}개를 유지했습니다.";
         UpdateDiagnostics();
+    }
+
+    private async Task ApplyLayoutTransitionPlanAsync(LayoutTransitionPlan plan)
+    {
+        await ApplySelectedLayoutAsync(plan.TargetLayout, clearHiddenSlots: true);
+
+        foreach (var assignment in plan.Assignments)
+        {
+            var targetSlot = _slots.First(candidate => candidate.SlotId == assignment.TargetSlotId);
+            if (targetSlot.CurrentUrl.Equals(assignment.StreamUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (assignment.StreamUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase))
+            {
+                await targetSlot.ClearAsync();
+            }
+            else
+            {
+                await NavigateSlotAsync(targetSlot, assignment.StreamUrl, assignment.StreamName);
+            }
+        }
+
+        if (plan.PreferredTargetSlotId is { } preferredTargetSlotId &&
+            _slots.FirstOrDefault(slot => slot.SlotId == preferredTargetSlotId) is { } preferredTarget)
+        {
+            SelectSlot(preferredTarget);
+        }
     }
 
     // 새 템플릿을 적용하고, 보존된 채널을 템플릿 슬롯에 순서대로 다시 채운다.
@@ -1147,7 +1218,7 @@ public partial class MainWindow : Window
             : $"슬롯 {currentVisibleSlotCount + 1}개에 맞는 레이아웃 템플릿이 없습니다.";
     }
 
-    // 왼쪽 Alt를 누르고 있는 동안 현재 화면 수(N)와 같은 슬롯 수의 레이아웃 카드를 표시한다.
+    // 전체 레이아웃을 화면 수별로 묶어 표시한다. 버튼과 전환 단축키가 이 경로를 함께 사용한다.
     private void ShowSwitchLayoutCards()
     {
         // 이미 카드가 떠 있으면(예: 제거 카드) 덮어쓰지 않는다.
@@ -1158,21 +1229,55 @@ public partial class MainWindow : Window
 
         ClearRemoveSelection(hideCards: false);
         SetRemoveModeActive(false);
+        SetSwapModeActive(false);
 
-        var currentCount = _selectedLayout?.EffectiveSlotCount ?? GetVisibleSlotViews().Count();
-        if (currentCount <= 0)
+        if (_layouts.Count == 0)
         {
-            StatusTextBlock.Text = "표시 중인 화면이 없어 레이아웃 카드를 띄울 수 없습니다.";
+            StatusTextBlock.Text = "선택할 레이아웃이 없습니다. 설정 → 레이아웃에서 먼저 생성하세요.";
             return;
         }
 
-        var candidates = _layoutTemplateCandidateService.GetTemplatesForSlotCount(_layouts, currentCount);
+        var candidates = _layoutTemplateCandidateService.GetAllTemplates(_layouts);
+        var playingCount = GetVisibleNonBlankSlots().Length;
+        var preferredStreamName = _selectedSlot is not null &&
+                                  !_selectedSlot.CurrentUrl.Equals("about:blank", StringComparison.OrdinalIgnoreCase)
+            ? _selectedSlot.CurrentStreamName
+            : null;
         _layoutCardMode = LayoutCardMode.Switch;
-        _layoutCardPresenter.Show(candidates, SlotsGrid, LayoutCardMode.Switch);
+        _layoutCardPresenter.Show(
+            candidates,
+            SlotsGrid,
+            LayoutCardMode.Switch,
+            _selectedLayout?.Id,
+            playingCount,
+            preferredStreamName);
 
-        StatusTextBlock.Text = candidates.Count > 0
-            ? $"슬롯 {currentCount}개 레이아웃 카드 {candidates.Count}개 표시 중. 전환할 카드를 선택하세요."
-            : $"슬롯 {currentCount}개에 맞는 레이아웃 템플릿이 없습니다.";
+        StatusTextBlock.Text = $"전체 레이아웃 {candidates.Count}개를 표시했습니다. 원하는 레이아웃을 바로 선택하세요.";
+    }
+
+    private void ToggleDirectLayoutPicker()
+    {
+        if (_layoutTransitionCoordinator.IsRunning)
+        {
+            StatusTextBlock.Text = "레이아웃 전환이 진행 중입니다.";
+            return;
+        }
+
+        if (_layoutCardPresenter.IsOpen)
+        {
+            if (_layoutCardMode == LayoutCardMode.Switch)
+            {
+                HideSwitchLayoutCards();
+                return;
+            }
+
+            // 추가/제거 후보가 떠 있어도 명시적인 직접 선택 요청이 우선한다.
+            _layoutCardPresenter.Hide();
+            ClearRemoveSelection(hideCards: false);
+            _layoutCardMode = LayoutCardMode.Add;
+        }
+
+        ShowSwitchLayoutCards();
     }
 
     private void HideSwitchLayoutCards()
@@ -1216,7 +1321,7 @@ public partial class MainWindow : Window
         {
             if (removalSlotIds.Count > 0)
             {
-                await ApplyRemovalAsync(removalSlotIds, template);
+                await RunLayoutTransitionAsync(() => ApplyRemovalAsync(removalSlotIds, template));
             }
 
             return;
@@ -1224,7 +1329,7 @@ public partial class MainWindow : Window
 
         if (mode == LayoutCardMode.Switch)
         {
-            await ApplySwitchAsync(template);
+            await RunLayoutTransitionAsync(() => ApplyDirectLayoutAsync(template));
             return;
         }
 
@@ -1235,7 +1340,37 @@ public partial class MainWindow : Window
             StreamDropDataReader.TryGetDroppedStream(data, _streamNavigationService, out url, out streamName);
         }
 
-        await ApplyTemplateFromCardAsync(template, url, streamName);
+        await RunLayoutTransitionAsync(() => ApplyTemplateFromCardAsync(template, url, streamName));
+    }
+
+    private async Task RunLayoutTransitionAsync(Func<Task> transition)
+    {
+        if (_layoutTransitionCoordinator.IsRunning)
+        {
+            StatusTextBlock.Text = "레이아웃 전환이 이미 진행 중입니다.";
+            return;
+        }
+
+        try
+        {
+            var started = await _layoutTransitionCoordinator.TryRunAsync(async () =>
+            {
+                UpdateLayoutPickerButton();
+                await transition();
+            });
+            if (!started)
+            {
+                StatusTextBlock.Text = "레이아웃 전환이 이미 진행 중입니다.";
+            }
+        }
+        catch (Exception exception)
+        {
+            StatusTextBlock.Text = $"레이아웃 전환에 실패했습니다: {exception.Message}";
+        }
+        finally
+        {
+            UpdateLayoutPickerButton();
+        }
     }
 
     private async Task ApplyTemplateFromCardAsync(LayoutPreset template, string? url, string? streamName)
