@@ -287,6 +287,10 @@
                                   Header="브라우저 데이터 초기화..."
                                   Foreground="#111827"
                                   Click="BrowserDataButton_Click" />
+                        <MenuItem x:Name="CacheCleanupMenuItem"
+                                  Header="캐시 정리..."
+                                  Foreground="#111827"
+                                  Click="CacheCleanupButton_Click" />
                         <MenuItem Header="프리셋"
                                   Foreground="#111827">
                             <ComboBox x:Name="WorkspaceComboBox"

@@ -134,6 +134,74 @@ public sealed class UpdateServiceTests
         var result = await service.RunAutomaticCheckAsync();
 
         Assert.Equal(UpdateCheckOutcome.Failed, result.Outcome);
+        Assert.IsType<InvalidOperationException>(result.Error);
+        Assert.Equal("simulated network failure", result.Error?.Message);
+    }
+
+    [Fact]
+    public async Task RunManualCheckAsync_ReturnsNotInstalled_WithoutCheckingOrRecordingTime_WhenNotInstalled()
+    {
+        var checker = new FakeUpdateChecker { IsInstalled = false, NextUpdate = new AvailableUpdate("0.2.0") };
+        var service = new UpdateService(checker, new AutoUpdateState { Enabled = true });
+
+        var result = await service.RunManualCheckAsync();
+
+        Assert.Equal(UpdateCheckOutcome.NotInstalled, result.Outcome);
+        Assert.Null(result.Update);
+        Assert.Equal(0, checker.CheckCallCount);
+        Assert.Null(service.CurrentState.LastCheckUtc);
+    }
+
+    [Fact]
+    public async Task RunAutomaticCheckAsync_ReturnsNotInstalled_WhenNotInstalled()
+    {
+        var checker = new FakeUpdateChecker { IsInstalled = false };
+        var service = new UpdateService(checker, new AutoUpdateState { Enabled = true });
+
+        var result = await service.RunAutomaticCheckAsync();
+
+        Assert.Equal(UpdateCheckOutcome.NotInstalled, result.Outcome);
+        Assert.Equal(0, checker.CheckCallCount);
+    }
+
+    [Fact]
+    public async Task RunAutomaticCheckAsync_ChecksAgainEveryThirtyMinutes()
+    {
+        var checker = new FakeUpdateChecker();
+        var now = DateTimeOffset.Parse("2026-05-28T10:00:00Z");
+        var service = new UpdateService(
+            checker,
+            new AutoUpdateState { Enabled = true },
+            UpdateService.DefaultMinimumCheckInterval,
+            () => now);
+
+        await service.RunAutomaticCheckAsync();
+        now = now.AddMinutes(29);
+        var beforeInterval = await service.RunAutomaticCheckAsync();
+        now = now.AddMinutes(1);
+        var atInterval = await service.RunAutomaticCheckAsync();
+
+        Assert.Equal(TimeSpan.FromMinutes(30), UpdateService.DefaultMinimumCheckInterval);
+        Assert.Equal(UpdateCheckOutcome.Throttled, beforeInterval.Outcome);
+        Assert.Equal(UpdateCheckOutcome.NoUpdate, atInterval.Outcome);
+        Assert.Equal(2, checker.CheckCallCount);
+    }
+
+    [Fact]
+    public void HasPromptBeenShown_TracksVersionsForThisRunOnly()
+    {
+        var state = new AutoUpdateState { Enabled = true };
+        var service = new UpdateService(new FakeUpdateChecker(), state);
+
+        Assert.False(service.HasPromptBeenShown("0.22.0"));
+
+        service.MarkPromptShown("0.22.0");
+
+        Assert.True(service.HasPromptBeenShown("0.22.0"));
+        Assert.True(service.HasPromptBeenShown("0.22.0".ToUpperInvariant()));
+        Assert.False(service.HasPromptBeenShown("0.23.0"));
+        // 저장 상태에 남기지 않으므로 앱을 다시 켜면 한 번 더 안내한다.
+        Assert.False(new UpdateService(new FakeUpdateChecker(), service.CurrentState).HasPromptBeenShown("0.22.0"));
     }
 
     [Fact]
@@ -171,8 +239,9 @@ public sealed class UpdateServiceTests
         var checker = new FakeUpdateChecker(events);
         var service = new UpdateService(checker, new AutoUpdateState());
 
-        await service.DownloadAndApplyAsync(() => events.Add("save"));
+        var restarting = await service.DownloadAndApplyAsync(() => events.Add("save"));
 
+        Assert.True(restarting);
         Assert.Equal(["download", "save", "restart"], events);
     }
 
@@ -195,8 +264,9 @@ public sealed class UpdateServiceTests
         var checker = new FakeUpdateChecker(events) { DownloadSucceeds = false };
         var service = new UpdateService(checker, new AutoUpdateState());
 
-        await service.DownloadAndApplyAsync(() => events.Add("save"));
+        var restarting = await service.DownloadAndApplyAsync(() => events.Add("save"));
 
+        Assert.False(restarting);
         Assert.Equal(["download"], events);
     }
 
@@ -228,6 +298,8 @@ public sealed class UpdateServiceTests
         {
             _events = events;
         }
+
+        public bool IsInstalled { get; set; } = true;
 
         public AvailableUpdate? NextUpdate { get; set; }
 

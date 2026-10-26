@@ -13,6 +13,8 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
         _manager = new UpdateManager(new GithubSource(repositoryUrl, null, false));
     }
 
+    public bool IsInstalled => _manager.IsInstalled;
+
     public async Task<AvailableUpdate?> CheckForUpdateAsync(CancellationToken cancellationToken = default)
     {
         if (!_manager.IsInstalled)

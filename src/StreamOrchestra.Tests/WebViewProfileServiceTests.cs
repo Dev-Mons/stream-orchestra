@@ -80,6 +80,15 @@ public sealed class WebViewProfileServiceTests : IDisposable
         Assert.True(Directory.Exists(service.ExplorerGroup.UserDataFolder));
     }
 
+    [Fact]
+    public void CreateEnvironmentOptions_CapsDiskCacheSize()
+    {
+        var options = WebViewProfileService.CreateEnvironmentOptions();
+
+        Assert.Equal(64L * 1024 * 1024, WebViewProfileService.DiskCacheSizeBytes);
+        Assert.Equal("--disk-cache-size=67108864", options.AdditionalBrowserArguments);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_profileRoot))

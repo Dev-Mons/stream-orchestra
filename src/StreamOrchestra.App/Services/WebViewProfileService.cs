@@ -7,6 +7,10 @@ namespace StreamOrchestra.App.Services;
 
 public sealed class WebViewProfileService
 {
+    // 생방송 영상 조각이 HTTP 캐시에 쌓여 그룹마다 수백 MB까지 커지므로 그룹별 상한을 둔다.
+    // 다시 재생할 일이 없는 데이터라 상한을 낮게 잡아도 재생에는 영향이 없다.
+    public const long DiskCacheSizeBytes = 64L * 1024 * 1024;
+
     private readonly ConcurrentDictionary<string, Lazy<Task<CoreWebView2Environment>>> _environments = new();
     private readonly IReadOnlyDictionary<string, ProfileGroup> _groups;
 
@@ -61,12 +65,20 @@ public sealed class WebViewProfileService
             folder);
     }
 
+    // 같은 userDataFolder를 쓰는 환경은 옵션이 모두 같아야 하므로 환경 생성은 이 경로로만 한다.
+    public static CoreWebView2EnvironmentOptions CreateEnvironmentOptions()
+    {
+        return new CoreWebView2EnvironmentOptions
+        {
+            AdditionalBrowserArguments = $"--disk-cache-size={DiskCacheSizeBytes}"
+        };
+    }
+
     private static Task<CoreWebView2Environment> CreateEnvironmentAsync(ProfileGroup group)
     {
-        var options = new CoreWebView2EnvironmentOptions();
         return CoreWebView2Environment.CreateAsync(
             browserExecutableFolder: null,
             userDataFolder: group.UserDataFolder,
-            options);
+            CreateEnvironmentOptions());
     }
 }

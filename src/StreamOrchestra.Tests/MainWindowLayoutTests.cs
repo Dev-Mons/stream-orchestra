@@ -374,6 +374,57 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
+    public void SettingsMenu_ProvidesCacheCleanupThatKeepsLogin()
+    {
+        var document = LoadMainWindowDocument();
+        var settingsMenu = FindMenuItem(document, "설정");
+        var cacheCleanupItem = FindMenuItem(document, "캐시 정리...");
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+        var handler = codeBehind[
+            codeBehind.IndexOf("private async void CacheCleanupButton_Click", StringComparison.Ordinal)..
+            codeBehind.IndexOf("private Task<(BrowserDataGroupOption Option, long Bytes)[]> MeasureBrowserCacheUsageAsync", StringComparison.Ordinal)];
+
+        Assert.Equal("CacheCleanupButton_Click", GetAttribute(cacheCleanupItem, "Click"));
+        Assert.Contains(settingsMenu.Descendants(), element => element == cacheCleanupItem);
+        Assert.Contains("new BrowserDataClearOptions(ClearSiteData: false, ClearCache: true)", handler);
+        Assert.Contains("MessageBoxButton.YesNo", handler);
+        Assert.Contains("_browserCacheUsageService.GetCacheSizeBytes", codeBehind);
+    }
+
+    [Fact]
+    public void UpdateCheck_ExplainsDevBuildFailuresAndUnfinishedDownloads()
+    {
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+
+        // 개발 빌드에서 "이미 최신 버전"으로 잘못 안내하지 않는다.
+        Assert.Contains("case UpdateCheckOutcome.NotInstalled:", codeBehind);
+        Assert.Contains("개발 빌드로 실행 중이라 업데이트를 확인할 수 없습니다", codeBehind);
+        // 실패 원인을 상태줄에 보여주고 기록한다.
+        Assert.Contains("업데이트 확인에 실패했습니다: {DescribeUpdateError(result.Error)}", codeBehind);
+        Assert.Contains("TraceUpdateFailure(\"Automatic update check\", result.Error);", codeBehind);
+        // 다운로드가 진행되지 않으면 "다운로드 중..."을 남겨두지 않는다.
+        Assert.Contains("if (!restarting)", codeBehind);
+        Assert.Contains("은(는) 나중에 설치합니다.", codeBehind);
+    }
+
+    [Fact]
+    public void UpdateCheck_RunsPeriodicallyAndPromptsOncePerVersion()
+    {
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+        var closing = codeBehind[
+            codeBehind.IndexOf("private void MainWindow_Closing", StringComparison.Ordinal)..
+            codeBehind.IndexOf("private async void ApplyQualityPolicyButton_Click", StringComparison.Ordinal)];
+
+        Assert.Contains("timer.Tick += (_, _) => _ = RunAutomaticUpdateCheckAsync();", codeBehind);
+        Assert.Contains("_updateCheckTimer.Start();", codeBehind);
+        Assert.Contains("_updateCheckTimer.Stop();", closing);
+        // 이미 안내한 버전은 창 대신 상태줄로만 알린다.
+        Assert.Contains("if (_updateService.HasPromptBeenShown(result.Update.Version))", codeBehind);
+        Assert.Contains("설정 > 업데이트 확인에서 설치할 수 있습니다.", codeBehind);
+        Assert.Contains("_updateService.MarkPromptShown(update.Version);", codeBehind);
+    }
+
+    [Fact]
     public void CodeBehind_AutoSavesStateChangesWithoutDependingOnWindowClosing()
     {
         var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());

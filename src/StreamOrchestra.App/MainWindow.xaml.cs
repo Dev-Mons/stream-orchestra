@@ -32,6 +32,7 @@ public partial class MainWindow : Window
 
     private readonly WebViewProfileService _profileService = new();
     private readonly WebViewBrowsingDataService _webViewBrowsingDataService = new();
+    private readonly BrowserCacheUsageService _browserCacheUsageService = new();
     private readonly WebViewRuntimeDiagnosticsService _diagnosticsService = new();
     private readonly PresetStorageService _presetStorageService = new();
     private readonly LayoutPresetService _layoutPresetService;
@@ -56,6 +57,7 @@ public partial class MainWindow : Window
     private AppState? _loadedAppState;
     private bool _restoreMaximizedAfterBoundsApplied;
     private readonly DispatcherTimer _diagnosticsTimer;
+    private readonly DispatcherTimer _updateCheckTimer;
     private readonly DispatcherTimer _swapModeKeyboardPollTimer;
     private DispatcherTimer? _statusToastTimer;
     private DispatcherTimer? _centerVolumeTimer;
@@ -106,6 +108,7 @@ public partial class MainWindow : Window
         UpdateDiagnostics();
         _diagnosticsTimer.Start();
         _swapModeKeyboardPollTimer = CreateSwapModeKeyboardPollTimer();
+        _updateCheckTimer = CreateUpdateCheckTimer();
 
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
@@ -522,6 +525,7 @@ public partial class MainWindow : Window
         var options = dialog.Options;
         _isBrowserDataClearInProgress = true;
         BrowserDataMenuItem.IsEnabled = false;
+        CacheCleanupMenuItem.IsEnabled = false;
         var dataCleared = false;
         try
         {
@@ -567,9 +571,132 @@ public partial class MainWindow : Window
         }
         finally
         {
+            CacheCleanupMenuItem.IsEnabled = true;
             BrowserDataMenuItem.IsEnabled = true;
             _isBrowserDataClearInProgress = false;
         }
+    }
+
+    private async void CacheCleanupButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isBrowserDataClearInProgress)
+        {
+            return;
+        }
+
+        _isBrowserDataClearInProgress = true;
+        BrowserDataMenuItem.IsEnabled = false;
+        CacheCleanupMenuItem.IsEnabled = false;
+        try
+        {
+            var groupOptions = CreateBrowserDataGroupOptions();
+            StatusTextBlock.Text = "브라우저 캐시 용량을 확인하는 중입니다...";
+            var usageBefore = await MeasureBrowserCacheUsageAsync(groupOptions);
+            var totalBefore = usageBefore.Sum(usage => usage.Bytes);
+            var groupsToClean = usageBefore.Where(usage => usage.Bytes > 0).ToArray();
+            if (groupsToClean.Length == 0)
+            {
+                StatusTextBlock.Text = "정리할 브라우저 캐시가 없습니다.";
+                MessageBox.Show(
+                    this,
+                    "정리할 브라우저 캐시가 없습니다.",
+                    "캐시 정리",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var breakdown = string.Join(
+                "\n",
+                groupsToClean.Select(usage =>
+                    $"  {usage.Option.DisplayName}: {BrowserCacheUsageService.FormatSize(usage.Bytes)}"));
+            var confirm = MessageBox.Show(
+                this,
+                $"브라우저 캐시 {BrowserCacheUsageService.FormatSize(totalBefore)}를 정리할까요?\n\n" +
+                $"{breakdown}\n\n" +
+                "로그인 정보와 레이아웃, 프리셋, 단축키 설정은 그대로 유지됩니다.",
+                "캐시 정리",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes)
+            {
+                StatusTextBlock.Text = "캐시 정리를 취소했습니다.";
+                return;
+            }
+
+            var cacheOnly = new BrowserDataClearOptions(ClearSiteData: false, ClearCache: true);
+            var failures = new List<string>();
+            foreach (var usage in groupsToClean)
+            {
+                StatusTextBlock.Text = $"{usage.Option.DisplayName} 캐시를 정리하는 중입니다...";
+                try
+                {
+                    var environment = await _profileService.GetEnvironmentAsync(usage.Option.Group);
+                    await _webViewBrowsingDataService.ClearAsync(environment, cacheOnly);
+                }
+                catch (Exception ex)
+                {
+                    // 한 그룹이 실패해도 나머지 그룹은 계속 정리한다.
+                    failures.Add($"{usage.Option.DisplayName}: {ex.Message}");
+                    Trace.WriteLine(
+                        $"[{DateTimeOffset.Now:O}] Browser cache cleanup failed: Group={usage.Option.Group.Id}, Error={ex}");
+                }
+            }
+
+            var usageAfter = await MeasureBrowserCacheUsageAsync(groupOptions);
+            var totalAfter = usageAfter.Sum(usage => usage.Bytes);
+            var freed = Math.Max(0, totalBefore - totalAfter);
+            var summary =
+                $"브라우저 캐시 {BrowserCacheUsageService.FormatSize(freed)}를 정리했습니다. " +
+                $"(남은 캐시 {BrowserCacheUsageService.FormatSize(totalAfter)})";
+            StatusTextBlock.Text = summary;
+            UpdateDiagnostics();
+
+            if (failures.Count == 0)
+            {
+                MessageBox.Show(
+                    this,
+                    $"{summary}\n\n재생 중인 화면이 사용하는 캐시는 바로 다시 채워질 수 있습니다.",
+                    "캐시 정리 완료",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            else
+            {
+                MessageBox.Show(
+                    this,
+                    $"{summary}\n\n일부 그룹은 정리하지 못했습니다.\n{string.Join("\n", failures)}",
+                    "캐시 정리 오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = $"캐시를 정리하지 못했습니다. {ex.Message}";
+            Trace.WriteLine($"[{DateTimeOffset.Now:O}] Browser cache cleanup failed: Error={ex}");
+            MessageBox.Show(
+                this,
+                $"캐시를 정리하지 못했습니다.\n\n{ex.Message}",
+                "캐시 정리 오류",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            CacheCleanupMenuItem.IsEnabled = true;
+            BrowserDataMenuItem.IsEnabled = true;
+            _isBrowserDataClearInProgress = false;
+        }
+    }
+
+    private Task<(BrowserDataGroupOption Option, long Bytes)[]> MeasureBrowserCacheUsageAsync(
+        IReadOnlyList<BrowserDataGroupOption> groupOptions)
+    {
+        // 캐시 파일이 수천 개라 UI 스레드를 막지 않도록 백그라운드에서 센다.
+        return Task.Run(() => groupOptions
+            .Select(option => (Option: option, Bytes: _browserCacheUsageService.GetCacheSizeBytes(option.Group)))
+            .ToArray());
     }
 
     private IReadOnlyList<BrowserDataGroupOption> CreateBrowserDataGroupOptions()
@@ -724,6 +851,18 @@ public partial class MainWindow : Window
         }
     }
 
+    private DispatcherTimer CreateUpdateCheckTimer()
+    {
+        // 1분마다 깨어나 확인할 때가 됐는지만 본다. 실제 간격(30분)은 UpdateService가
+        // 마지막 확인 시각으로 판단하므로 절전 해제나 수동 확인 뒤에도 간격이 어긋나지 않는다.
+        var timer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(1)
+        };
+        timer.Tick += (_, _) => _ = RunAutomaticUpdateCheckAsync();
+        return timer;
+    }
+
     private async Task StartAutomaticUpdateCheckAsync()
     {
         if (_updateService is null)
@@ -731,40 +870,77 @@ public partial class MainWindow : Window
             return;
         }
 
-        var ownsUpdateOperation = false;
         try
         {
-            var cancellationToken = _updateCancellationTokenSource.Token;
-            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(3), _updateCancellationTokenSource.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // 시작 직후 창이 닫힌 경우.
+            return;
+        }
 
-            if (_isUpdateOperationInProgress)
-            {
-                return;
-            }
+        await RunAutomaticUpdateCheckAsync();
+        if (!_updateCancellationTokenSource.IsCancellationRequested)
+        {
+            _updateCheckTimer.Start();
+        }
+    }
 
-            _isUpdateOperationInProgress = true;
-            ownsUpdateOperation = true;
-            var result = await _updateService.RunAutomaticCheckAsync(cancellationToken);
-            QueueAppStateSave();
-            if (result.Outcome == UpdateCheckOutcome.Available && result.Update is not null)
+    private async Task RunAutomaticUpdateCheckAsync()
+    {
+        // 수동 확인이나 안내 창이 열려 있는 동안에는 이번 차례를 건너뛴다.
+        if (_updateService is null || _isUpdateOperationInProgress)
+        {
+            return;
+        }
+
+        _isUpdateOperationInProgress = true;
+        try
+        {
+            var result = await _updateService.RunAutomaticCheckAsync(_updateCancellationTokenSource.Token);
+            switch (result.Outcome)
             {
-                await PromptForUpdateAsync(result.Update);
+                case UpdateCheckOutcome.NotInstalled:
+                    // 개발 빌드는 확인할 수 없으니 더 깨어날 필요가 없다.
+                    _updateCheckTimer.Stop();
+                    break;
+                case UpdateCheckOutcome.Failed:
+                    // 자동 검사 실패는 창을 띄우지 않고 원인만 기록한다.
+                    TraceUpdateFailure("Automatic update check", result.Error);
+                    break;
+                case UpdateCheckOutcome.NoUpdate:
+                case UpdateCheckOutcome.Skipped:
+                    QueueAppStateSave();
+                    break;
+                case UpdateCheckOutcome.Available when result.Update is not null:
+                    QueueAppStateSave();
+                    if (_updateService.HasPromptBeenShown(result.Update.Version))
+                    {
+                        // 같은 버전 안내 창은 실행 중 한 번만 띄우고, 이후에는 상태줄로만 알린다.
+                        StatusTextBlock.Text =
+                            $"새 버전 {result.Update.Version}이(가) 있습니다. 설정 > 업데이트 확인에서 설치할 수 있습니다.";
+                    }
+                    else
+                    {
+                        await PromptForUpdateAsync(result.Update);
+                    }
+
+                    break;
             }
         }
         catch (OperationCanceledException) when (_updateCancellationTokenSource.IsCancellationRequested)
         {
             // 창이 닫히는 동안 진행 중인 검사는 조용히 취소한다.
         }
-        catch
+        catch (Exception ex)
         {
             // 자동 업데이트 실패는 사용자 흐름을 방해하지 않음
+            TraceUpdateFailure("Automatic update check", ex);
         }
         finally
         {
-            if (ownsUpdateOperation)
-            {
-                _isUpdateOperationInProgress = false;
-            }
+            _isUpdateOperationInProgress = false;
         }
     }
 
@@ -775,6 +951,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 수동 확인으로 띄운 경우도 포함해, 이 버전은 이후 자동 확인에서 창을 다시 띄우지 않는다.
+        _updateService.MarkPromptShown(update.Version);
         var message =
             $"새 버전 {update.Version}이(가) 사용 가능합니다.\n\n" +
             "지금 업데이트하시겠습니까?\n" +
@@ -799,20 +977,42 @@ public partial class MainWindow : Window
 
         if (choice != MessageBoxResult.Yes)
         {
+            StatusTextBlock.Text = $"업데이트 {update.Version}은(는) 나중에 설치합니다.";
             return;
         }
 
         try
         {
             StatusTextBlock.Text = $"업데이트 {update.Version} 다운로드 중...";
-            await _updateService.DownloadAndApplyAsync(
+            var restarting = await _updateService.DownloadAndApplyAsync(
                 () => _presetStorageService.SaveAppState(CaptureAppState()),
                 _updateCancellationTokenSource.Token);
+            if (!restarting)
+            {
+                StatusTextBlock.Text = "다운로드할 업데이트를 찾지 못했습니다. 업데이트 확인을 다시 실행해 주세요.";
+            }
         }
-        catch
+        catch (OperationCanceledException) when (_updateCancellationTokenSource.IsCancellationRequested)
         {
-            StatusTextBlock.Text = "업데이트 다운로드에 실패했습니다.";
+            // 창이 닫히는 동안 진행 중인 다운로드는 조용히 취소한다.
         }
+        catch (Exception ex)
+        {
+            TraceUpdateFailure("Update download", ex);
+            StatusTextBlock.Text = $"업데이트 다운로드에 실패했습니다: {DescribeUpdateError(ex)}";
+        }
+    }
+
+    private static void TraceUpdateFailure(string operation, Exception? error)
+    {
+        Trace.WriteLine($"[{DateTimeOffset.Now:O}] {operation} failed: Error={error}");
+    }
+
+    private static string DescribeUpdateError(Exception? error)
+    {
+        // 상태줄은 한 줄이므로 예외 메시지의 첫 줄만 보여준다.
+        var message = error?.Message.Split('\n', 2)[0].Trim();
+        return string.IsNullOrEmpty(message) ? "알 수 없는 오류" : message;
     }
 
     private async void CheckForUpdatesButton_Click(object sender, RoutedEventArgs e)
@@ -846,17 +1046,22 @@ public partial class MainWindow : Window
                 case UpdateCheckOutcome.NoUpdate:
                     StatusTextBlock.Text = "이미 최신 버전입니다.";
                     break;
+                case UpdateCheckOutcome.NotInstalled:
+                    StatusTextBlock.Text = "개발 빌드로 실행 중이라 업데이트를 확인할 수 없습니다. 배포된 포터블 버전에서 확인해 주세요.";
+                    break;
                 case UpdateCheckOutcome.Failed:
-                    StatusTextBlock.Text = "업데이트 확인에 실패했습니다.";
+                    TraceUpdateFailure("Manual update check", result.Error);
+                    StatusTextBlock.Text = $"업데이트 확인에 실패했습니다: {DescribeUpdateError(result.Error)}";
                     break;
                 case UpdateCheckOutcome.Disabled:
                     StatusTextBlock.Text = "자동 업데이트가 비활성화되어 있습니다.";
                     break;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            StatusTextBlock.Text = "업데이트 확인 중 오류가 발생했습니다.";
+            TraceUpdateFailure("Manual update check", ex);
+            StatusTextBlock.Text = $"업데이트 확인 중 오류가 발생했습니다: {DescribeUpdateError(ex)}";
         }
         finally
         {
@@ -2068,6 +2273,7 @@ public partial class MainWindow : Window
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
         _updateCancellationTokenSource.Cancel();
+        _updateCheckTimer.Stop();
         _appStateSaveTimer?.Stop();
     }
 
