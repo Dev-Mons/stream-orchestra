@@ -9,7 +9,30 @@ permissions:
   contents: write
 
 jobs:
+  # scripts/release.ps1 publishes the release itself, and the tag vpk upload creates
+  # there triggers this workflow. Packing the same version again fails, so skip it.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.existing.outputs.published }}
+    steps:
+      - name: Check for an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          assets=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          if grep -qx "StreamOrchestra-${version}-full.nupkg" <<< "$assets"; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v${version} is already published. Skipping the CI release."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: check
+    if: needs.check.outputs.published != 'true'
     runs-on: windows-latest
     steps:
       - name: Checkout
