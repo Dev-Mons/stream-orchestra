@@ -62,6 +62,8 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     private string? _contextMenuAddress;
     private Point? _slotDragStartPoint;
     private Point? _swapDragStartPoint;
+    private bool _isSlotDragInProgress;
+    private bool _isSlotDragCanceled;
     private long _lastWheelStepTimestamp;
     private Point? _lastRemovePopupAnchor;
     private Point? _lastSwapPopupAnchor;
@@ -120,6 +122,9 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
     public event Action? SwapDragCompleted;
 
     public event Action<StreamSlotView, int>? SlotSwapRequested;
+
+    /// <summary>슬롯 드래그를 앱 창 밖(다른 모니터·바탕화면 등)에서 놓음(외부 브라우저로 열기 요청).</summary>
+    public event Action<StreamSlotView>? DroppedOutsideApp;
 
     /// <summary>슬롯 위의 제거 버튼이 클릭됨(화면 제거 요청).</summary>
     public event Action<StreamSlotView>? RemoveSlotRequested;
@@ -404,13 +409,106 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         try
         {
             SwapDragStarted?.Invoke();
-            DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+            RunSlotDragDrop(data, DragDropEffects.Move);
         }
         finally
         {
             ResetSwapOverlayHighlight();
             SwapDragCompleted?.Invoke();
         }
+    }
+
+    // 슬롯 드래그를 실행하고, 받아준 대상 없이 앱 창 밖에서 놓였으면 호스트에 외부 열기를 요청한다.
+    private void RunSlotDragDrop(DataObject data, DragDropEffects allowedEffects)
+    {
+        _isSlotDragCanceled = false;
+        _isSlotDragInProgress = true;
+        DragDropEffects result;
+        try
+        {
+            result = DragDrop.DoDragDrop(this, data, allowedEffects);
+        }
+        finally
+        {
+            _isSlotDragInProgress = false;
+        }
+
+        if (SlotExternalBrowserService.ShouldOpenExternally(
+                wasDropAccepted: result != DragDropEffects.None,
+                wasCanceled: _isSlotDragCanceled,
+                isPointerOverAppWindow: IsCursorOverAppWindow()))
+        {
+            DroppedOutsideApp?.Invoke(this);
+        }
+    }
+
+    protected override void OnQueryContinueDrag(QueryContinueDragEventArgs e)
+    {
+        base.OnQueryContinueDrag(e);
+
+        // WPF 기본 처리와 같은 기준(ESC, 또는 마우스 버튼 두 개 이상)으로 취소를 기록한다.
+        // 취소한 드래그는 창 밖에서 끝나도 브라우저를 열지 않는다.
+        if (_isSlotDragInProgress &&
+            (e.EscapePressed || CountPressedMouseButtons(e.KeyStates) >= 2))
+        {
+            _isSlotDragCanceled = true;
+        }
+    }
+
+    protected override void OnGiveFeedback(GiveFeedbackEventArgs e)
+    {
+        // 창 밖에서는 기본 "금지" 커서 대신 손 모양을 보여, 놓으면 브라우저로 열린다는 걸 알린다.
+        if (_isSlotDragInProgress && e.Effects == DragDropEffects.None && !IsCursorOverAppWindow())
+        {
+            e.UseDefaultCursors = false;
+            Mouse.SetCursor(Cursors.Hand);
+            e.Handled = true;
+            return;
+        }
+
+        base.OnGiveFeedback(e);
+    }
+
+    private static int CountPressedMouseButtons(DragDropKeyStates keyStates)
+    {
+        var count = 0;
+        if (keyStates.HasFlag(DragDropKeyStates.LeftMouseButton))
+        {
+            count++;
+        }
+
+        if (keyStates.HasFlag(DragDropKeyStates.MiddleMouseButton))
+        {
+            count++;
+        }
+
+        if (keyStates.HasFlag(DragDropKeyStates.RightMouseButton))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    // 커서 아래 창이 이 앱의 창(메인 창·오버레이 팝업 등)인지 확인한다.
+    // WebView2 영상 영역은 다른 프로세스의 자식 HWND이므로 최상위 조상 창의 프로세스로 판단한다.
+    private static bool IsCursorOverAppWindow()
+    {
+        if (!GetCursorPos(out var point))
+        {
+            // 위치를 알 수 없으면 앱 안으로 간주해 브라우저를 열지 않는다.
+            return true;
+        }
+
+        var window = WindowFromPoint(point);
+        if (window == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var rootWindow = GetAncestor(window, GetAncestorRoot);
+        GetWindowThreadProcessId(rootWindow == IntPtr.Zero ? window : rootWindow, out var processId);
+        return processId == (uint)Environment.ProcessId;
     }
 
     private void SwapOverlay_DragOver(object sender, DragEventArgs e)
@@ -1049,7 +1147,7 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         try
         {
             HostDragStarted?.Invoke();
-            DragDrop.DoDragDrop(this, data, DragDropEffects.Copy);
+            RunSlotDragDrop(data, DragDropEffects.Copy);
         }
         finally
         {
@@ -1270,6 +1368,28 @@ public partial class StreamSlotView : UserControl, IStreamSyncTarget
         int cx,
         int cy,
         uint uFlags);
+
+    private const uint GetAncestorRoot = 2;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
 
     private async Task ApplyVolumeToWebPageAsync()
     {

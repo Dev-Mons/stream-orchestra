@@ -39,6 +39,7 @@ public partial class MainWindow : Window
     private readonly StreamNavigationService _streamNavigationService = new();
     private readonly SlotSelectionService _slotSelectionService = new();
     private readonly SlotSwapService _slotSwapService = new();
+    private readonly SlotExternalBrowserService _slotExternalBrowserService = new();
     private readonly SlotRemovalSelectionService _slotRemovalSelectionService = new();
     private readonly LayoutTemplateCandidateService _layoutTemplateCandidateService = new();
     private readonly LayoutTransitionPlanner _layoutTransitionPlanner = new();
@@ -277,6 +278,7 @@ public partial class MainWindow : Window
             slotView.VolumeChanged += _ => QueueAppStateSave();
             slotView.StreamUrlDropRequested += SlotView_StreamUrlDropRequested;
             slotView.SlotSwapRequested += SlotView_SlotSwapRequested;
+            slotView.DroppedOutsideApp += SlotView_DroppedOutsideApp;
             slotView.RemoveSlotRequested += SlotView_RemoveSlotRequested;
             slotView.SoopPlaybackLimitDetected += SlotView_SoopPlaybackLimitDetected;
             slotView.RecoveryStatusChanged += SlotView_RecoveryStatusChanged;
@@ -1109,6 +1111,29 @@ public partial class MainWindow : Window
         }
 
         _ = SwapSlotStreamsAsync(sourceSlot, targetSlot);
+    }
+
+    // 슬롯을 앱 창 밖에 놓으면 그 방송을 크롬(없으면 기본 브라우저)으로 연다.
+    private void SlotView_DroppedOutsideApp(StreamSlotView slot)
+    {
+        var browsers = new ExternalBrowserDiscoveryService(_presetStorageService.DataFolder).Discover();
+        var plan = _slotExternalBrowserService.CreatePlan(slot.CreateRuntimeState(), browsers);
+        if (!plan.CanOpen)
+        {
+            StatusTextBlock.Text = plan.StatusMessage;
+            return;
+        }
+
+        try
+        {
+            Process.Start(plan.StartInfo!)?.Dispose();
+            StatusTextBlock.Text = plan.StatusMessage;
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            Trace.WriteLine($"[ExternalBrowser] Slot {slot.SlotId} open failed: {ex}");
+            StatusTextBlock.Text = $"Slot {slot.SlotId}: 브라우저를 열지 못했습니다. {ex.Message}";
+        }
     }
 
     // 슬롯 제거 버튼 클릭 → 삭제 예정 상태를 토글하고, 남은 슬롯 수에 맞는 레이아웃 카드를 갱신한다.

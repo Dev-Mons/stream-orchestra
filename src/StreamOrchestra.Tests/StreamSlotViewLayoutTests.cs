@@ -183,6 +183,50 @@ public sealed class StreamSlotViewLayoutTests
     }
 
     [Fact]
+    public void CodeBehind_RequestsExternalOpenWhenSlotDragIsDroppedOutsideApp()
+    {
+        var slotText = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+
+        Assert.Contains("public event Action<StreamSlotView>? DroppedOutsideApp;", slotText);
+        Assert.Contains("private void RunSlotDragDrop(DataObject data, DragDropEffects allowedEffects)", slotText);
+        // 교체(Shift) 드래그와 일반 슬롯 드래그 모두 같은 경로로 창 밖 드롭을 판정한다.
+        Assert.Contains("RunSlotDragDrop(data, DragDropEffects.Move);", slotText);
+        Assert.Contains("RunSlotDragDrop(data, DragDropEffects.Copy);", slotText);
+        Assert.Equal(1, CountOccurrences(slotText, "DragDrop.DoDragDrop("));
+        Assert.Contains("result = DragDrop.DoDragDrop(this, data, allowedEffects);", slotText);
+        Assert.Contains("SlotExternalBrowserService.ShouldOpenExternally(", slotText);
+        Assert.Contains("wasDropAccepted: result != DragDropEffects.None", slotText);
+        Assert.Contains("isPointerOverAppWindow: IsCursorOverAppWindow()", slotText);
+        Assert.Contains("DroppedOutsideApp?.Invoke(this);", slotText);
+    }
+
+    [Fact]
+    public void CodeBehind_TreatsCanceledDragAndOwnWindowsAsInsideApp()
+    {
+        var slotText = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+
+        Assert.Contains("protected override void OnQueryContinueDrag(QueryContinueDragEventArgs e)", slotText);
+        Assert.Contains("e.EscapePressed || CountPressedMouseButtons(e.KeyStates) >= 2", slotText);
+        Assert.Contains("_isSlotDragCanceled = true;", slotText);
+        // WebView2 영상 영역은 다른 프로세스의 자식 HWND라 최상위 조상 창의 프로세스로 앱 창 여부를 판단한다.
+        Assert.Contains("WindowFromPoint(point)", slotText);
+        Assert.Contains("GetAncestor(window, GetAncestorRoot)", slotText);
+        Assert.Contains("processId == (uint)Environment.ProcessId", slotText);
+        Assert.Contains("private const uint GetAncestorRoot = 2;", slotText);
+    }
+
+    [Fact]
+    public void CodeBehind_ShowsHandCursorWhileSlotDragIsOutsideApp()
+    {
+        var slotText = File.ReadAllText(GetAppViewPath("StreamSlotView.xaml.cs"));
+
+        Assert.Contains("protected override void OnGiveFeedback(GiveFeedbackEventArgs e)", slotText);
+        Assert.Contains("e.Effects == DragDropEffects.None && !IsCursorOverAppWindow()", slotText);
+        Assert.Contains("e.UseDefaultCursors = false;", slotText);
+        Assert.Contains("Mouse.SetCursor(Cursors.Hand);", slotText);
+    }
+
+    [Fact]
     public void CodeBehind_PollsPhysicalShiftStateWhileSwapOverlayIsOpen()
     {
         var mainWindowText = File.ReadAllText(GetMainWindowPath());
@@ -492,6 +536,19 @@ public sealed class StreamSlotViewLayoutTests
         Assert.Contains("StopPlaybackForReplacementAsync", text);
         Assert.Contains("Browser.CoreWebView2.Navigate(\"about:blank\")", text);
         Assert.Contains("RunNavigationAndWaitAsync", text);
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = text.IndexOf(value, StringComparison.Ordinal);
+        while (index >= 0)
+        {
+            count++;
+            index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal);
+        }
+
+        return count;
     }
 
     private static XDocument LoadStreamSlotViewDocument()

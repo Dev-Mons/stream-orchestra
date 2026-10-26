@@ -460,6 +460,31 @@ public sealed class MainWindowLayoutTests
         Assert.Contains("IsSoopUrl", codeBehind);
     }
 
+    [Fact]
+    public void CodeBehind_OpensSlotStreamInChromeWhenDroppedOutsideApp()
+    {
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+
+        Assert.Contains("slotView.DroppedOutsideApp += SlotView_DroppedOutsideApp;", codeBehind);
+        var handlerStart = codeBehind.IndexOf("private void SlotView_DroppedOutsideApp(StreamSlotView slot)", StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0);
+        var handlerEnd = codeBehind.IndexOf("\n    private ", handlerStart + 1, StringComparison.Ordinal);
+        Assert.True(handlerEnd > handlerStart);
+        var handler = codeBehind[handlerStart..handlerEnd];
+
+        // 크롬 경로는 기존 외부 브라우저 탐색 서비스(사용자 지정 후보 포함)를 재사용한다.
+        Assert.Contains("new ExternalBrowserDiscoveryService(_presetStorageService.DataFolder).Discover()", handler);
+        Assert.Contains("_slotExternalBrowserService.CreatePlan(slot.CreateRuntimeState(), browsers)", handler);
+        // 빈 슬롯·주소 없음은 아무것도 열지 않고 상태줄로만 안내한다.
+        Assert.Contains("if (!plan.CanOpen)", handler);
+        Assert.Contains("StatusTextBlock.Text = plan.StatusMessage;", handler);
+        Assert.Contains("Process.Start(plan.StartInfo!)", handler);
+        Assert.Contains("Trace.WriteLine(", handler);
+        Assert.Contains("브라우저를 열지 못했습니다.", handler);
+        // 앱 안 드롭은 기존 교체 경로를 그대로 사용한다.
+        Assert.DoesNotContain("SwapSlotStreamsAsync", handler);
+    }
+
     private static string GetMainWindowCodeBehindPath()
     {
         return Path.GetFullPath(Path.Combine(
