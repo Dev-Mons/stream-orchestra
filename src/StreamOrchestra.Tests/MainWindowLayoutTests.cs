@@ -486,6 +486,27 @@ public sealed class MainWindowLayoutTests
     }
 
     [Fact]
+    public void CodeBehind_MovesNewChromeWindowToDropMonitor()
+    {
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+        var handlerStart = codeBehind.IndexOf("private void SlotView_DroppedOutsideApp(StreamSlotView slot)", StringComparison.Ordinal);
+        Assert.True(handlerStart >= 0);
+        var handlerEnd = codeBehind.IndexOf("\n    private ", handlerStart + 1, StringComparison.Ordinal);
+        var handler = codeBehind[handlerStart..handlerEnd];
+
+        // 드롭한 모니터는 브라우저 탐색으로 시간이 지나기 전에 먼저 잡는다.
+        var captureIndex = handler.IndexOf("ChromeWindowPlacementWatcher.CaptureMonitorUnderCursor()", StringComparison.Ordinal);
+        Assert.True(captureIndex >= 0);
+        Assert.True(captureIndex < handler.IndexOf(".Discover()", StringComparison.Ordinal));
+        // 새 창이 뜨는 순간을 놓치지 않도록 크롬을 실행하기 전에 감시를 시작하고, 크롬일 때만 옮긴다.
+        var startIndex = handler.IndexOf("ChromeWindowPlacementWatcher.Start(plan.StartInfo!.FileName, dropMonitor", StringComparison.Ordinal);
+        Assert.True(startIndex >= 0);
+        Assert.True(startIndex < handler.IndexOf("Process.Start(plan.StartInfo!)", StringComparison.Ordinal));
+        Assert.Contains("plan.UsesChrome", handler);
+        Assert.Contains("_chromeWindowPlacementWatcher?.Dispose();", handler);
+    }
+
+    [Fact]
     public void CodeBehind_ShowsReleaseNotesInUpdatePrompt()
     {
         var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());

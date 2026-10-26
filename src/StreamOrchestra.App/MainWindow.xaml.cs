@@ -67,6 +67,7 @@ public partial class MainWindow : Window
     private WorkspacePreset? _activeWorkspace;
     private StreamSlotView? _selectedSlot;
     private ExplorerPanel? _explorerPanel;
+    private ChromeWindowPlacementWatcher? _chromeWindowPlacementWatcher;
     private readonly LayoutCardPresenter _layoutCardPresenter = new();
     private readonly Dictionary<string, DateTimeOffset> _lastSoopLimitRecoveryByGroup = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _recoveringSoopLimitGroups = new(StringComparer.OrdinalIgnoreCase);
@@ -1116,8 +1117,10 @@ public partial class MainWindow : Window
     }
 
     // 슬롯을 앱 창 밖에 놓으면 그 방송을 크롬(없으면 기본 브라우저)으로 연다.
+    // 크롬이면 새 창을 놓은 곳의 모니터로 옮겨 최대화한다.
     private void SlotView_DroppedOutsideApp(StreamSlotView slot)
     {
+        var dropMonitor = ChromeWindowPlacementWatcher.CaptureMonitorUnderCursor();
         var browsers = new ExternalBrowserDiscoveryService(_presetStorageService.DataFolder).Discover();
         var plan = _slotExternalBrowserService.CreatePlan(slot.CreateRuntimeState(), browsers);
         if (!plan.CanOpen)
@@ -1126,6 +1129,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 이전 드롭의 감시가 남아 있으면 이번 창과 섞이지 않게 먼저 끝낸다.
+        _chromeWindowPlacementWatcher?.Dispose();
+        _chromeWindowPlacementWatcher = plan.UsesChrome
+            ? ChromeWindowPlacementWatcher.Start(plan.StartInfo!.FileName, dropMonitor, ChromeWindowPlacementWatcher.DefaultTimeout)
+            : null;
+
         try
         {
             Process.Start(plan.StartInfo!)?.Dispose();
@@ -1133,6 +1142,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
+            _chromeWindowPlacementWatcher?.Dispose();
             Trace.WriteLine($"[ExternalBrowser] Slot {slot.SlotId} open failed: {ex}");
             StatusTextBlock.Text = $"Slot {slot.SlotId}: 브라우저를 열지 못했습니다. {ex.Message}";
         }
