@@ -485,6 +485,27 @@ public sealed class MainWindowLayoutTests
         Assert.DoesNotContain("SwapSlotStreamsAsync", handler);
     }
 
+    [Fact]
+    public void CodeBehind_ShowsReleaseNotesInUpdatePrompt()
+    {
+        var codeBehind = File.ReadAllText(GetMainWindowCodeBehindPath());
+        var promptStart = codeBehind.IndexOf("private async Task PromptForUpdateAsync(AvailableUpdate update)", StringComparison.Ordinal);
+        Assert.True(promptStart >= 0);
+        var promptEnd = codeBehind.IndexOf("MessageBox.Show(", promptStart, StringComparison.Ordinal);
+        Assert.True(promptEnd > promptStart);
+        var prompt = codeBehind[promptStart..promptEnd];
+
+        // MessageBox는 마크다운을 그리지 못하므로 일반 텍스트로 바꿔 넣고, 내역이 없으면 칸을 생략한다.
+        Assert.Contains("ReleaseNotesFormatter.ToPlainText(update.ReleaseNotes)", prompt);
+        Assert.Contains("releaseNotes is null ? \"\" : $\"변경 내역:\\n{releaseNotes}\\n\\n\"", prompt);
+        Assert.True(
+            prompt.IndexOf("새 버전 {update.Version}", StringComparison.Ordinal) <
+            prompt.IndexOf("변경 내역:", StringComparison.Ordinal));
+        Assert.True(
+            prompt.IndexOf("변경 내역:", StringComparison.Ordinal) <
+            prompt.IndexOf("지금 업데이트하시겠습니까?", StringComparison.Ordinal));
+    }
+
     private static string GetMainWindowCodeBehindPath()
     {
         return Path.GetFullPath(Path.Combine(

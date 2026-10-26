@@ -32,7 +32,9 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
             return null;
         }
 
-        return new AvailableUpdate(info.TargetFullRelease.Version.ToString());
+        return new AvailableUpdate(
+            info.TargetFullRelease.Version.ToString(),
+            info.TargetFullRelease.NotesMarkdown);
     }
 
     public async Task<bool> DownloadUpdateAsync(CancellationToken cancellationToken = default)

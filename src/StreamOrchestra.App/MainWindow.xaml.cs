@@ -955,8 +955,10 @@ public partial class MainWindow : Window
 
         // 수동 확인으로 띄운 경우도 포함해, 이 버전은 이후 자동 확인에서 창을 다시 띄우지 않는다.
         _updateService.MarkPromptShown(update.Version);
+        var releaseNotes = ReleaseNotesFormatter.ToPlainText(update.ReleaseNotes);
         var message =
             $"새 버전 {update.Version}이(가) 사용 가능합니다.\n\n" +
+            (releaseNotes is null ? "" : $"변경 내역:\n{releaseNotes}\n\n") +
             "지금 업데이트하시겠습니까?\n" +
             "• 예: 다운로드 후 자동 재시작\n" +
             "• 아니오: 나중에 알림\n" +

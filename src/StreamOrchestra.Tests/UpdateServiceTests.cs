@@ -59,6 +59,28 @@ public sealed class UpdateServiceTests
     }
 
     [Fact]
+    public async Task RunManualCheckAsync_KeepsReleaseNotesFromChecker()
+    {
+        var checker = new FakeUpdateChecker { NextUpdate = new AvailableUpdate("0.2.0", "- 슬롯을 창 밖에 놓으면 크롬으로 열기") };
+        var service = new UpdateService(
+            checker,
+            new AutoUpdateState { Enabled = true },
+            UpdateService.DefaultMinimumCheckInterval,
+            () => DateTimeOffset.UtcNow);
+
+        var result = await service.RunManualCheckAsync();
+
+        Assert.Equal(UpdateCheckOutcome.Available, result.Outcome);
+        Assert.Equal("- 슬롯을 창 밖에 놓으면 크롬으로 열기", result.Update?.ReleaseNotes);
+    }
+
+    [Fact]
+    public void AvailableUpdate_DefaultsReleaseNotesToNull()
+    {
+        Assert.Null(new AvailableUpdate("0.2.0").ReleaseNotes);
+    }
+
+    [Fact]
     public async Task RunStartupCheckAsync_ReturnsDisabled_WhenAutoUpdateOff()
     {
         var checker = new FakeUpdateChecker();
